@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DongDo Optic - Tư vấn gọng kính</title>
+    <link rel="stylesheet" href="./css/styles.css?v=20260720-1" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">
+            <span>◎</span>
+          </div>
+          <div>
+            <strong>DongDo Optic</strong>
+            <span>Module tư vấn gọng kính</span>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Quy trình tư vấn">
+          <button class="tab-button active" type="button" data-tab-target="tab-0">Tab 0 - Hồ sơ</button>
+          <button class="tab-button" type="button" data-tab-target="tab-1">Tab 1 - Nhu cầu</button>
+          <button class="tab-button" type="button" data-tab-target="tab-3">Tab 3 - Camera</button>
+          <button class="tab-button" type="button" data-tab-target="tab-4">Tab 4 - Tư vấn</button>
+        </nav>
+
+        <button class="sidebar-logout" type="button">Đăng xuất</button>
+
+        <div class="sidebar-art" aria-hidden="true">
+          <div class="sidebar-art-inner">
+            <span class="sidebar-art-kicker">Chăm sóc thị lực</span>
+            <strong>Tư vấn nhanh, rõ, dễ mở lại</strong>
+          </div>
+        </div>
+
+        <footer class="sidebar-footer">
+          <strong>VISION ID © 2026</strong>
+          <span>Phát triển bởi Bùi Đăng Toàn</span>
+        </footer>
+      </aside>
+
+      <section class="content">
+        <header class="content-header">
+          <div class="content-title">
+            <p class="eyebrow">DongDo Optic</p>
+            <h1>Tư vấn chọn gọng kính</h1>
+            <p class="summary">Quy trình tư vấn theo từng tab: hồ sơ, nhu cầu, camera, lời khuyên.</p>
+          </div>
+          <div class="content-chips">
+            <span>Ngoại tuyến</span>
+            <span>AI phía client</span>
+            <span>Lưu cục bộ</span>
+          </div>
+        </header>
+
+        <section id="tab-0" class="tab-panel active">
+          <div class="two-column">
+            <section class="panel">
+              <div class="section-heading">
+                <p class="eyebrow">Tab 0</p>
+                <h2>Nhập thông tin và lưu hồ sơ</h2>
+              </div>
+
+              <form id="customerForm" class="customer-form">
+                <label>Mã khách hàng
+                  <div class="code-row">
+                    <input id="customerCode" name="customer_code" type="text" readonly>
+                    <button id="newCustomerButton" type="button" title="Tạo mã mới">Mới</button>
+                  </div>
+                  <span class="code-subline">Phiên tư vấn: <strong id="sessionCodeValue">--</strong></span>
+                </label>
+                <label>Tên khách hàng
+                  <input id="customerName" name="customer_name" type="text" placeholder="Nhập tên khách">
+                </label>
+                <label>Số điện thoại
+                  <input id="customerPhone" name="customer_phone" type="tel" placeholder="Nhập số điện thoại">
+                </label>
+                <label>Trạng thái hồ sơ
+                  <select id="customerStatus" name="customer_status">
+                    <option value="waiting">Đang chờ tư vấn</option>
+                    <option value="measured">Đã đo đơn</option>
+                    <option value="closed">Đã chốt đơn</option>
+                  </select>
+                </label>
+                <div class="form-row">
+                  <label>Ngày tư vấn
+                    <input id="consultDate" name="consult_date" type="date">
+                  </label>
+                  <label>Nhóm tuổi
+                    <select id="ageGroup" name="age_group">
+                      <option value="">Chọn</option>
+                      <option value="student">Học sinh/Sinh viên</option>
+                      <option value="office">Văn phòng</option>
+                      <option value="middle_age">Trung niên</option>
+                      <option value="senior">Người lớn tuổi</option>
+                    </select>
+                  </label>
+                </div>
+                <label>Nhu cầu / ghi chú
+                  <textarea id="customerNotes" name="customer_notes" rows="3" placeholder="VD: đeo máy tính nhiều, thích gọng nhẹ, cần phong cách công sở..."></textarea>
+                </label>
+                <label class="rx-toggle">
+                  <input id="hasPrescription" type="checkbox" name="has_prescription">
+                  <span>Khách hàng đã có đơn kính</span>
+                </label>
+                <section id="prescriptionSection" class="prescription-section" hidden>
+                  <div class="section-heading">
+                    <p class="eyebrow">Đơn kính</p>
+                    <h3>Thông số để AI gợi ý chiết suất</h3>
+                  </div>
+                  <div class="preference-grid">
+                    <label>PD (mm)
+                      <input id="prescriptionPd" name="prescription_pd" type="number" step="0.1" placeholder="Ví dụ: 62.0">
+                    </label>
+                    <label>SPH (D)
+                      <input id="prescriptionSph" name="prescription_sph" type="number" step="0.25" placeholder="Ví dụ: -3.50">
+                    </label>
+                    <label>CYL (D)
+                      <input id="prescriptionCyl" name="prescription_cyl" type="number" step="0.25" placeholder="Ví dụ: -1.00">
+                    </label>
+                  </div>
+                  <p class="prescription-hint">Nếu SPH/CYL cho thấy độ cao, hệ thống sẽ ưu tiên tròng 1.67 hoặc 1.74.</p>
+                </section>
+                <details class="advanced-details">
+                  <summary>Thông tin nâng cao</summary>
+                  <div class="advanced-grid">
+                    <label>Rộng gọng dự kiến (mm)
+                      <input id="frameWidthMm" name="frame_width_mm" type="number" step="0.1" placeholder="Ví dụ: 52.0">
+                    </label>
+                  </div>
+                  <p class="prescription-hint">Chỉ điền khi đã có gọng cũ hoặc muốn cảnh báo PD chính xác hơn.</p>
+                </details>
+              </form>
+
+              <button id="saveCustomerButton" type="button" class="secondary-action">Lưu hồ sơ khách</button>
+            </section>
+
+            <section class="customer-panel">
+              <div class="section-heading">
+                <p class="eyebrow">Hồ sơ</p>
+                <h2>Khách hàng đã lưu</h2>
+              </div>
+              <div class="customer-toolbar">
+                <input id="customerSearch" type="search" placeholder="Tìm theo mã, tên hoặc số điện thoại">
+                <span id="customerCount">0 hồ sơ</span>
+              </div>
+              <div class="customer-list" id="customerList">
+                <p class="empty-state">Chưa có hồ sơ nào.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-1" class="tab-panel">
+          <div class="panel">
+            <div class="section-heading">
+              <p class="eyebrow">Tab 1</p>
+              <h2>Sở thích, tài chính và mục đích sử dụng</h2>
+            </div>
+            <form id="preferenceForm" class="preference-form">
+              <div class="preference-grid">
+                <label>Khoảng giá
+                  <select id="budget" name="budget">
+                    <option value="low">Tiết kiệm</option>
+                    <option value="medium" selected>Cân bằng</option>
+                    <option value="high">Cao cấp</option>
+                    <option value="premium">Cao cấp</option>
+                  </select>
+                </label>
+                <label>Mục đích ưu tiên
+                  <select id="purpose" name="purpose">
+                    <option value="daily">Đeo hằng ngày</option>
+                    <option value="screen">Máy tính / điện thoại nhiều</option>
+                    <option value="driving">Lái xe</option>
+                    <option value="fashion">Thời trang / mỏng đẹp</option>
+                    <option value="active">Vận động / trẻ em</option>
+                    <option value="high_rx">Độ cao</option>
+                    <option value="budget">Tối ưu chi phí</option>
+                  </select>
+                </label>
+                <label>Độ đơn kính
+                  <select id="prescriptionLevel" name="prescription_level">
+                    <option value="unknown">Chưa nhập đơn</option>
+                    <option value="low">Nhẹ</option>
+                    <option value="medium">Trung bình</option>
+                    <option value="high">Cao</option>
+                  </select>
+                </label>
+                <label>Sở thích gọng
+                  <select id="framePreference" name="frame_preference">
+                    <option value="balanced">Cân bằng</option>
+                    <option value="light">Nhẹ</option>
+                    <option value="bold">Nổi bật</option>
+                    <option value="minimal">Tối giản</option>
+                    <option value="office">Công sở</option>
+                  </select>
+                </label>
+              </div>
+              <fieldset class="brand-fieldset">
+                <legend>Hãng tròng kính đang sử dụng</legend>
+                <label><input type="checkbox" name="brands" value="Fano" checked> Fano</label>
+                <label><input type="checkbox" name="brands" value="Essilor Element" checked> Essilor Element</label>
+                <label><input type="checkbox" name="brands" value="Essilor" checked> Essilor</label>
+                <label><input type="checkbox" name="brands" value="Carl Zeiss" checked> Carl Zeiss</label>
+              </fieldset>
+            </form>
+            <section class="lens-preview" aria-live="polite">
+              <div class="section-heading">
+                <p class="eyebrow">Gợi ý nhanh</p>
+                <h3>Tròng kính nên chuẩn bị</h3>
+              </div>
+              <div id="currentCustomerSummary" class="current-customer-summary"></div>
+              <div id="lensPreview" class="lens-preview-list">
+                <p class="empty-state">Nhập đơn ở Tab 0 để xem gợi ý nhanh.</p>
+              </div>
+            </section>
+            <div class="catalog-note">
+              Dữ liệu hiện là catalog nền tảng để tư vấn nội bộ. Khi có file catalog/chính sách giá của cửa hàng, mình sẽ map lại thành bảng giá thật.
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-3" class="tab-panel">
+          <section class="workspace">
+            <div class="camera-panel">
+              <video id="webcam" autoplay playsinline muted></video>
+              <canvas id="overlay"></canvas>
+            </div>
+
+            <aside class="inspector">
+              <div class="section-heading">
+                <p class="eyebrow">Tab 3</p>
+                <h2>Camera và chỉ số</h2>
+              </div>
+              <div class="camera-toolbar">
+                <button id="cameraModeButton" type="button" class="camera-mode-button" aria-pressed="false">Camera trước</button>
+                <span id="cameraModeHint" class="camera-mode-hint">Ưu tiên camera sau trên điện thoại</span>
+              </div>
+              <div class="camera-status-cards">
+                <div class="camera-status-card">
+                  <span>Người trong khung</span>
+                  <strong id="cameraFaceState">0</strong>
+                </div>
+                <div class="camera-status-card">
+                  <span>Độ ổn định</span>
+                  <strong id="cameraStabilityState">Chưa đủ</strong>
+                </div>
+                <div class="camera-status-card">
+                  <span>Tâm khung</span>
+                  <strong id="cameraReadyState">Chưa</strong>
+                </div>
+              </div>
+              <p id="cameraGuidance" class="camera-guidance">Bật camera để bắt đầu nhận diện khuôn mặt.</p>
+              <div class="camera-signal-list" aria-label="Tín hiệu khung hình">
+                <div>
+                  <span>Căn giữa</span>
+                  <strong id="cameraCenterState">Chưa có</strong>
+                </div>
+                <div>
+                  <span>Khoảng cách</span>
+                  <strong id="cameraDistanceState">Chưa có</strong>
+                </div>
+                <div>
+                  <span>Độ tin cậy</span>
+                  <strong id="cameraConfidenceState">0%</strong>
+                </div>
+              </div>
+              <div class="status-grid">
+                <div>
+                  <span>Trạng thái</span>
+                  <strong id="status">Chưa khởi tạo</strong>
+                </div>
+                <div>
+                  <span>Landmarks</span>
+                  <strong id="landmarkCount">0</strong>
+                </div>
+                <div>
+                  <span>Số khuôn mặt</span>
+                  <strong id="faceCount">0</strong>
+                </div>
+                <div>
+                  <span>Dạng mặt</span>
+                  <strong id="faceShape">Đang chờ</strong>
+                </div>
+              </div>
+              <button id="cameraStartButton" type="button">Bật camera</button>
+              <button id="markMeasuredButton" type="button" class="secondary-action" disabled>Đánh dấu đã đo</button>
+            </aside>
+          </section>
+
+          <div class="analysis-panel">
+            <div class="metrics-panel">
+              <div class="section-heading">
+                <p class="eyebrow">Phân tích</p>
+                <h2>Chỉ số khuôn mặt</h2>
+              </div>
+              <dl class="metric-list" id="metricsList">
+                <div>
+                  <dt>Tỷ lệ dài/rộng</dt>
+                  <dd>--</dd>
+                </div>
+                <div>
+                  <dt>Trán</dt>
+                  <dd>--</dd>
+                </div>
+                <div>
+                  <dt>Gò má</dt>
+                  <dd>--</dd>
+                </div>
+                <div>
+                  <dt>Hàm</dt>
+                  <dd>--</dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-4" class="tab-panel">
+          <div class="advice-grid">
+            <section class="recommendation-panel">
+              <div class="section-heading">
+                <p class="eyebrow">Tab 4</p>
+                <h2>Lời khuyên gọng kính</h2>
+              </div>
+              <div class="frame-list" id="frameList">
+                <p class="empty-state">Hoàn tất Tab 1 và Tab 3 để nhận gợi ý.</p>
+              </div>
+            </section>
+
+            <section class="recommendation-panel">
+              <div class="section-heading">
+                <p class="eyebrow">Tròng kính</p>
+                <h2>Chiết suất nên tư vấn</h2>
+              </div>
+              <div class="lens-list" id="lensList">
+                <p class="empty-state">Chọn nhu cầu ở Tab 1 để xem gợi ý tròng kính.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="./js/app.mobile.js?v=20260720-1"></script>
+  </body>
+</html>

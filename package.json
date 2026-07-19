@@ -1,0 +1,16 @@
+{
+  "name": "dongdo_optic",
+  "version": "1.0.0",
+  "description": "Offline web prototype for DongDo Optic eyewear recommendation.",
+  "main": "index.js",
+  "scripts": {
+    "start": "python -m http.server 5173"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35"
+  }
+}

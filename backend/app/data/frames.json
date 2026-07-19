@@ -1,0 +1,44 @@
+[
+  {
+    "id": "DDO-001",
+    "name": "Gong chu nhat mong",
+    "face_shapes": ["round", "oval"],
+    "style": "Cong so",
+    "reason": "Duong canh thang giup khuon mat tron gon va ro net hon."
+  },
+  {
+    "id": "DDO-002",
+    "name": "Gong tron kim loai",
+    "face_shapes": ["square", "long"],
+    "style": "Co dien",
+    "reason": "Bo tron cac goc ham, tao cam giac mem hon cho tong the."
+  },
+  {
+    "id": "DDO-003",
+    "name": "Gong oval ban vua",
+    "face_shapes": ["square", "heart", "diamond"],
+    "style": "Hang ngay",
+    "reason": "Dang oval can bang tran, go ma va duong ham."
+  },
+  {
+    "id": "DDO-004",
+    "name": "Gong cat-eye nhe",
+    "face_shapes": ["oval", "heart"],
+    "style": "Thanh lich",
+    "reason": "Nhan nhe phan tren khuon mat, hop voi gu thoi trang hien dai."
+  },
+  {
+    "id": "DDO-005",
+    "name": "Gong browline",
+    "face_shapes": ["round", "oval", "long"],
+    "style": "Smart casual",
+    "reason": "Tao diem nhan o chan may va tang do sac net khi nhin truc dien."
+  },
+  {
+    "id": "DDO-006",
+    "name": "Gong khong vien",
+    "face_shapes": ["long", "diamond"],
+    "style": "Toi gian",
+    "reason": "Nhe mat, khong lam go ma hoac chieu dai mat bi nhan manh qua muc."
+  }
+]

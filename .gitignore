@@ -1,0 +1,10 @@
+node_modules/
+backend/instance/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+dist/
+build/
