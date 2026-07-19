@@ -1,10 +1,5 @@
 import { startUserCamera } from "./camera.js?v=20260720-9";
 import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-9";
-import {
-  createDrawingUtils,
-  createFaceLandmarker,
-  FaceLandmarker
-} from "./face-landmarker.js?v=20260720-9";
 import { analyzeFaceShape } from "./face-analysis.js?v=20260720-9";
 import { getFrameRecommendations } from "./recommendations.js?v=20260720-9";
 import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-9";
@@ -73,6 +68,7 @@ const canvasContext = canvas.getContext("2d");
 
 let faceLandmarker;
 let drawingUtils;
+let FaceLandmarkerApi;
 let lastVideoTime = -1;
 let lastRenderedShape = "";
 let latestAnalysis = null;
@@ -101,8 +97,10 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  faceLandmarker = await createFaceLandmarker();
-  drawingUtils = createDrawingUtils(canvasContext);
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-10");
+  faceLandmarker = await landmarkerModule.createFaceLandmarker();
+  drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
+  FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
   statusText.textContent = "Sẵn sàng";
 }
 
@@ -176,31 +174,31 @@ function drawResults(results) {
   for (const landmarks of faces) {
     drawingUtils.drawConnectors(
       landmarks,
-      FaceLandmarker.FACE_LANDMARKS_TESSELATION,
+      FaceLandmarkerApi.FACE_LANDMARKS_TESSELATION,
       { color: "rgba(32, 201, 151, 0.28)", lineWidth: 1 }
     );
 
     drawingUtils.drawConnectors(
       landmarks,
-      FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,
+      FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL,
       { color: "#f59f00", lineWidth: 2 }
     );
 
     drawingUtils.drawConnectors(
       landmarks,
-      FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,
+      FaceLandmarkerApi.FACE_LANDMARKS_LEFT_EYE,
       { color: "#4dabf7", lineWidth: 2 }
     );
 
     drawingUtils.drawConnectors(
       landmarks,
-      FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,
+      FaceLandmarkerApi.FACE_LANDMARKS_RIGHT_EYE,
       { color: "#4dabf7", lineWidth: 2 }
     );
 
     drawingUtils.drawConnectors(
       landmarks,
-      FaceLandmarker.FACE_LANDMARKS_LIPS,
+      FaceLandmarkerApi.FACE_LANDMARKS_LIPS,
       { color: "#ff6b6b", lineWidth: 2 }
     );
   }

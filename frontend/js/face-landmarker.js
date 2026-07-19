@@ -2,9 +2,9 @@ import {
   FaceLandmarker,
   FilesetResolver,
   DrawingUtils
-} from "../../node_modules/@mediapipe/tasks-vision/vision_bundle.mjs";
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs";
 
-const wasmPath = "../../node_modules/@mediapipe/tasks-vision/wasm";
+const wasmPath = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 const modelPath = "./assets/models/face_landmarker.task";
 
 export async function createFaceLandmarker() {
