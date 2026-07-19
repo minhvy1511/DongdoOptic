@@ -1,13 +1,13 @@
-import { startUserCamera } from "./camera.js?v=20260720-1";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-1";
+import { startUserCamera } from "./camera.js?v=20260720-9";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-9";
 import {
   createDrawingUtils,
   createFaceLandmarker,
   FaceLandmarker
-} from "./face-landmarker.js?v=20260720-1";
-import { analyzeFaceShape } from "./face-analysis.js?v=20260720-1";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-1";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-1";
+} from "./face-landmarker.js?v=20260720-9";
+import { analyzeFaceShape } from "./face-analysis.js?v=20260720-9";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-9";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-9";
 import {
   createCustomerCode,
   createSessionCode,
@@ -17,10 +17,11 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-1";
+} from "./customer-store.js?v=20260720-9";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
+const cameraPanel = document.querySelector(".camera-panel");
 const startButton = document.getElementById("cameraStartButton");
 const statusText = document.getElementById("status");
 const landmarkCountText = document.getElementById("landmarkCount");
@@ -117,6 +118,7 @@ async function enableCamera() {
   const sessionToken = ++cameraSessionToken;
   currentCameraStream = await startUserCamera(video, { facingMode: currentCameraMode });
   resizeCanvasToVideo(canvas, video);
+  cameraPanel?.classList.add("camera-active");
   statusText.textContent = "Đang nhận diện";
   requestAnimationFrame(() => detectFrame(sessionToken));
 }
@@ -133,6 +135,7 @@ function stopCurrentCameraStream() {
 
   video.srcObject = null;
   currentCameraStream = null;
+  cameraPanel?.classList.remove("camera-active");
 }
 
 function detectFrame(sessionToken) {
@@ -680,7 +683,7 @@ function renderCustomers() {
 function loadCustomerRecord(customerCode) {
   const record = loadCustomers().find((item) => item.customer_code === customerCode);
   if (!record) {
-    return;
+    return false;
   }
 
   isLoadingCustomer = true;
@@ -706,6 +709,18 @@ function loadCustomerRecord(customerCode) {
     renderMetricsV2(record.analysis.metrics, record.analysis.quality, record.analysis.diagnostics);
     renderRecommendations(latestRecommendations);
     renderLensRecommendations(latestLensRecommendations);
+  } else {
+    latestAnalysis = null;
+    latestRecommendations = [];
+    lastRenderedShape = "";
+    faceShapeText.textContent = "Đang chờ";
+    renderMetricsV2({
+      lengthToWidth: 0,
+      foreheadToCheek: 0,
+      jawToCheek: 0,
+      jawToForehead: 0,
+      cheekToJaw: 0
+    });
   }
 
   updateCameraStatus(0, record.analysis || null);
@@ -715,6 +730,7 @@ function loadCustomerRecord(customerCode) {
   syncCurrentCustomer("customerSelected", record);
   statusText.textContent = "Đã mở hồ sơ";
   isLoadingCustomer = false;
+  return true;
 }
 
 function showTab(tabId) {
@@ -1094,7 +1110,10 @@ function formatConsultDate(value) {
 
 function ageGroupLabel(value) {
   const labels = {
-    student: "Học sinh/Sinh viên",
+    preschool: "Mầm non",
+    primary: "Tiểu học",
+    secondary: "Trung học",
+    student: "Sinh viên",
     office: "Văn phòng",
     middle_age: "Trung niên",
     senior: "Người lớn tuổi"
@@ -1185,15 +1204,17 @@ customerList.addEventListener("click", (event) => {
   }
 
   if (deleteButton) {
-    deleteCustomer(deleteButton.dataset.deleteCustomer);
+    const deletedCustomerCode = deleteButton.dataset.deleteCustomer;
+    deleteCustomer(deletedCustomerCode);
+    if (deletedCustomerCode === customerCodeInput.value) {
+      startNewCustomer();
+    }
     renderCustomers();
   }
 });
 
 const initialCurrentCustomer = loadCurrentCustomer();
-if (initialCurrentCustomer?.customer_code) {
-  loadCustomerRecord(initialCurrentCustomer.customer_code);
-} else {
+if (!initialCurrentCustomer?.customer_code || !loadCustomerRecord(initialCurrentCustomer.customer_code)) {
   startNewCustomer();
 }
 updateCameraModeButton();
