@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DongDo Optic - Tư vấn gọng kính</title>
-    <link rel="stylesheet" href="./css/styles.css?v=20260720-11" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260720-12" />
   </head>
   <body>
     <main class="app-shell">
@@ -20,10 +20,10 @@
         </div>
 
         <nav class="sidebar-nav" aria-label="Quy trình tư vấn">
-          <button class="tab-button active" type="button" data-tab-target="tab-0">Tab 0 - Hồ sơ</button>
-          <button class="tab-button" type="button" data-tab-target="tab-1">Tab 1 - Nhu cầu</button>
-          <button class="tab-button" type="button" data-tab-target="tab-3">Tab 3 - Camera</button>
-          <button class="tab-button" type="button" data-tab-target="tab-4">Tab 4 - Tư vấn</button>
+          <button class="tab-button active" type="button" data-tab-target="tab-0">Hồ sơ</button>
+          <button class="tab-button" type="button" data-tab-target="tab-1">Nhu cầu</button>
+          <button class="tab-button" type="button" data-tab-target="tab-3">VisionID</button>
+          <button class="tab-button" type="button" data-tab-target="tab-4">Tư vấn</button>
         </nav>
 
         <button class="sidebar-logout" type="button">Đăng xuất</button>
@@ -46,7 +46,7 @@
           <div class="content-title">
             <p class="eyebrow">DongDo Optic</p>
             <h1>Tư vấn chọn gọng kính</h1>
-            <p class="summary">Quy trình tư vấn theo từng tab: hồ sơ, nhu cầu, camera, lời khuyên.</p>
+            <p class="summary">Quy trình tư vấn: hồ sơ, nhu cầu, VisionID và kết luận chọn gọng.</p>
           </div>
           <div class="content-chips">
             <span>Ngoại tuyến</span>
@@ -59,7 +59,7 @@
           <div class="two-column">
             <section class="panel">
               <div class="section-heading">
-                <p class="eyebrow">Tab 0</p>
+                <p class="eyebrow">Hồ sơ</p>
                 <h2>Nhập thông tin và lưu hồ sơ</h2>
               </div>
 
@@ -159,7 +159,7 @@
         <section id="tab-1" class="tab-panel">
           <div class="panel">
             <div class="section-heading">
-              <p class="eyebrow">Tab 1</p>
+              <p class="eyebrow">Nhu cầu</p>
               <h2>Sở thích, tài chính và mục đích sử dụng</h2>
             </div>
             <form id="preferenceForm" class="preference-form">
@@ -216,7 +216,7 @@
               </div>
               <div id="currentCustomerSummary" class="current-customer-summary"></div>
               <div id="lensPreview" class="lens-preview-list">
-                <p class="empty-state">Nhập đơn ở Tab 0 để xem gợi ý nhanh.</p>
+                <p class="empty-state">Nhập đơn ở Hồ sơ để xem gợi ý nhanh.</p>
               </div>
             </section>
             <div class="catalog-note">
@@ -239,7 +239,7 @@
 
             <aside class="inspector">
               <div class="section-heading">
-                <p class="eyebrow">Tab 3</p>
+                <p class="eyebrow">VisionID</p>
                 <h2>Camera và chỉ số</h2>
               </div>
               <label class="guest-toggle">
@@ -273,53 +273,56 @@
                   <option value="diamond">Kim cương</option>
                 </select>
               </label>
-              <div class="camera-status-cards staff-debug">
-                <div class="camera-status-card">
-                  <span>Người trong khung</span>
-                  <strong id="cameraFaceState">0</strong>
-                </div>
-                <div class="camera-status-card">
-                  <span>Độ ổn định</span>
-                  <strong id="cameraStabilityState">Chưa đủ</strong>
-                </div>
-                <div class="camera-status-card">
-                  <span>Tâm khung</span>
-                  <strong id="cameraReadyState">Chưa</strong>
-                </div>
-              </div>
               <p id="cameraGuidance" class="camera-guidance">Bật camera để bắt đầu nhận diện khuôn mặt.</p>
-              <div class="camera-signal-list staff-debug" aria-label="Tín hiệu khung hình">
-                <div>
-                  <span>Căn giữa</span>
-                  <strong id="cameraCenterState">Chưa có</strong>
+              <details class="technical-details staff-debug">
+                <summary>Chi tiết kỹ thuật</summary>
+                <div class="camera-status-cards">
+                  <div class="camera-status-card">
+                    <span>Người trong khung</span>
+                    <strong id="cameraFaceState">0</strong>
+                  </div>
+                  <div class="camera-status-card">
+                    <span>Độ ổn định</span>
+                    <strong id="cameraStabilityState">Chưa đủ</strong>
+                  </div>
+                  <div class="camera-status-card">
+                    <span>Tâm khung</span>
+                    <strong id="cameraReadyState">Chưa</strong>
+                  </div>
                 </div>
-                <div>
-                  <span>Khoảng cách</span>
-                  <strong id="cameraDistanceState">Chưa có</strong>
+                <div class="camera-signal-list" aria-label="Tín hiệu khung hình">
+                  <div>
+                    <span>Căn giữa</span>
+                    <strong id="cameraCenterState">Chưa có</strong>
+                  </div>
+                  <div>
+                    <span>Khoảng cách</span>
+                    <strong id="cameraDistanceState">Chưa có</strong>
+                  </div>
+                  <div>
+                    <span>Độ tin cậy</span>
+                    <strong id="cameraConfidenceState">0%</strong>
+                  </div>
                 </div>
-                <div>
-                  <span>Độ tin cậy</span>
-                  <strong id="cameraConfidenceState">0%</strong>
+                <div class="status-grid">
+                  <div>
+                    <span>Trạng thái</span>
+                    <strong id="status">Chưa khởi tạo</strong>
+                  </div>
+                  <div>
+                    <span>Landmarks</span>
+                    <strong id="landmarkCount">0</strong>
+                  </div>
+                  <div>
+                    <span>Số khuôn mặt</span>
+                    <strong id="faceCount">0</strong>
+                  </div>
+                  <div>
+                    <span>Dạng mặt</span>
+                    <strong id="faceShape">Đang chờ</strong>
+                  </div>
                 </div>
-              </div>
-              <div class="status-grid staff-debug">
-                <div>
-                  <span>Trạng thái</span>
-                  <strong id="status">Chưa khởi tạo</strong>
-                </div>
-                <div>
-                  <span>Landmarks</span>
-                  <strong id="landmarkCount">0</strong>
-                </div>
-                <div>
-                  <span>Số khuôn mặt</span>
-                  <strong id="faceCount">0</strong>
-                </div>
-                <div>
-                  <span>Dạng mặt</span>
-                  <strong id="faceShape">Đang chờ</strong>
-                </div>
-              </div>
+              </details>
               <div class="camera-actions">
                 <button id="cameraStartButton" type="button">Bật camera</button>
                 <button id="analyzeFaceButton" type="button" class="secondary-action" disabled>Phân tích</button>
@@ -328,8 +331,8 @@
             </aside>
           </section>
 
-          <div class="analysis-panel">
-            <div class="metrics-panel staff-debug">
+          <div class="analysis-panel staff-debug">
+            <div class="metrics-panel">
               <div class="section-heading">
                 <p class="eyebrow">Phân tích</p>
                 <h2>Chỉ số khuôn mặt</h2>
@@ -357,14 +360,23 @@
         </section>
 
         <section id="tab-4" class="tab-panel">
+          <section class="consultation-summary-panel">
+            <div class="section-heading">
+              <p class="eyebrow">Kết luận</p>
+              <h2>Tóm tắt tư vấn cho khách</h2>
+            </div>
+            <div id="consultationSummary" class="consultation-summary">
+              <p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để tạo kết luận tư vấn.</p>
+            </div>
+          </section>
           <div class="advice-grid">
             <section class="recommendation-panel">
               <div class="section-heading">
-                <p class="eyebrow">Tab 4</p>
-                <h2>Lời khuyên gọng kính</h2>
+                <p class="eyebrow">Gọng kính</p>
+                <h2>Kiểu gọng nên thử</h2>
               </div>
               <div class="frame-list" id="frameList">
-                <p class="empty-state">Hoàn tất Tab 1 và Tab 3 để nhận gợi ý.</p>
+                <p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để nhận gợi ý.</p>
               </div>
             </section>
 
@@ -374,14 +386,35 @@
                 <h2>Chiết suất nên tư vấn</h2>
               </div>
               <div class="lens-list" id="lensList">
-                <p class="empty-state">Chọn nhu cầu ở Tab 1 để xem gợi ý tròng kính.</p>
+                <p class="empty-state">Nhập đơn kính hoặc chọn nhu cầu rõ ràng để xem gợi ý tròng kính.</p>
               </div>
             </section>
           </div>
+          <section class="feedback-panel">
+            <div class="section-heading">
+              <p class="eyebrow">Góp ý</p>
+              <h2>Cải thiện VisionID</h2>
+            </div>
+            <form id="feedbackForm" class="feedback-form">
+              <label>Loại góp ý
+                <select id="feedbackType">
+                  <option value="ai_wrong">AI đoán chưa đúng</option>
+                  <option value="ux_issue">Khó thao tác</option>
+                  <option value="catalog">Gợi ý sản phẩm chưa phù hợp</option>
+                  <option value="other">Khác</option>
+                </select>
+              </label>
+              <label>Ghi chú
+                <textarea id="feedbackNotes" rows="3" placeholder="VD: AI gợi ý mặt tròn nhưng nhân viên xác nhận trái xoan..."></textarea>
+              </label>
+              <button id="saveFeedbackButton" type="button" class="secondary-action">Lưu góp ý</button>
+              <p id="feedbackStatus" class="feedback-status">Góp ý được lưu cục bộ trên thiết bị để đội ngũ xem lại.</p>
+            </form>
+          </section>
         </section>
       </section>
     </main>
 
-    <script type="module" src="./js/app.mobile.js?v=20260720-11"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260720-12"></script>
   </body>
 </html>

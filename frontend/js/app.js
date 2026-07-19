@@ -1,8 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260720-11";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-11";
-import { analyzeFaceShape, getFaceShapeLabel } from "./face-analysis.js?v=20260720-11";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-11";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-11";
+import { startUserCamera } from "./camera.js?v=20260720-12";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-12";
+import { analyzeFaceShape, getFaceShapeLabel } from "./face-analysis.js?v=20260720-12";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-12";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-12";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +12,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-11";
+} from "./customer-store.js?v=20260720-12";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -71,6 +71,11 @@ const framePreferenceInput = document.getElementById("framePreference");
 const lensList = document.getElementById("lensList");
 const lensPreview = document.getElementById("lensPreview");
 const currentCustomerSummary = document.getElementById("currentCustomerSummary");
+const consultationSummary = document.getElementById("consultationSummary");
+const feedbackTypeInput = document.getElementById("feedbackType");
+const feedbackNotesInput = document.getElementById("feedbackNotes");
+const saveFeedbackButton = document.getElementById("saveFeedbackButton");
+const feedbackStatus = document.getElementById("feedbackStatus");
 
 const canvasContext = canvas.getContext("2d");
 
@@ -109,6 +114,8 @@ const FACE_SHAPE_ICONS = {
   unknown: "?"
 };
 
+const FEEDBACK_STORAGE_KEY = "dongdo_optic_feedback";
+
 function ensureCurrentSessionCode() {
   if (!currentSessionCode) {
     currentSessionCode = createSessionCode();
@@ -123,7 +130,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-11");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-12");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -830,7 +837,12 @@ function renderRecommendations(frames) {
     .join("");
 }
 
-function renderLensRecommendations(lenses) {
+function renderLensRecommendations(lenses, shouldShow = true) {
+  if (!shouldShow || !lenses.length) {
+    lensList.innerHTML = `<p class="empty-state">Nhập đơn kính ở Hồ sơ hoặc chọn nhu cầu rõ hơn để xem gợi ý tròng kính.</p>`;
+    return;
+  }
+
   lensList.innerHTML = lenses
     .map(
       (lens) => `
@@ -1118,6 +1130,7 @@ function loadCustomerRecord(customerCode) {
   }
 
   updateCameraStatus(0, record.analysis || null);
+  renderConsultationSummary();
 
   currentSessionCode = record.session_code || createSessionCode();
   ensureCurrentSessionCode();
@@ -1291,19 +1304,22 @@ function updateAdvice() {
     prescriptionLevelInput.value = preferences.prescription_level;
   }
   const lensAdvice = analyzeLensNeeds(preferences);
-  latestLensRecommendations = getLensRecommendations(preferences);
-  renderLensRecommendations(latestLensRecommendations);
+  const shouldShowLensAdvice = hasActionableLensData(preferences, lensAdvice);
+  latestLensRecommendations = shouldShowLensAdvice ? getLensRecommendations(preferences) : [];
+  renderLensRecommendations(latestLensRecommendations, shouldShowLensAdvice);
   renderLensPreview(lensAdvice, latestLensRecommendations);
   renderCurrentCustomerSummary(readCustomerSnapshot());
 
   if (!confirmedFaceShape) {
     latestRecommendations = [];
-    frameList.innerHTML = `<p class="empty-state">Hoàn tất Tab 3 và xác nhận dạng mặt để lấy gợi ý gọng.</p>`;
+    frameList.innerHTML = `<p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để lấy gợi ý gọng.</p>`;
+    renderConsultationSummary();
     return;
   }
 
   latestRecommendations = getFrameRecommendations(confirmedFaceShape);
   renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences));
+  renderConsultationSummary();
 }
 
 function renderLensPreview(lensAdvice, lenses = []) {
@@ -1316,7 +1332,7 @@ function renderLensPreview(lensAdvice, lenses = []) {
 
   if (!hasPrescriptionData && !hasWarnings) {
     lensPreview.innerHTML = `
-      <p class="empty-state">Nhập PD, SPH, CYL ở Tab 0 để hệ thống tự đề xuất chiết suất tròng kính.</p>
+      <p class="empty-state">Nhập PD, SPH, CYL ở Hồ sơ để hệ thống tự đề xuất chiết suất tròng kính.</p>
     `;
     return;
   }
@@ -1359,6 +1375,88 @@ function renderLensPreview(lensAdvice, lenses = []) {
   `;
 }
 
+function hasActionableLensData(preferences, lensAdvice) {
+  const hasPrescriptionData = Number(lensAdvice.totalPower) > 0;
+  const hasSpecificPurpose = !["daily", "fashion"].includes(preferences.purpose);
+  const hasExplicitLevel = preferences.prescription_level && preferences.prescription_level !== "unknown";
+  return hasPrescriptionData || hasSpecificPurpose || hasExplicitLevel || preferences.budget === "premium";
+}
+
+function renderConsultationSummary() {
+  if (!consultationSummary) {
+    return;
+  }
+
+  if (!confirmedFaceShape) {
+    consultationSummary.innerHTML = `
+      <p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để tạo kết luận tư vấn.</p>
+    `;
+    return;
+  }
+
+  const customer = readCustomerSnapshot();
+  const preferences = readPreferences();
+  const topFrames = (latestRecommendations.length ? latestRecommendations : getFrameRecommendations(confirmedFaceShape))
+    .slice(0, 3);
+  const lensLine = latestLensRecommendations[0]
+    ? `${latestLensRecommendations[0].brand} ${latestLensRecommendations[0].line}`
+    : "Chưa cần chốt tròng, bổ sung đơn kính nếu có.";
+
+  consultationSummary.innerHTML = `
+    <div class="summary-hero">
+      <div class="face-icon large">${FACE_SHAPE_ICONS[confirmedFaceShape] || "?"}</div>
+      <div>
+        <span>Kết luận VisionID</span>
+        <strong>${getFaceShapeLabel(confirmedFaceShape)}</strong>
+        <p>${customer.customer_name || "Khách hàng"} nên thử các form gọng cân bằng với nhu cầu ${purposeLabel(preferences.purpose).toLowerCase()}.</p>
+      </div>
+    </div>
+    <div class="summary-grid">
+      <div><span>Dạng mặt AI</span><strong>${latestAiFaceShape ? getFaceShapeLabel(latestAiFaceShape) : "Chưa có"}</strong></div>
+      <div><span>Nhân viên xác nhận</span><strong>${getFaceShapeLabel(confirmedFaceShape)}</strong></div>
+      <div><span>Tròng kính</span><strong>${lensLine}</strong></div>
+      <div><span>Trạng thái</span><strong>${statusLabel(customer.customer_status)}</strong></div>
+    </div>
+    <div class="summary-picks">
+      ${topFrames.map((frame) => `<span>${frame.name}</span>`).join("")}
+    </div>
+  `;
+}
+
+function saveFeedback() {
+  const feedback = {
+    id: `FB-${Date.now()}`,
+    type: feedbackTypeInput?.value || "other",
+    notes: feedbackNotesInput?.value.trim() || "",
+    customer_code: customerCodeInput.value || "",
+    faceShape_ai: latestAiFaceShape || "",
+    faceShape_confirmed: confirmedFaceShape || "",
+    status: customerStatusInput.value || "waiting",
+    created_at: new Date().toISOString()
+  };
+
+  const records = loadFeedbackRecords();
+  records.unshift(feedback);
+  localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify(records.slice(0, 200)));
+
+  if (feedbackNotesInput) {
+    feedbackNotesInput.value = "";
+  }
+
+  if (feedbackStatus) {
+    feedbackStatus.textContent = "Đã lưu góp ý cục bộ cho hồ sơ hiện tại.";
+  }
+}
+
+function loadFeedbackRecords() {
+  try {
+    const records = JSON.parse(localStorage.getItem(FEEDBACK_STORAGE_KEY) || "[]");
+    return Array.isArray(records) ? records : [];
+  } catch {
+    return [];
+  }
+}
+
 function enrichFrameRecommendations(frames, preferences) {
   return frames.map((frame) => {
     const extra = [];
@@ -1396,7 +1494,8 @@ function resetAdviceState() {
     jawToForehead: 0,
     cheekToJaw: 0
   });
-  frameList.innerHTML = `<p class="empty-state">Hoàn tất Tab 3 để lấy dữ liệu khuôn mặt và gợi ý gọng.</p>`;
+  frameList.innerHTML = `<p class="empty-state">Hoàn tất VisionID để lấy dữ liệu khuôn mặt và gợi ý gọng.</p>`;
+  renderConsultationSummary();
   updateAdvice();
 }
 
@@ -1600,6 +1699,10 @@ if (customerViewToggle) {
   customerViewToggle.addEventListener("change", () => {
     document.getElementById("tab-3")?.classList.toggle("guest-view", customerViewToggle.checked);
   });
+}
+
+if (saveFeedbackButton) {
+  saveFeedbackButton.addEventListener("click", saveFeedback);
 }
 
 startButton.addEventListener("click", async () => {
