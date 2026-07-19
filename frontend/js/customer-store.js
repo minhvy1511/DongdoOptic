@@ -120,6 +120,8 @@ export function normalizeCustomerRecord(record) {
     prescription: record.prescription || {},
     preferences: record.preferences || {},
     analysis: record.analysis || null,
+    faceShape_ai: record.faceShape_ai || record.analysis?.faceShape_ai || record.analysis?.shape || "",
+    faceShape_confirmed: record.faceShape_confirmed || record.analysis?.faceShape_confirmed || "",
     recommendations: Array.isArray(record.recommendations) ? record.recommendations : [],
     lens_recommendations: Array.isArray(record.lens_recommendations) ? record.lens_recommendations : [],
     snapshot: record.snapshot || {},

@@ -1,8 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260720-9";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-9";
-import { analyzeFaceShape } from "./face-analysis.js?v=20260720-9";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-9";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-9";
+import { startUserCamera } from "./camera.js?v=20260720-11";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-11";
+import { analyzeFaceShape, getFaceShapeLabel } from "./face-analysis.js?v=20260720-11";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-11";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-11";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +12,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-9";
+} from "./customer-store.js?v=20260720-11";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -33,7 +33,15 @@ const cameraDistanceState = document.getElementById("cameraDistanceState");
 const cameraConfidenceState = document.getElementById("cameraConfidenceState");
 const cameraModeButton = document.getElementById("cameraModeButton");
 const cameraModeHint = document.getElementById("cameraModeHint");
+const analyzeFaceButton = document.getElementById("analyzeFaceButton");
 const markMeasuredButton = document.getElementById("markMeasuredButton");
+const confidenceNotice = document.getElementById("confidenceNotice");
+const confirmedFaceShapeInput = document.getElementById("confirmedFaceShape");
+const customerViewToggle = document.getElementById("customerViewToggle");
+const customerResultCard = document.getElementById("customerResultCard");
+const customerFaceShape = document.getElementById("customerFaceShape");
+const customerResultSummary = document.getElementById("customerResultSummary");
+const faceShapeIcon = document.getElementById("faceShapeIcon");
 const customerCodeInput = document.getElementById("customerCode");
 const customerNameInput = document.getElementById("customerName");
 const customerPhoneInput = document.getElementById("customerPhone");
@@ -72,6 +80,8 @@ let FaceLandmarkerApi;
 let lastVideoTime = -1;
 let lastRenderedShape = "";
 let latestAnalysis = null;
+let latestAiFaceShape = "";
+let confirmedFaceShape = "";
 let latestRecommendations = [];
 let latestLensRecommendations = [];
 let phoneLookupTimer = null;
@@ -82,6 +92,22 @@ let analysisHistory = [];
 let currentCameraMode = getDefaultCameraMode();
 let currentCameraStream = null;
 let cameraSessionToken = 0;
+let isAnalyzingFace = false;
+
+const CONFIDENCE_THRESHOLDS = {
+  high: 0.8,
+  medium: 0.5
+};
+
+const FACE_SHAPE_ICONS = {
+  oval: "OV",
+  round: "TR",
+  square: "VU",
+  long: "CN",
+  heart: "TT",
+  diamond: "KC",
+  unknown: "?"
+};
 
 function ensureCurrentSessionCode() {
   if (!currentSessionCode) {
@@ -97,7 +123,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-10");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-11");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -118,6 +144,9 @@ async function enableCamera() {
   resizeCanvasToVideo(canvas, video);
   cameraPanel?.classList.add("camera-active");
   statusText.textContent = "Đang nhận diện";
+  if (analyzeFaceButton) {
+    analyzeFaceButton.disabled = false;
+  }
   requestAnimationFrame(() => detectFrame(sessionToken));
 }
 
@@ -134,6 +163,9 @@ function stopCurrentCameraStream() {
   video.srcObject = null;
   currentCameraStream = null;
   cameraPanel?.classList.remove("camera-active");
+  if (analyzeFaceButton) {
+    analyzeFaceButton.disabled = true;
+  }
 }
 
 function detectFrame(sessionToken) {
@@ -162,6 +194,7 @@ function drawResults(results) {
 
   if (!faces.length) {
     faceShapeText.textContent = "Không thấy mặt";
+    renderConfidenceNotice(null, { level: "low", percent: 0 }, false);
     updateCameraStatus(0, null);
     return;
   }
@@ -205,14 +238,282 @@ function drawResults(results) {
 }
 
 function renderAnalysis(analysis) {
-  latestAnalysis = analysis;
-  faceShapeText.textContent = analysis.label;
-  renderMetricsV2(analysis.metrics, analysis.quality, analysis.diagnostics);
-
-  if (analysis.shape !== lastRenderedShape) {
-    lastRenderedShape = analysis.shape;
-    updateAdvice();
+  if (confirmedFaceShape && !isAnalyzingFace) {
+    return;
   }
+
+  latestAnalysis = analysis;
+  latestAiFaceShape = analysis.shape || "unknown";
+  const confidenceState = getConfidenceState(analysis);
+  faceShapeText.textContent = confidenceState.level === "low" ? "Không đủ dữ liệu" : analysis.label;
+  renderConfidenceNotice(analysis, confidenceState, false);
+  renderCustomerResult();
+  renderMetricsV2(analysis.metrics, analysis.quality, analysis.diagnostics);
+}
+
+async function analyzeFaceSequence() {
+  if (isAnalyzingFace) {
+    return;
+  }
+
+  if (!video.srcObject) {
+    statusText.textContent = "Cần bật camera trước";
+    return;
+  }
+
+  isAnalyzingFace = true;
+  const startedAt = performance.now();
+  setAnalyzingState(true);
+
+  try {
+    if (!faceLandmarker) {
+      await initialize();
+    }
+
+    const samples = await withTimeout(captureAnalysisSamples(8, 1500), 5000);
+    const finalAnalysis = buildStableAnalysis(samples);
+
+    if (!finalAnalysis) {
+      clearConfirmedFaceShape();
+      statusText.textContent = "Không đủ dữ liệu";
+      renderConfidenceNotice(null, { level: "low", percent: 0 }, true);
+      return;
+    }
+
+    const elapsed = Math.round(performance.now() - startedAt);
+    console.debug(`[VisionID] Face analysis finished in ${elapsed}ms`, {
+      frames: samples.length,
+      keptFrames: finalAnalysis.sample_count,
+      confidence: finalAnalysis.quality?.confidence,
+      aiShape: finalAnalysis.faceShape_ai
+    });
+
+    latestAnalysis = finalAnalysis;
+    latestAiFaceShape = finalAnalysis.faceShape_ai;
+    renderMetricsV2(finalAnalysis.metrics, finalAnalysis.quality, finalAnalysis.diagnostics);
+    applyAnalysisConfidence(finalAnalysis, true);
+    syncCurrentCustomer("customerUpdated");
+  } catch (error) {
+    console.error(error);
+    statusText.textContent = "Xử lý quá lâu, vui lòng thử lại";
+    renderConfidenceNotice(null, { level: "low", percent: 0 }, true, "Xử lý quá lâu, vui lòng thử lại.");
+  } finally {
+    setAnalyzingState(false);
+  }
+}
+
+async function captureAnalysisSamples(targetFrames, durationMs) {
+  const samples = [];
+  const delayMs = Math.max(80, Math.round(durationMs / targetFrames));
+
+  for (let index = 0; index < targetFrames; index += 1) {
+    const results = faceLandmarker.detectForVideo(video, performance.now());
+    const faces = results.faceLandmarks ?? [];
+    if (faces.length === 1) {
+      const analysis = analyzeFaceShape(faces[0]);
+      samples.push(analysis);
+    }
+
+    if (index < targetFrames - 1) {
+      await delay(delayMs);
+    }
+  }
+
+  return samples;
+}
+
+function buildStableAnalysis(samples) {
+  const validSamples = samples.filter((sample) => {
+    const confidence = Number(sample?.quality?.confidence || 0);
+    return sample?.shape && sample.shape !== "unknown" && confidence >= 0.35;
+  });
+
+  if (!validSamples.length) {
+    return null;
+  }
+
+  const averageConfidence = average(validSamples.map((sample) => sample.quality.confidence));
+  const keptSamples = validSamples.filter((sample) => sample.quality.confidence >= Math.max(0.35, averageConfidence - 0.22));
+  const usableSamples = keptSamples.length ? keptSamples : validSamples;
+  const shape = mode(usableSamples.map((sample) => sample.shape));
+  const shapeSamples = usableSamples.filter((sample) => sample.shape === shape);
+  const metricSource = shapeSamples.length ? shapeSamples : usableSamples;
+  const metrics = averageMetrics(metricSource.map((sample) => sample.metrics));
+  const quality = averageQuality(usableSamples.map((sample) => sample.quality));
+  const baseAnalysis = analyzeFaceShapeFromMetrics(shape, metrics, quality);
+  const diagnostics = {
+    ...baseAnalysis.diagnostics,
+    warnings: getConfidenceReasons({ ...baseAnalysis, quality }).slice(0, 3),
+    confidenceBand: getConfidenceBandLabel(quality.confidence),
+    sampleCount: usableSamples.length,
+    totalSamples: samples.length
+  };
+
+  return {
+    ...baseAnalysis,
+    shape,
+    label: getFaceShapeLabel(shape),
+    quality,
+    diagnostics,
+    warnings: diagnostics.warnings,
+    faceShape_ai: shape,
+    faceShape_confirmed: ""
+  };
+}
+
+function analyzeFaceShapeFromMetrics(shape, metrics, quality) {
+  const diagnostics = {
+    confidenceBand: getConfidenceBandLabel(quality.confidence),
+    distanceLabel: getDistanceLabel(quality.coverage || 0),
+    centerLabel: getCenterLabelV2(quality),
+    ready: quality.confidence >= CONFIDENCE_THRESHOLDS.medium,
+    readinessScore: quality.confidence || 0,
+    warnings: [],
+    summary: "Đã tổng hợp nhiều khung hình."
+  };
+
+  return {
+    shape,
+    label: getFaceShapeLabel(shape),
+    metrics,
+    quality,
+    diagnostics,
+    warnings: diagnostics.warnings
+  };
+}
+
+function applyAnalysisConfidence(analysis, shouldDefaultConfirmed) {
+  const confidenceState = getConfidenceState(analysis);
+
+  if (confidenceState.level === "low") {
+    clearConfirmedFaceShape();
+    faceShapeText.textContent = "Không đủ dữ liệu";
+    statusText.textContent = "Không đủ dữ liệu";
+  } else {
+    faceShapeText.textContent = analysis.label;
+    if (shouldDefaultConfirmed) {
+      confirmedFaceShape = analysis.shape;
+      if (confirmedFaceShapeInput) {
+        confirmedFaceShapeInput.value = analysis.shape;
+        confirmedFaceShapeInput.disabled = false;
+      }
+      latestAnalysis.faceShape_confirmed = confirmedFaceShape;
+    }
+    statusText.textContent = confidenceState.level === "high" ? "Đã phân tích" : "Cần xác nhận";
+  }
+
+  renderConfidenceNotice(analysis, confidenceState, true);
+  renderCustomerResult();
+  if (markMeasuredButton) {
+    markMeasuredButton.disabled = !confirmedFaceShape;
+  }
+  updateAdvice();
+}
+
+function setAnalyzingState(isActive) {
+  isAnalyzingFace = isActive;
+  if (analyzeFaceButton) {
+    analyzeFaceButton.disabled = isActive || !video.srcObject;
+    analyzeFaceButton.classList.toggle("is-loading", isActive);
+    analyzeFaceButton.textContent = isActive ? "Đang phân tích..." : "Phân tích";
+  }
+  statusText.textContent = isActive ? "Đang phân tích khuôn mặt..." : statusText.textContent;
+}
+
+function getConfidenceState(analysis) {
+  const confidence = Number(analysis?.quality?.confidence || 0);
+  const percent = Math.round(confidence * 100);
+
+  if (confidence >= CONFIDENCE_THRESHOLDS.high) {
+    return { level: "high", percent, label: "Độ tin cậy cao" };
+  }
+
+  if (confidence >= CONFIDENCE_THRESHOLDS.medium) {
+    return { level: "medium", percent, label: "Độ tin cậy trung bình" };
+  }
+
+  return { level: "low", percent, label: "Không đủ dữ liệu" };
+}
+
+function renderConfidenceNotice(analysis, confidenceState, finalResult, overrideMessage = "") {
+  if (!confidenceNotice) {
+    return;
+  }
+
+  const reasons = analysis ? getConfidenceReasons(analysis) : ["Đưa mặt vào giữa khung, đủ sáng và nhìn thẳng camera."];
+  const messages = {
+    high: `Độ tin cậy ${confidenceState.percent}% - có thể dùng để tư vấn.`,
+    medium: `Độ tin cậy ${confidenceState.percent}% - nên chụp lại hoặc xác nhận thủ công.`,
+    low: `Không đủ dữ liệu để xác định, vui lòng chụp lại.`
+  };
+
+  confidenceNotice.className = `confidence-notice ${confidenceState.level}`;
+  confidenceNotice.innerHTML = `
+    <strong>${overrideMessage || messages[confidenceState.level]}</strong>
+    <span>${reasons.join(" ")}</span>
+    ${finalResult ? `<em>Kết quả được tổng hợp từ nhiều khung hình.</em>` : ""}
+  `;
+}
+
+function getConfidenceReasons(analysis) {
+  const quality = analysis?.quality || {};
+  const diagnostics = analysis?.diagnostics || {};
+  const reasons = [];
+
+  if ((quality.coverage || 0) < 0.08) {
+    reasons.push("Khuôn mặt đang quá xa camera.");
+  } else if ((quality.coverage || 0) > 0.4) {
+    reasons.push("Khuôn mặt đang quá gần camera.");
+  }
+
+  if ((quality.centerOffsetX || 0) > 0.16 || (quality.centerOffsetY || 0) > 0.16) {
+    reasons.push("Mặt chưa nằm giữa khung.");
+  }
+
+  if ((quality.symmetryScore || 0) < 0.52) {
+    reasons.push("Có thể đang nghiêng mặt hoặc bị che một phần.");
+  }
+
+  if (Array.isArray(diagnostics.warnings)) {
+    diagnostics.warnings.forEach((warning) => {
+      if (warning && !reasons.includes(warning)) {
+        reasons.push(warning);
+      }
+    });
+  }
+
+  return reasons.length ? reasons.slice(0, 3) : ["Khung hình đủ sáng, nhìn thẳng và giữ yên để kết quả ổn định hơn."];
+}
+
+function renderCustomerResult() {
+  if (!customerFaceShape || !customerResultSummary || !faceShapeIcon) {
+    return;
+  }
+
+  const shape = confirmedFaceShape || "";
+  const confidenceState = latestAnalysis ? getConfidenceState(latestAnalysis) : { level: "low" };
+  const canShowAiShape = latestAiFaceShape && confidenceState.level !== "low";
+  const aiLabel = canShowAiShape ? getFaceShapeLabel(latestAiFaceShape) : "Chưa đủ dữ liệu";
+  const confirmedLabel = shape ? getFaceShapeLabel(shape) : "Chưa xác nhận";
+  customerFaceShape.textContent = confirmedLabel;
+  faceShapeIcon.textContent = FACE_SHAPE_ICONS[shape || latestAiFaceShape || "unknown"] || "?";
+  customerResultSummary.textContent = shape
+    ? `AI gợi ý: ${aiLabel}. Nhân viên đã xác nhận: ${confirmedLabel}.`
+    : `AI gợi ý: ${aiLabel}. Cần xác nhận trước khi tư vấn gọng.`;
+  customerResultCard?.classList.toggle("has-result", Boolean(shape));
+}
+
+function clearConfirmedFaceShape() {
+  confirmedFaceShape = "";
+  if (confirmedFaceShapeInput) {
+    confirmedFaceShapeInput.value = "";
+    confirmedFaceShapeInput.disabled = !latestAnalysis;
+  }
+  if (latestAnalysis) {
+    latestAnalysis.faceShape_confirmed = "";
+  }
+  renderCustomerResult();
+  updateAdvice();
 }
 
 function recordAnalysisSnapshot(analysis, faceCount) {
@@ -259,7 +560,9 @@ function updateCameraStatus(faceCount, analysis) {
   }
 
   if (cameraConfidenceState) {
-    cameraConfidenceState.textContent = diagnostics.confidenceBand || `${Math.round((quality.confidence || 0) * 100)}%`;
+    const confidence = Math.round((quality.confidence || 0) * 100);
+    const band = diagnostics.confidenceBand || getConfidenceBandLabel(quality.confidence || 0);
+    cameraConfidenceState.textContent = confidence ? `${confidence}% - ${band}` : "0%";
   }
 
   if (cameraGuidance) {
@@ -267,7 +570,7 @@ function updateCameraStatus(faceCount, analysis) {
   }
 
   if (markMeasuredButton) {
-    markMeasuredButton.disabled = !ready;
+    markMeasuredButton.disabled = !confirmedFaceShape;
   }
 }
 
@@ -590,6 +893,67 @@ function clamp01(value) {
   return Math.min(1, Math.max(0, value));
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function withTimeout(promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Face analysis timeout")), timeoutMs);
+    })
+  ]);
+}
+
+function average(values) {
+  const numericValues = values.filter((value) => Number.isFinite(value));
+  return numericValues.length
+    ? numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length
+    : 0;
+}
+
+function mode(values) {
+  const counts = values.reduce((accumulator, value) => {
+    accumulator[value] = (accumulator[value] || 0) + 1;
+    return accumulator;
+  }, {});
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || "unknown";
+}
+
+function averageMetrics(metricsListValue) {
+  return {
+    lengthToWidth: average(metricsListValue.map((metrics) => metrics.lengthToWidth)),
+    foreheadToCheek: average(metricsListValue.map((metrics) => metrics.foreheadToCheek)),
+    jawToCheek: average(metricsListValue.map((metrics) => metrics.jawToCheek)),
+    jawToForehead: average(metricsListValue.map((metrics) => metrics.jawToForehead)),
+    cheekToJaw: average(metricsListValue.map((metrics) => metrics.cheekToJaw))
+  };
+}
+
+function averageQuality(qualityList) {
+  return {
+    centerOffsetX: average(qualityList.map((quality) => quality.centerOffsetX)),
+    centerOffsetY: average(qualityList.map((quality) => quality.centerOffsetY)),
+    coverage: average(qualityList.map((quality) => quality.coverage)),
+    symmetryScore: average(qualityList.map((quality) => quality.symmetryScore)),
+    confidence: average(qualityList.map((quality) => quality.confidence)),
+    faceBox: qualityList.at(-1)?.faceBox || null
+  };
+}
+
+function getConfidenceBandLabel(confidence = 0) {
+  if (confidence >= CONFIDENCE_THRESHOLDS.high) {
+    return "Cao";
+  }
+
+  if (confidence >= CONFIDENCE_THRESHOLDS.medium) {
+    return "Trung bình";
+  }
+
+  return "Thấp";
+}
+
 function startNewCustomer() {
   customerCodeInput.value = createCustomerCode();
   currentSessionCode = createSessionCode();
@@ -605,7 +969,15 @@ function startNewCustomer() {
   setPrescriptionSectionVisible(false);
   clearPrescriptionInputs();
   analysisHistory = [];
+  latestAiFaceShape = "";
+  confirmedFaceShape = "";
+  if (confirmedFaceShapeInput) {
+    confirmedFaceShapeInput.value = "";
+    confirmedFaceShapeInput.disabled = true;
+  }
   updateCameraStatus(0, null);
+  renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Chưa có dữ liệu phân tích.");
+  renderCustomerResult();
   resetAdviceState();
   syncCurrentCustomer("customerSelected");
   statusText.textContent = "Hồ sơ mới";
@@ -627,6 +999,8 @@ function saveCurrentCustomer() {
     prescription: readPrescriptionData(),
     preferences: readPreferences(),
     analysis: latestAnalysis,
+    faceShape_ai: latestAiFaceShape || latestAnalysis?.faceShape_ai || latestAnalysis?.shape || "",
+    faceShape_confirmed: confirmedFaceShape || latestAnalysis?.faceShape_confirmed || "",
     recommendations: latestRecommendations,
     lens_recommendations: latestLensRecommendations,
     snapshot: {
@@ -653,7 +1027,9 @@ function renderCustomers() {
 
   customerList.innerHTML = records
     .map((record) => {
-      const label = record.analysis?.label || "Chưa phân tích";
+      const label = record.faceShape_confirmed
+        ? getFaceShapeLabel(record.faceShape_confirmed)
+        : (record.analysis?.label || "Chưa phân tích");
       const purpose = purposeLabel(record.preferences?.purpose);
       const rxTag = record.has_prescription ? "Có đơn kính" : "Chưa có đơn kính";
       const status = statusLabel(record.customer_status);
@@ -701,17 +1077,37 @@ function loadCustomerRecord(customerCode) {
 
   if (record.analysis) {
     latestAnalysis = record.analysis;
-    latestRecommendations = record.recommendations || getFrameRecommendations(record.analysis.shape);
+    latestAiFaceShape = record.faceShape_ai || record.analysis.faceShape_ai || record.analysis.shape || "";
+    confirmedFaceShape = record.faceShape_confirmed || record.analysis.faceShape_confirmed || "";
+    latestAnalysis.faceShape_ai = latestAiFaceShape;
+    latestAnalysis.faceShape_confirmed = confirmedFaceShape;
+    latestRecommendations = record.recommendations?.length
+      ? record.recommendations
+      : (confirmedFaceShape ? getFrameRecommendations(confirmedFaceShape) : []);
     latestLensRecommendations = record.lens_recommendations || getLensRecommendations(readPreferences());
-    faceShapeText.textContent = record.analysis.label;
+    faceShapeText.textContent = confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : record.analysis.label;
+    if (confirmedFaceShapeInput) {
+      confirmedFaceShapeInput.value = confirmedFaceShape;
+      confirmedFaceShapeInput.disabled = false;
+    }
     renderMetricsV2(record.analysis.metrics, record.analysis.quality, record.analysis.diagnostics);
+    renderConfidenceNotice(record.analysis, getConfidenceState(record.analysis), true);
+    renderCustomerResult();
     renderRecommendations(latestRecommendations);
     renderLensRecommendations(latestLensRecommendations);
   } else {
     latestAnalysis = null;
+    latestAiFaceShape = record.faceShape_ai || "";
+    confirmedFaceShape = record.faceShape_confirmed || "";
     latestRecommendations = [];
     lastRenderedShape = "";
     faceShapeText.textContent = "Đang chờ";
+    if (confirmedFaceShapeInput) {
+      confirmedFaceShapeInput.value = confirmedFaceShape;
+      confirmedFaceShapeInput.disabled = !latestAiFaceShape;
+    }
+    renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Chưa có dữ liệu phân tích.");
+    renderCustomerResult();
     renderMetricsV2({
       lengthToWidth: 0,
       foreheadToCheek: 0,
@@ -768,7 +1164,12 @@ function readCustomerSnapshot() {
     frame_width_mm: parseOptionalNumber(frameWidthMmInput.value),
     has_prescription: hasPrescriptionInput.checked,
     prescription: readPrescriptionData(),
-    preferences: readPreferences()
+    preferences: readPreferences(),
+    analysis: latestAnalysis,
+    faceShape_ai: latestAiFaceShape || latestAnalysis?.faceShape_ai || latestAnalysis?.shape || "",
+    faceShape_confirmed: confirmedFaceShape || latestAnalysis?.faceShape_confirmed || "",
+    recommendations: latestRecommendations,
+    lens_recommendations: latestLensRecommendations
   };
 }
 
@@ -895,14 +1296,13 @@ function updateAdvice() {
   renderLensPreview(lensAdvice, latestLensRecommendations);
   renderCurrentCustomerSummary(readCustomerSnapshot());
 
-  if (!latestAnalysis) {
+  if (!confirmedFaceShape) {
     latestRecommendations = [];
-    frameList.innerHTML = `<p class="empty-state">Hoàn tất Tab 3 để lấy dữ liệu khuôn mặt và gợi ý gọng.</p>`;
+    frameList.innerHTML = `<p class="empty-state">Hoàn tất Tab 3 và xác nhận dạng mặt để lấy gợi ý gọng.</p>`;
     return;
   }
 
-  const shape = latestAnalysis.shape || "oval";
-  latestRecommendations = getFrameRecommendations(shape);
+  latestRecommendations = getFrameRecommendations(confirmedFaceShape);
   renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences));
 }
 
@@ -978,10 +1378,17 @@ function enrichFrameRecommendations(frames, preferences) {
 
 function resetAdviceState() {
   latestAnalysis = null;
+  latestAiFaceShape = "";
+  confirmedFaceShape = "";
   latestRecommendations = [];
   latestLensRecommendations = [];
   lastRenderedShape = "";
   faceShapeText.textContent = "Đang chờ";
+  if (confirmedFaceShapeInput) {
+    confirmedFaceShapeInput.value = "";
+    confirmedFaceShapeInput.disabled = true;
+  }
+  renderCustomerResult();
   renderMetricsV2({
     lengthToWidth: 0,
     foreheadToCheek: 0,
@@ -994,7 +1401,8 @@ function resetAdviceState() {
 }
 
 function markCustomerAsMeasured() {
-  if (!latestAnalysis) {
+  if (!confirmedFaceShape) {
+    statusText.textContent = "Cần xác nhận dạng mặt trước";
     return;
   }
 
@@ -1165,6 +1573,33 @@ if (markMeasuredButton) {
 
 if (cameraModeButton) {
   cameraModeButton.addEventListener("click", toggleCameraMode);
+}
+
+if (analyzeFaceButton) {
+  analyzeFaceButton.addEventListener("click", analyzeFaceSequence);
+}
+
+if (confirmedFaceShapeInput) {
+  confirmedFaceShapeInput.addEventListener("change", () => {
+    confirmedFaceShape = confirmedFaceShapeInput.value;
+    if (latestAnalysis) {
+      latestAnalysis.faceShape_ai = latestAiFaceShape || latestAnalysis.shape || "";
+      latestAnalysis.faceShape_confirmed = confirmedFaceShape;
+    }
+    faceShapeText.textContent = confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : "Chưa xác nhận";
+    renderCustomerResult();
+    updateAdvice();
+    syncCurrentCustomer("customerUpdated");
+    if (markMeasuredButton) {
+      markMeasuredButton.disabled = !confirmedFaceShape;
+    }
+  });
+}
+
+if (customerViewToggle) {
+  customerViewToggle.addEventListener("change", () => {
+    document.getElementById("tab-3")?.classList.toggle("guest-view", customerViewToggle.checked);
+  });
 }
 
 startButton.addEventListener("click", async () => {

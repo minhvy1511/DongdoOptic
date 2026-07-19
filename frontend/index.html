@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DongDo Optic - Tư vấn gọng kính</title>
-    <link rel="stylesheet" href="./css/styles.css?v=20260720-10" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260720-11" />
   </head>
   <body>
     <main class="app-shell">
@@ -234,6 +234,7 @@
               </div>
               <video id="webcam" autoplay playsinline muted></video>
               <canvas id="overlay"></canvas>
+              <p class="privacy-note">Ảnh được xử lý trực tiếp trên thiết bị, không lưu trữ hay gửi lên máy chủ.</p>
             </div>
 
             <aside class="inspector">
@@ -241,11 +242,38 @@
                 <p class="eyebrow">Tab 3</p>
                 <h2>Camera và chỉ số</h2>
               </div>
+              <label class="guest-toggle">
+                <input id="customerViewToggle" type="checkbox">
+                <span>Chế độ khách xem</span>
+              </label>
               <div class="camera-toolbar">
                 <button id="cameraModeButton" type="button" class="camera-mode-button" aria-pressed="false">Camera trước</button>
                 <span id="cameraModeHint" class="camera-mode-hint">Ưu tiên camera sau trên điện thoại</span>
               </div>
-              <div class="camera-status-cards">
+              <div class="customer-result-card" id="customerResultCard" aria-live="polite">
+                <div class="face-icon" id="faceShapeIcon">?</div>
+                <div>
+                  <span>Dạng mặt tư vấn</span>
+                  <strong id="customerFaceShape">Chưa có kết quả</strong>
+                  <p id="customerResultSummary">Bấm Phân tích để chốt kết quả trước khi tư vấn gọng.</p>
+                </div>
+              </div>
+              <div id="confidenceNotice" class="confidence-notice neutral" aria-live="polite">
+                Chưa có dữ liệu phân tích.
+              </div>
+              <label class="confirm-shape-control">
+                <span>Xác nhận dạng mặt</span>
+                <select id="confirmedFaceShape" disabled>
+                  <option value="">Chưa xác nhận</option>
+                  <option value="oval">Oval / Trái xoan</option>
+                  <option value="round">Tròn</option>
+                  <option value="square">Vuông</option>
+                  <option value="long">Chữ nhật / Dài</option>
+                  <option value="heart">Trái tim</option>
+                  <option value="diamond">Kim cương</option>
+                </select>
+              </label>
+              <div class="camera-status-cards staff-debug">
                 <div class="camera-status-card">
                   <span>Người trong khung</span>
                   <strong id="cameraFaceState">0</strong>
@@ -260,7 +288,7 @@
                 </div>
               </div>
               <p id="cameraGuidance" class="camera-guidance">Bật camera để bắt đầu nhận diện khuôn mặt.</p>
-              <div class="camera-signal-list" aria-label="Tín hiệu khung hình">
+              <div class="camera-signal-list staff-debug" aria-label="Tín hiệu khung hình">
                 <div>
                   <span>Căn giữa</span>
                   <strong id="cameraCenterState">Chưa có</strong>
@@ -274,7 +302,7 @@
                   <strong id="cameraConfidenceState">0%</strong>
                 </div>
               </div>
-              <div class="status-grid">
+              <div class="status-grid staff-debug">
                 <div>
                   <span>Trạng thái</span>
                   <strong id="status">Chưa khởi tạo</strong>
@@ -292,13 +320,16 @@
                   <strong id="faceShape">Đang chờ</strong>
                 </div>
               </div>
-              <button id="cameraStartButton" type="button">Bật camera</button>
-              <button id="markMeasuredButton" type="button" class="secondary-action" disabled>Đánh dấu đã đo</button>
+              <div class="camera-actions">
+                <button id="cameraStartButton" type="button">Bật camera</button>
+                <button id="analyzeFaceButton" type="button" class="secondary-action" disabled>Phân tích</button>
+                <button id="markMeasuredButton" type="button" class="secondary-action" disabled>Đánh dấu đã đo</button>
+              </div>
             </aside>
           </section>
 
           <div class="analysis-panel">
-            <div class="metrics-panel">
+            <div class="metrics-panel staff-debug">
               <div class="section-heading">
                 <p class="eyebrow">Phân tích</p>
                 <h2>Chỉ số khuôn mặt</h2>
@@ -351,6 +382,6 @@
       </section>
     </main>
 
-    <script type="module" src="./js/app.mobile.js?v=20260720-10"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260720-11"></script>
   </body>
 </html>

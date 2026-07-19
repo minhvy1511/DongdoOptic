@@ -295,6 +295,23 @@ button {
   visibility: hidden;
 }
 
+.privacy-note {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  z-index: 4;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius);
+  background: rgba(12, 18, 24, 0.72);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  line-height: 1.35;
+  backdrop-filter: blur(10px);
+}
+
 #webcam,
 #overlay {
   position: absolute;
@@ -439,8 +456,135 @@ h1 {
   margin: 0 0 12px;
 }
 
+.guest-toggle,
+.confirm-shape-control {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.guest-toggle {
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.guest-toggle input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.confirm-shape-control select {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: white;
+  color: var(--text);
+  font: inherit;
+  padding: 0 12px;
+}
+
+.customer-result-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid rgba(219, 226, 234, 0.95);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #ffffff, #f6faf9);
+  box-shadow: var(--shadow-sm);
+}
+
+.customer-result-card.has-result {
+  border-color: rgba(13, 107, 98, 0.34);
+  background: linear-gradient(135deg, #ffffff, #eef7f5);
+}
+
+.face-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent-strong);
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.customer-result-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.customer-result-card strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.customer-result-card p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.confidence-notice {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.confidence-notice strong,
+.confidence-notice span,
+.confidence-notice em {
+  display: block;
+}
+
+.confidence-notice em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.confidence-notice.high {
+  border-left-color: #2f9e44;
+  background: #edf8f0;
+}
+
+.confidence-notice.medium {
+  border-left-color: #f59f00;
+  background: #fff7e6;
+}
+
+.confidence-notice.low {
+  border-left-color: #e03131;
+  background: #fff0f0;
+}
+
+.confidence-notice.neutral {
+  border-left-color: var(--border);
+}
+
 .camera-mode-button {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 14px;
   border: 1px solid var(--accent);
   border-radius: var(--radius);
@@ -502,6 +646,51 @@ h1 {
   opacity: 0.72;
 }
 
+.camera-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.camera-actions button {
+  min-height: 44px;
+}
+
+#analyzeFaceButton.is-loading {
+  position: relative;
+  color: transparent;
+}
+
+#analyzeFaceButton.is-loading::after {
+  content: "";
+  width: 18px;
+  height: 18px;
+  position: absolute;
+  left: calc(50% - 9px);
+  top: calc(50% - 9px);
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.guest-view .staff-debug {
+  display: none;
+}
+
+.guest-view .inspector {
+  justify-content: flex-start;
+}
+
+.guest-view .camera-guidance {
+  font-size: 15px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .secondary-action {
   width: 100%;
   min-height: 44px;
@@ -517,7 +706,7 @@ h1 {
 }
 
 #markMeasuredButton {
-  margin-top: -6px;
+  margin-top: 0;
 }
 
 .camera-status-card strong,
@@ -1031,6 +1220,13 @@ h1 {
     min-height: 260px;
   }
 
+  .privacy-note {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    font-size: 11px;
+  }
+
   .camera-toolbar,
   .camera-status-cards,
   .camera-signal-list {
@@ -1055,6 +1251,15 @@ h1 {
 
   .camera-signal-list {
     grid-template-columns: 1fr;
+  }
+
+  .customer-result-card {
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+
+  .face-icon {
+    width: 50px;
+    height: 50px;
   }
 
   .camera-panel {
