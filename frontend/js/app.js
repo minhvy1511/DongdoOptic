@@ -1,8 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260720-17";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-17";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-17";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-17";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-17";
+import { startUserCamera } from "./camera.js?v=20260720-18";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-18";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-18";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-18";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-18";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +12,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-17";
+} from "./customer-store.js?v=20260720-18";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -120,7 +120,9 @@ const SCAN_CONFIG = {
   HOLD_DURATION_MS: 500,
   STEP_TIMEOUT_MS: 8000,
   MIN_CONFIDENCE_TO_SHOW_RESULT: 50,
-  MIN_FRAME_CONFIDENCE: 0.42
+  MIN_FRAME_CONFIDENCE: 0.42,
+  PARTIAL_MIN_CAPTURED: 2,
+  PARTIAL_MIN_CONFIDENCE: 0.38
 };
 
 const SCAN_STEPS = [
@@ -245,6 +247,15 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   }
 
   if ((now - autoScanState.stepStartedAt) > SCAN_CONFIG.STEP_TIMEOUT_MS) {
+    const capturedCount = autoScanState.captureList.length;
+    if (capturedCount >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED) {
+      finalizeMultiAngleScan({
+        partial: true,
+        reason: condition.timeoutDetail || "Không bắt được đủ 3 góc, nên tạm tổng hợp từ số ảnh đã chụp."
+      });
+      return;
+    }
+
     failAutoScan(condition.timeoutDetail || "Không nhận diện rõ khuôn mặt, hãy đảm bảo đủ sáng và không bị che mặt.");
   }
 
@@ -350,23 +361,37 @@ function captureScanStep(step, analysis, pose) {
   }, 420);
 }
 
-function finalizeMultiAngleScan() {
+function finalizeMultiAngleScan(options = {}) {
+  const partial = Boolean(options.partial);
+  const partialReason = options.reason || "";
+  const capturedCount = autoScanState.captureList.length;
   autoScanState.phase = "AGGREGATING";
   autoScanState.active = false;
   autoScanState.progress = 1;
   autoScanState.status = "captured";
   autoScanState.prompt = "Đang tổng hợp kết quả";
-  autoScanState.detail = "Đã đủ 3 góc quét.";
+  autoScanState.detail = partial
+    ? `Đã chụp ${capturedCount}/3 góc. ${partialReason || "Kết quả sẽ được tổng hợp từ số ảnh đã có."}`
+    : "Đã đủ 3 góc quét.";
   updateScanHud();
 
   const finalAnalysis = buildMultiAngleAnalysis(autoScanState.captureList);
   isAnalyzingFace = false;
   setAnalyzingState(false);
 
-  if (!finalAnalysis
-    || finalAnalysis.shape === "unknown"
-    || Math.round((finalAnalysis.quality?.confidence || 0) * 100) < SCAN_CONFIG.MIN_CONFIDENCE_TO_SHOW_RESULT) {
+  if (!finalAnalysis || capturedCount < SCAN_CONFIG.PARTIAL_MIN_CAPTURED) {
     failAutoScan("Chưa đủ tin cậy, vui lòng quét lại với ánh sáng đều và giữ mặt rõ hơn.");
+    return;
+  }
+
+  const finalConfidence = Math.round((finalAnalysis.quality?.confidence || 0) * 100);
+  if (!partial && (finalAnalysis.shape === "unknown" || finalConfidence < SCAN_CONFIG.MIN_CONFIDENCE_TO_SHOW_RESULT)) {
+    failAutoScan("Chưa đủ tin cậy, vui lòng quét lại với ánh sáng đều và giữ mặt rõ hơn.");
+    return;
+  }
+
+  if (partial && finalConfidence < SCAN_CONFIG.PARTIAL_MIN_CONFIDENCE * 100 && finalAnalysis.shape === "unknown") {
+    failAutoScan("Chưa bắt đủ dữ liệu để tổng hợp, hãy thử quét lại.");
     return;
   }
 
@@ -378,7 +403,9 @@ function finalizeMultiAngleScan() {
   autoScanState.phase = "RESULT";
   autoScanState.status = "captured";
   autoScanState.prompt = "Đã quét xong";
-  autoScanState.detail = "Kiểm tra kết quả và xác nhận dạng mặt trước khi tư vấn.";
+  autoScanState.detail = partial
+    ? "Đã chốt từ 2/3 góc. Bạn có thể xác nhận tay hoặc quét lại nếu muốn đủ 3/3."
+    : "Kiểm tra kết quả và xác nhận dạng mặt trước khi tư vấn.";
   updateScanHud();
 }
 
@@ -426,6 +453,7 @@ function buildMultiAngleAnalysis(captures) {
     totalSamples: SCAN_STEPS.length,
     shapeConsistency: voteConsistency,
     autoConfirmed: quality.confidence >= CONFIDENCE_THRESHOLDS.high && voteConsistency >= 0.8,
+    partialScan: usableCaptures.length < SCAN_STEPS.length,
     scanMode: "multi-angle",
     capturedAngles: usableCaptures.map((capture) => capture.label).join(", "),
     headPose: {
@@ -591,7 +619,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-17");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-18");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -907,6 +935,7 @@ function renderConfidenceNotice(analysis, confidenceState, finalResult, override
   const consistencyText = Number.isFinite(diagnostics.shapeConsistency)
     ? `${Math.round(diagnostics.shapeConsistency * 100)}% đồng thuận`
     : "";
+  const partialText = diagnostics.partialScan ? "Đã chụp chưa đủ 3 góc, đang chốt tạm." : "";
   const messages = {
     high: `Độ tin cậy ${confidenceState.percent}% - đây là gợi ý mạnh, vẫn nên rà lại.`,
     medium: `Độ tin cậy ${confidenceState.percent}% - nên xác nhận thủ công.`,
@@ -917,7 +946,7 @@ function renderConfidenceNotice(analysis, confidenceState, finalResult, override
   confidenceNotice.innerHTML = `
     <strong>${overrideMessage || messages[confidenceState.level]}</strong>
     <span>${reasons.join(" ")}</span>
-    <em>${[sampleText, consistencyText, finalResult ? "Đã đủ để chốt." : "Chỉ là gợi ý sơ bộ."].filter(Boolean).join(" · ")}</em>
+    <em>${[sampleText, consistencyText, partialText, finalResult ? "Đã đủ để chốt." : "Chỉ là gợi ý sơ bộ."].filter(Boolean).join(" · ")}</em>
   `;
   renderCameraConfidenceOverlay(analysis, confidenceState, overrideMessage);
 }
@@ -935,6 +964,7 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
   const consistencyLabel = Number.isFinite(diagnostics.shapeConsistency)
     ? `${Math.round(diagnostics.shapeConsistency * 100)}% đồng thuận`
     : "";
+  const partialLabel = diagnostics.partialScan ? "Chốt tạm từ dữ liệu hiện có" : "";
   const statusTextValue = overrideMessage || (
     confirmedFaceShape
       ? `Đã xác nhận - ${shapeLabel}`
@@ -949,7 +979,7 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
   cameraConfidenceOverlay.innerHTML = `
     <span>Độ tin cậy</span>
     <strong>${percentLabel}</strong>
-    <em>${[statusTextValue, sampleLabel, consistencyLabel].filter(Boolean).join(" · ")}</em>
+    <em>${[statusTextValue, sampleLabel, consistencyLabel, partialLabel].filter(Boolean).join(" · ")}</em>
   `;
 }
 
