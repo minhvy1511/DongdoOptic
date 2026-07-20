@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-24";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-24";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-24";
+import { startUserCamera } from "./camera.js?v=20260720-25";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-25";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-25";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-24";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-24";
+} from "./recommendations.js?v=20260720-25";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-25";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-24";
+} from "./customer-store.js?v=20260720-25";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -137,8 +137,8 @@ const SCAN_CONFIG = {
 
 const SCAN_STEPS = [
   { key: "center", label: "Nhìn thẳng vào camera", shortLabel: "Thẳng", targetYaw: 0, tolerance: SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG },
-  { key: "left", label: "Quay nhẹ đầu sang trái", shortLabel: "Trái", targetYaw: SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG },
-  { key: "right", label: "Quay nhẹ đầu sang phải", shortLabel: "Phải", targetYaw: -SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG }
+  { key: "left", label: "Quay nhẹ đầu sang trái", shortLabel: "Trái", targetYaw: -SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG },
+  { key: "right", label: "Quay nhẹ đầu sang phải", shortLabel: "Phải", targetYaw: SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG }
 ];
 
 const FACE_SHAPE_ICONS = {
@@ -745,22 +745,37 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-24");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-25");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
   statusText.textContent = "Sẵn sàng";
 }
 
+function updateCameraStartButton({ active = false, loading = false } = {}) {
+  if (!startButton) {
+    return;
+  }
+
+  if (loading) {
+    startButton.disabled = true;
+    startButton.textContent = "Đang mở...";
+    return;
+  }
+
+  startButton.disabled = false;
+  startButton.textContent = active ? "Tắt camera" : "Bật camera";
+}
+
 async function enableCamera() {
-  startButton.disabled = true;
+  updateCameraStartButton({ loading: true });
 
   if (!faceLandmarker) {
     await initialize();
   }
 
   statusText.textContent = "Đang mở camera";
-  stopCurrentCameraStream();
+  stopCurrentCameraStream({ silent: true });
   const sessionToken = ++cameraSessionToken;
   currentCameraStream = await startUserCamera(video, { facingMode: currentCameraMode });
   resizeCanvasToVideo(canvas, video);
@@ -769,13 +784,17 @@ async function enableCamera() {
   if (analyzeFaceButton) {
     analyzeFaceButton.disabled = false;
   }
+  updateCameraStartButton({ active: true });
   startAutoScanFlow("camera-start");
   requestAnimationFrame(() => detectFrame(sessionToken));
 }
 
-function stopCurrentCameraStream() {
+function stopCurrentCameraStream(options = {}) {
   const stream = currentCameraStream || video?.srcObject;
   if (!stream) {
+    if (!options.silent) {
+      updateCameraStartButton({ active: false });
+    }
     return;
   }
 
@@ -789,6 +808,9 @@ function stopCurrentCameraStream() {
   stopAutoScanFlow();
   if (analyzeFaceButton) {
     analyzeFaceButton.disabled = true;
+  }
+  if (!options.silent) {
+    updateCameraStartButton({ active: false });
   }
 }
 
@@ -2651,11 +2673,16 @@ if (workflowNextButton) {
 
 startButton.addEventListener("click", async () => {
   try {
+    if (video?.srcObject) {
+      stopCurrentCameraStream();
+      return;
+    }
+
     await enableCamera();
   } catch (error) {
     console.error(error);
     statusText.textContent = "Không thể khởi tạo";
-    startButton.disabled = false;
+    updateCameraStartButton({ active: Boolean(video?.srcObject) });
   }
 });
 
@@ -2698,6 +2725,7 @@ if (!initialCurrentCustomer?.customer_code || !loadCustomerRecord(initialCurrent
   startNewCustomer();
 }
 updateCameraModeButton();
+updateCameraStartButton({ active: Boolean(video?.srcObject) });
 renderCurrentCustomerSummary();
 renderCustomers();
 

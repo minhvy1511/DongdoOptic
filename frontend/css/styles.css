@@ -499,12 +499,10 @@ button {
 #webcam {
   z-index: 2;
   object-fit: cover;
-  transform: scaleX(-1);
 }
 
 #overlay {
   z-index: 3;
-  transform: scaleX(-1);
 }
 
 .inspector {
