@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-25";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-25";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-25";
+import { startUserCamera } from "./camera.js?v=20260720-26";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-26";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-26";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-25";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-25";
+} from "./recommendations.js?v=20260720-26";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-26";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-25";
+} from "./customer-store.js?v=20260720-26";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -137,8 +137,8 @@ const SCAN_CONFIG = {
 
 const SCAN_STEPS = [
   { key: "center", label: "Nhìn thẳng vào camera", shortLabel: "Thẳng", targetYaw: 0, tolerance: SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG },
-  { key: "left", label: "Quay nhẹ đầu sang trái", shortLabel: "Trái", targetYaw: -SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG },
-  { key: "right", label: "Quay nhẹ đầu sang phải", shortLabel: "Phải", targetYaw: SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG }
+  { key: "left", label: "Quay nhẹ đầu sang trái", shortLabel: "Trái", targetYaw: SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG },
+  { key: "right", label: "Quay nhẹ đầu sang phải", shortLabel: "Phải", targetYaw: -SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG }
 ];
 
 const FACE_SHAPE_ICONS = {
@@ -745,7 +745,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-25");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-26");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
