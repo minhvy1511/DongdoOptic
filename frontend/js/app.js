@@ -1,8 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260720-20";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-20";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-20";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-20";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-20";
+import { startUserCamera } from "./camera.js?v=20260720-21";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-21";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-21";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-21";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-21";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +12,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-20";
+} from "./customer-store.js?v=20260720-21";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -117,17 +117,18 @@ const CONFIDENCE_THRESHOLDS = {
 };
 
 const SCAN_CONFIG = {
-  TARGET_YAW_DEG: 18,
-  YAW_TOLERANCE_DEG: 5,
-  CENTER_YAW_TOLERANCE_DEG: 5,
-  ROLL_TOLERANCE_DEG: 8,
-  HOLD_DURATION_MS: 500,
-  STEP_TIMEOUT_MS: 8000,
-  SOFT_PARTIAL_TIMEOUT_MS: 3500,
+  TARGET_YAW_DEG: 14,
+  YAW_TOLERANCE_DEG: 9,
+  CENTER_YAW_TOLERANCE_DEG: 8,
+  ROLL_TOLERANCE_DEG: 12,
+  HOLD_DURATION_MS: 320,
+  STEP_TIMEOUT_MS: 5200,
+  SOFT_PARTIAL_TIMEOUT_MS: 2400,
   MIN_CONFIDENCE_TO_SHOW_RESULT: 50,
-  MIN_FRAME_CONFIDENCE: 0.42,
-  PARTIAL_MIN_CAPTURED: 2,
-  PARTIAL_MIN_CONFIDENCE: 0.38
+  MIN_FRAME_CONFIDENCE: 0.34,
+  FALLBACK_FRAME_CONFIDENCE: 0.28,
+  PARTIAL_MIN_CAPTURED: 1,
+  PARTIAL_MIN_CONFIDENCE: 0.32
 };
 
 const SCAN_STEPS = [
@@ -164,6 +165,7 @@ function createAutoScanState() {
     error: "",
     captures: {},
     captureList: [],
+    bestCaptures: {},
     lastPose: null,
     lastAnalysis: null
   };
@@ -203,6 +205,7 @@ function startAutoScanFlow(reason = "auto") {
 function stopAutoScanFlow() {
   autoScanState = createAutoScanState();
   isAnalyzingFace = false;
+  setAnalyzingState(false);
   updateScanHud();
 }
 
@@ -238,6 +241,7 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   autoScanState.prompt = step.label;
   autoScanState.detail = condition.detail;
   autoScanState.status = condition.status;
+  rememberBestScanCandidate(step, analysis, pose, condition);
 
   if (condition.ready) {
     if (!autoScanState.holdStartedAt) {
@@ -255,6 +259,15 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
 
   const stepElapsedMs = now - autoScanState.stepStartedAt;
   const capturedCount = autoScanState.captureList.length;
+  const fallbackCapture = getFallbackCaptureForStep(step);
+  if (!autoScanState.captures[step.key]
+    && fallbackCapture
+    && stepElapsedMs > SCAN_CONFIG.SOFT_PARTIAL_TIMEOUT_MS
+    && (step.key === "center" || capturedCount >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED || condition.near)) {
+    captureScanStep(step, fallbackCapture.analysis, fallbackCapture.pose, { fallback: true });
+    return;
+  }
+
   if (capturedCount >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED
     && stepElapsedMs > SCAN_CONFIG.SOFT_PARTIAL_TIMEOUT_MS
     && autoScanState.stepIndex >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED) {
@@ -268,6 +281,11 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   }
 
   if (stepElapsedMs > SCAN_CONFIG.STEP_TIMEOUT_MS) {
+    if (fallbackCapture && !autoScanState.captures[step.key]) {
+      captureScanStep(step, fallbackCapture.analysis, fallbackCapture.pose, { fallback: true });
+      return;
+    }
+
     if (capturedCount >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED) {
       finalizeMultiAngleScan({
         partial: true,
@@ -305,45 +323,89 @@ function evaluateScanFrame(step, analysis, pose, faceCount) {
   const yawOk = yawDiff <= step.tolerance;
   const yawNear = yawDiff <= step.tolerance + 7;
   const frameOk = centerOk && distanceOk && rollOk && confidenceOk;
+  const fallbackOk = centerOk
+    && distanceOk
+    && Math.abs(Number(pose.rollDeg || 0)) <= SCAN_CONFIG.ROLL_TOLERANCE_DEG + 6
+    && confidence >= SCAN_CONFIG.FALLBACK_FRAME_CONFIDENCE
+    && yawDiff <= step.tolerance + (step.key === "center" ? 7 : 14);
+  const score = confidence * 0.5
+    + clamp01((coverage - 0.06) / 0.24) * 0.18
+    + clamp01(1 - (Math.abs(Number(quality.centerOffsetX || 0)) + Math.abs(Number(quality.centerOffsetY || 0))) * 2.5) * 0.18
+    + clamp01(1 - yawDiff / 30) * 0.14;
 
   if (frameOk && yawOk) {
-    return { ready: true, near: true, status: "hold", detail: "Giữ nguyên một chút để máy tự chụp." };
+    return { ready: true, near: true, fallbackOk: true, score, status: "hold", detail: "Giữ nguyên một chút để máy tự chụp." };
   }
 
   if (frameOk && yawNear) {
-    return { ready: false, near: true, status: "near", detail: "Gần đúng rồi, quay chậm thêm một chút." };
+    return { ready: false, near: true, fallbackOk: true, score, status: "near", detail: "Gần đúng rồi, máy sẽ tự chọn khung tốt nhất nếu khó giữ đúng góc." };
   }
 
   if (!confidenceOk) {
-    return { ready: false, near: false, status: "prompt", detail: "Giữ đủ sáng, nhìn rõ mắt và mũi.", timeoutDetail: "Tín hiệu khuôn mặt còn yếu." };
+    return { ready: false, near: fallbackOk, fallbackOk, score, status: "prompt", detail: "Giữ đủ sáng, nhìn rõ mắt và mũi.", timeoutDetail: "Tín hiệu khuôn mặt còn yếu." };
   }
 
   if (!centerOk) {
-    return { ready: false, near: false, status: "prompt", detail: "Đưa mặt vào giữa khung trước khi quét.", timeoutDetail: "Khuôn mặt chưa nằm giữa khung." };
+    return { ready: false, near: false, fallbackOk, score, status: "prompt", detail: "Đưa mặt vào giữa khung trước khi quét.", timeoutDetail: "Khuôn mặt chưa nằm giữa khung." };
   }
 
   if (!distanceOk) {
-    return { ready: false, near: false, status: "prompt", detail: coverage < 0.08 ? "Đưa mặt gần camera hơn." : "Lùi mặt ra xa camera hơn.", timeoutDetail: "Khoảng cách khuôn mặt chưa phù hợp." };
+    return { ready: false, near: false, fallbackOk, score, status: "prompt", detail: coverage < 0.08 ? "Đưa mặt gần camera hơn." : "Lùi mặt ra xa camera hơn.", timeoutDetail: "Khoảng cách khuôn mặt chưa phù hợp." };
   }
 
   if (!rollOk) {
-    return { ready: false, near: false, status: "prompt", detail: "Giữ đầu thẳng, không nghiêng vai.", timeoutDetail: "Đầu đang nghiêng quá nhiều." };
+    return { ready: false, near: fallbackOk, fallbackOk, score, status: "prompt", detail: "Giữ đầu thẳng, không nghiêng vai.", timeoutDetail: "Đầu đang nghiêng quá nhiều." };
   }
 
   return {
     ready: false,
-    near: false,
+    near: fallbackOk,
+    fallbackOk,
+    score,
     status: "prompt",
     detail: getYawGuidance(step, pose.yawDeg),
     timeoutDetail: "Chưa đạt đúng hướng mặt cần quét."
   };
 }
 
-function captureScanStep(step, analysis, pose) {
+function rememberBestScanCandidate(step, analysis, pose, condition) {
+  if (!analysis?.metrics || !pose || !condition?.fallbackOk) {
+    return;
+  }
+
+  const existing = autoScanState.bestCaptures[step.key];
+  const candidate = {
+    analysis: cloneAnalysis(analysis),
+    pose: { ...pose },
+    score: Number(condition.score || 0),
+    capturedAt: Date.now()
+  };
+
+  if (!existing || candidate.score > Number(existing.score || 0)) {
+    autoScanState.bestCaptures[step.key] = candidate;
+  }
+}
+
+function getFallbackCaptureForStep(step) {
+  const candidate = autoScanState.bestCaptures[step.key];
+  if (!candidate?.analysis?.metrics) {
+    return null;
+  }
+
+  const confidence = Number(candidate.analysis.quality?.confidence || 0);
+  if (confidence < SCAN_CONFIG.FALLBACK_FRAME_CONFIDENCE) {
+    return null;
+  }
+
+  return candidate;
+}
+
+function captureScanStep(step, analysis, pose, options = {}) {
   const capture = {
     key: step.key,
     label: step.shortLabel,
     capturedAt: Date.now(),
+    fallback: Boolean(options.fallback),
     pose: { ...pose },
     analysis: cloneAnalysis(analysis)
   };
@@ -353,7 +415,9 @@ function captureScanStep(step, analysis, pose) {
   autoScanState.status = "captured";
   autoScanState.progress = 1;
   autoScanState.phase = `CAPTURED_${step.key.toUpperCase()}`;
-  autoScanState.detail = `Đã chụp góc ${step.shortLabel.toLowerCase()}.`;
+  autoScanState.detail = options.fallback
+    ? `Đã chọn khung tốt nhất cho góc ${step.shortLabel.toLowerCase()}.`
+    : `Đã chụp góc ${step.shortLabel.toLowerCase()}.`;
   autoScanState.transitionUntil = performance.now() + 420;
   updateScanHud();
 
@@ -424,7 +488,7 @@ function finalizeMultiAngleScan(options = {}) {
   autoScanState.status = "captured";
   autoScanState.prompt = "Đã quét xong";
   autoScanState.detail = partial
-    ? "Đã chốt từ 2/3 góc. Bạn có thể xác nhận tay hoặc quét lại nếu muốn đủ 3/3."
+    ? `Đã chốt tạm từ ${capturedCount}/3 góc. Hãy xác nhận dạng mặt trước khi tư vấn chính thức.`
     : "Kiểm tra kết quả và xác nhận dạng mặt trước khi tư vấn.";
   updateScanHud();
   updateWorkflowAssistant();
@@ -449,7 +513,7 @@ function failAutoScan(message) {
 function buildMultiAngleAnalysis(captures) {
   const usableCaptures = captures.filter((capture) => {
     const confidence = Number(capture?.analysis?.quality?.confidence || 0);
-    return capture?.analysis?.metrics && confidence >= 0.35;
+    return capture?.analysis?.metrics && confidence >= SCAN_CONFIG.FALLBACK_FRAME_CONFIDENCE;
   });
 
   if (!usableCaptures.length) {
@@ -467,15 +531,18 @@ function buildMultiAngleAnalysis(captures) {
     ? shapeVotes.filter((shape) => shape === voteShape).length / shapeVotes.length
     : 0;
   const shape = shapeFromMetrics !== "unknown" ? shapeFromMetrics : (voteConsistency >= 0.8 ? voteShape : "unknown");
-  const baseAnalysis = analyzeFaceShapeFromMetrics(shape, metrics, quality);
+  const fallbackShape = shape === "unknown" ? estimateFaceShapeFromRatios(metrics) : "";
+  const resolvedShape = shape !== "unknown" ? shape : fallbackShape;
+  const baseAnalysis = analyzeFaceShapeFromMetrics(resolvedShape, metrics, quality);
   const diagnostics = {
     ...baseAnalysis.diagnostics,
     confidenceBand: getConfidenceBandLabel(quality.confidence),
     sampleCount: usableCaptures.length,
     totalSamples: SCAN_STEPS.length,
     shapeConsistency: voteConsistency,
-    autoConfirmed: quality.confidence >= CONFIDENCE_THRESHOLDS.high && voteConsistency >= 0.8,
+    autoConfirmed: resolvedShape !== "unknown" && !fallbackShape && quality.confidence >= CONFIDENCE_THRESHOLDS.high && voteConsistency >= 0.8,
     partialScan: usableCaptures.length < SCAN_STEPS.length,
+    shapeFallback: Boolean(fallbackShape),
     scanMode: "multi-angle",
     capturedAngles: usableCaptures.map((capture) => capture.label).join(", "),
     headPose: {
@@ -489,14 +556,48 @@ function buildMultiAngleAnalysis(captures) {
 
   return {
     ...baseAnalysis,
-    shape,
-    label: getFaceShapeLabel(shape),
+    shape: resolvedShape,
+    label: getFaceShapeLabel(resolvedShape),
     quality,
     diagnostics,
     warnings: diagnostics.warnings,
-    faceShape_ai: shape,
-    faceShape_confirmed: diagnostics.autoConfirmed ? shape : ""
+    faceShape_ai: resolvedShape,
+    faceShape_confirmed: diagnostics.autoConfirmed ? resolvedShape : ""
   };
+}
+
+function estimateFaceShapeFromRatios(metrics = {}) {
+  const lengthToWidth = Number(metrics.lengthToWidth || 0);
+  const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
+  const jawToCheek = Number(metrics.jawToCheek || 0);
+  const jawToForehead = Number(metrics.jawToForehead || 0);
+  const cheekToJaw = Number(metrics.cheekToJaw || 0);
+
+  if (!lengthToWidth || !foreheadToCheek || !jawToCheek || !jawToForehead) {
+    return "unknown";
+  }
+
+  if (lengthToWidth >= 1.55) {
+    return "long";
+  }
+
+  if (foreheadToCheek >= 1.0 && jawToForehead <= 0.9) {
+    return "heart";
+  }
+
+  if (cheekToJaw >= 1.16 && foreheadToCheek <= 0.92) {
+    return "diamond";
+  }
+
+  if (lengthToWidth <= 1.2 && jawToCheek >= 0.78) {
+    return "round";
+  }
+
+  if (jawToCheek >= 0.88 && foreheadToCheek >= 0.84) {
+    return "square";
+  }
+
+  return "oval";
 }
 
 function weightedAverageMetrics(captures) {
@@ -641,7 +742,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-20");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-21");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -887,11 +988,20 @@ function applyAnalysisConfidence(analysis, shouldDefaultConfirmed) {
   const sampleCount = Number(diagnostics.sampleCount || 0);
 
   if (confidenceState.level === "low") {
+    const hasDraftShape = diagnostics.partialScan && analysis?.shape && analysis.shape !== "unknown";
     if (confirmedFaceShapeSource !== "manual") {
       clearConfirmedFaceShape();
     }
-    faceShapeText.textContent = confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : "Không đủ dữ liệu";
-    statusText.textContent = confirmedFaceShape ? "Đã xác nhận thủ công" : "Không đủ dữ liệu";
+    if (hasDraftShape) {
+      faceShapeText.textContent = "Gợi ý nháp";
+      statusText.textContent = "Cần xác nhận";
+      if (confirmedFaceShapeInput) {
+        confirmedFaceShapeInput.disabled = false;
+      }
+    } else {
+      faceShapeText.textContent = confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : "Không đủ dữ liệu";
+      statusText.textContent = confirmedFaceShape ? "Đã xác nhận thủ công" : "Không đủ dữ liệu";
+    }
   } else if (!autoConfirmed && confirmedFaceShapeSource !== "manual") {
     clearConfirmedFaceShape();
     faceShapeText.textContent = "Gợi ý sơ bộ";
@@ -923,9 +1033,11 @@ function applyAnalysisConfidence(analysis, shouldDefaultConfirmed) {
 function setAnalyzingState(isActive) {
   isAnalyzingFace = isActive;
   if (analyzeFaceButton) {
-    analyzeFaceButton.disabled = !video.srcObject;
+    analyzeFaceButton.disabled = isActive || !video.srcObject;
     analyzeFaceButton.classList.toggle("is-loading", isActive);
-    analyzeFaceButton.textContent = "Quét lại từ đầu";
+    analyzeFaceButton.textContent = isActive
+      ? "Đang quét..."
+      : (video.srcObject ? "Quét lại từ đầu" : "Phân tích");
   }
   statusText.textContent = isActive ? "Đang quét khuôn mặt..." : statusText.textContent;
 }
@@ -958,10 +1070,13 @@ function renderConfidenceNotice(analysis, confidenceState, finalResult, override
     ? `${Math.round(diagnostics.shapeConsistency * 100)}% đồng thuận`
     : "";
   const partialText = diagnostics.partialScan ? "Đã chụp chưa đủ 3 góc, đang chốt tạm." : "";
+  const hasDraftShape = diagnostics.partialScan && analysis?.shape && analysis.shape !== "unknown";
   const messages = {
     high: `Độ tin cậy ${confidenceState.percent}% - đây là gợi ý mạnh, vẫn nên rà lại.`,
     medium: `Độ tin cậy ${confidenceState.percent}% - nên xác nhận thủ công.`,
-    low: `Không đủ dữ liệu để xác định, vui lòng chụp lại.`
+    low: hasDraftShape
+      ? `Độ tin cậy ${confidenceState.percent}% - có gợi ý nháp, cần xác nhận thủ công.`
+      : `Không đủ dữ liệu để xác định, vui lòng chụp lại.`
   };
 
   confidenceNotice.className = `confidence-notice ${confidenceState.level}`;
@@ -979,7 +1094,8 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
   }
 
   const diagnostics = analysis?.diagnostics || {};
-  const shape = confirmedFaceShape || (confidenceState.level === "low" ? "" : latestAiFaceShape);
+  const canShowDraftShape = diagnostics.partialScan && latestAiFaceShape && latestAiFaceShape !== "unknown";
+  const shape = confirmedFaceShape || (confidenceState.level === "low" && !canShowDraftShape ? "" : latestAiFaceShape);
   const shapeLabel = shape ? getFaceShapeLabel(shape) : "Chưa đủ dữ liệu";
   const percentLabel = confidenceState.percent ? `${confidenceState.percent}%` : "--";
   const sampleLabel = diagnostics.sampleCount ? `${diagnostics.sampleCount}/${diagnostics.totalSamples || diagnostics.sampleCount} khung` : "";
@@ -1032,6 +1148,10 @@ function getConfidenceReasons(analysis) {
     });
   }
 
+  if (diagnostics.shapeFallback && !reasons.includes("AI đang dùng gợi ý nháp từ tỉ lệ khuôn mặt, nhân viên cần xác nhận thủ công.")) {
+    reasons.push("AI đang dùng gợi ý nháp từ tỉ lệ khuôn mặt, nhân viên cần xác nhận thủ công.");
+  }
+
   return reasons.length ? reasons.slice(0, 3) : ["Khung hình đủ sáng, nhìn thẳng và giữ yên để kết quả ổn định hơn."];
 }
 
@@ -1043,7 +1163,7 @@ function renderCustomerResult() {
   const diagnostics = latestAnalysis?.diagnostics || {};
   const shape = confirmedFaceShape || "";
   const confidenceState = latestAnalysis ? getConfidenceState(latestAnalysis) : { level: "low" };
-  const canShowAiShape = latestAiFaceShape && confidenceState.level !== "low";
+  const canShowAiShape = latestAiFaceShape && (confidenceState.level !== "low" || diagnostics.partialScan);
   const aiLabel = canShowAiShape ? getFaceShapeLabel(latestAiFaceShape) : "Chưa đủ dữ liệu";
   const confirmedLabel = shape ? getFaceShapeLabel(shape) : "Chưa xác nhận";
   const sampleText = diagnostics.sampleCount ? `${diagnostics.sampleCount}/${diagnostics.totalSamples || diagnostics.sampleCount} khung` : "";
