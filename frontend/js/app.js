@@ -1,8 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260720-19";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-19";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-19";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-19";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-19";
+import { startUserCamera } from "./camera.js?v=20260720-20";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-20";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-20";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-20";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-20";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +12,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-19";
+} from "./customer-store.js?v=20260720-20";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -69,6 +69,10 @@ const customerSearch = document.getElementById("customerSearch");
 const customerCount = document.getElementById("customerCount");
 const tabButtons = document.querySelectorAll("[data-tab-target]");
 const tabPanels = document.querySelectorAll(".tab-panel");
+const workflowAssistant = document.getElementById("workflowAssistant");
+const workflowStepLabel = document.getElementById("workflowStepLabel");
+const workflowNextLabel = document.getElementById("workflowNextLabel");
+const workflowNextButton = document.getElementById("workflowNextButton");
 const preferenceForm = document.getElementById("preferenceForm");
 const budgetInput = document.getElementById("budget");
 const purposeInput = document.getElementById("purpose");
@@ -169,6 +173,7 @@ function startAutoScanFlow(reason = "auto") {
   if (!video?.srcObject) {
     statusText.textContent = "Cần bật camera trước";
     updateScanHud();
+    updateWorkflowAssistant();
     return;
   }
 
@@ -191,6 +196,7 @@ function startAutoScanFlow(reason = "auto") {
   setAnalyzingState(true);
   renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Đang quét tự động đa góc.");
   updateScanHud();
+  updateWorkflowAssistant();
   console.debug(`[VisionID] Multi-angle scan started: ${reason}`);
 }
 
@@ -421,6 +427,7 @@ function finalizeMultiAngleScan(options = {}) {
     ? "Đã chốt từ 2/3 góc. Bạn có thể xác nhận tay hoặc quét lại nếu muốn đủ 3/3."
     : "Kiểm tra kết quả và xác nhận dạng mặt trước khi tư vấn.";
   updateScanHud();
+  updateWorkflowAssistant();
 }
 
 function failAutoScan(message) {
@@ -436,6 +443,7 @@ function failAutoScan(message) {
   statusText.textContent = "Cần quét lại";
   renderConfidenceNotice(null, { level: "low", percent: 0 }, true, message);
   updateScanHud();
+  updateWorkflowAssistant();
 }
 
 function buildMultiAngleAnalysis(captures) {
@@ -633,7 +641,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-19");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-20");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1585,6 +1593,7 @@ function saveCurrentCustomer() {
   customerCodeInput.value = record.customer_code;
   renderCustomers();
   statusText.textContent = "Đã lưu hồ sơ";
+  updateWorkflowAssistant();
 }
 
 function renderCustomers() {
@@ -1717,6 +1726,141 @@ function showTab(tabId) {
   tabButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.tabTarget === tabId);
   });
+  updateWorkflowAssistant();
+}
+
+function getActiveTabId() {
+  return [...tabPanels].find((panel) => panel.classList.contains("active"))?.id || "tab-0";
+}
+
+function getWorkflowState() {
+  const activeTabId = getActiveTabId();
+  const hasIdentity = Boolean(customerNameInput.value.trim() || customerPhoneInput.value.trim());
+  const hasPreferences = Boolean(purposeInput.value || budgetInput.value || customerNotesInput.value.trim());
+  const hasDraftVisionId = Boolean(getDraftFaceShapeForAdvice());
+  const hasConfirmedVisionId = Boolean(confirmedFaceShape);
+
+  if (activeTabId === "tab-0") {
+    return {
+      step: hasIdentity ? "Hồ sơ đã có dữ liệu" : "Bước 1 · Hồ sơ",
+      next: hasIdentity ? "Lưu hồ sơ và sang Nhu cầu" : "Nhập tên hoặc SĐT, rồi sang Nhu cầu",
+      action: "Lưu & sang Nhu cầu",
+      tone: hasIdentity ? "ready" : "neutral"
+    };
+  }
+
+  if (activeTabId === "tab-1") {
+    return {
+      step: hasPreferences ? "Bước 2 · Nhu cầu" : "Bước 2 · Bổ sung nhu cầu",
+      next: "Kiểm tra tròng kính nhanh, rồi sang VisionID",
+      action: "Sang VisionID",
+      tone: "ready"
+    };
+  }
+
+  if (activeTabId === "tab-3") {
+    if (hasConfirmedVisionId) {
+      return {
+        step: "VisionID đã xác nhận",
+        next: "Sang Tư vấn để xem kết luận và sản phẩm gợi ý",
+        action: "Sang Tư vấn",
+        tone: "ready"
+      };
+    }
+
+    if (hasDraftVisionId) {
+      return {
+        step: "VisionID có gợi ý nháp",
+        next: "Xác nhận dạng mặt để mở khóa kết luận chính thức",
+        action: "Xác nhận dạng mặt",
+        tone: "warning"
+      };
+    }
+
+    return {
+      step: "Bước 3 · VisionID",
+      next: video?.srcObject ? "Giữ mặt trong khung để quét tự động" : "Bật camera để bắt đầu quét",
+      action: video?.srcObject ? "Quét lại từ đầu" : "Bật camera",
+      tone: video?.srcObject ? "warning" : "neutral"
+    };
+  }
+
+  if (activeTabId === "tab-4") {
+    return {
+      step: hasConfirmedVisionId ? "Bước 4 · Tư vấn" : "Tư vấn đang ở dạng nháp",
+      next: hasConfirmedVisionId ? "Lưu trạng thái đã đo sau khi tư vấn xong" : "Quay lại VisionID để xác nhận dạng mặt",
+      action: hasConfirmedVisionId ? "Lưu đã đo" : "Quay lại VisionID",
+      tone: hasConfirmedVisionId ? "ready" : "warning"
+    };
+  }
+
+  return {
+    step: "Quy trình tư vấn",
+    next: "Tiếp tục theo bước đang mở",
+    action: "Tiếp theo",
+    tone: "neutral"
+  };
+}
+
+function updateWorkflowAssistant() {
+  if (!workflowAssistant || !workflowStepLabel || !workflowNextLabel || !workflowNextButton) {
+    return;
+  }
+
+  const state = getWorkflowState();
+  workflowAssistant.className = `workflow-assistant ${state.tone || "neutral"}`;
+  workflowStepLabel.textContent = state.step;
+  workflowNextLabel.textContent = state.next;
+  workflowNextButton.textContent = state.action;
+}
+
+async function handleWorkflowNext() {
+  const activeTabId = getActiveTabId();
+
+  if (activeTabId === "tab-0") {
+    saveCurrentCustomer();
+    showTab("tab-1");
+    return;
+  }
+
+  if (activeTabId === "tab-1") {
+    syncCurrentCustomer("customerUpdated");
+    updateAdvice();
+    showTab("tab-3");
+    return;
+  }
+
+  if (activeTabId === "tab-3") {
+    if (confirmedFaceShape) {
+      showTab("tab-4");
+      return;
+    }
+
+    if (getDraftFaceShapeForAdvice() && confirmedFaceShapeInput) {
+      confirmedFaceShapeInput.disabled = false;
+      confirmedFaceShapeInput.focus();
+      statusText.textContent = "Chọn dạng mặt xác nhận";
+      updateWorkflowAssistant();
+      return;
+    }
+
+    if (!video?.srcObject) {
+      await enableCamera();
+    } else {
+      startAutoScanFlow("workflow-restart");
+    }
+    updateWorkflowAssistant();
+    return;
+  }
+
+  if (activeTabId === "tab-4") {
+    if (confirmedFaceShape) {
+      markCustomerAsMeasured();
+    } else {
+      showTab("tab-3");
+    }
+    updateWorkflowAssistant();
+  }
 }
 
 function readPreferences() {
@@ -1767,6 +1911,7 @@ function syncCurrentCustomer(eventName, sourceRecord = null) {
   customer.session_code = customer.session_code || ensureCurrentSessionCode();
   setCurrentCustomer(customer, eventName);
   renderCurrentCustomerSummary(customer);
+  updateWorkflowAssistant();
 }
 
 function renderCurrentCustomerSummary(customer = loadCurrentCustomer() || readCustomerSnapshot()) {
@@ -1889,12 +2034,14 @@ function updateAdvice() {
     latestRecommendations = [];
     frameList.innerHTML = `<p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để lấy gợi ý gọng.</p>`;
     renderConsultationSummary();
+    updateWorkflowAssistant();
     return;
   }
 
   latestRecommendations = getFrameRecommendations(adviceFaceShape);
   renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences), !confirmedFaceShape);
   renderConsultationSummary();
+  updateWorkflowAssistant();
 }
 
 function getDraftFaceShapeForAdvice() {
@@ -2102,6 +2249,8 @@ function markCustomerAsMeasured() {
   saveCurrentCustomer();
   renderCustomers();
   statusText.textContent = "Đã chuyển sang trạng thái đã đo";
+  showTab("tab-4");
+  updateWorkflowAssistant();
 }
 
 function budgetLabel(value) {
@@ -2240,11 +2389,24 @@ prescriptionCylInput.addEventListener("input", () => {
   syncCurrentCustomer("customerUpdated");
   updateAdvice();
 });
+customerNameInput.addEventListener("input", () => {
+  syncCurrentCustomer("customerUpdated");
+  updateWorkflowAssistant();
+});
 customerPhoneInput.addEventListener("input", () => {
   syncCurrentCustomer("customerUpdated");
   schedulePhoneLookup();
 });
 customerPhoneInput.addEventListener("change", autoFillFromPhone);
+consultDateInput.addEventListener("change", () => {
+  syncCurrentCustomer("customerUpdated");
+  updateWorkflowAssistant();
+});
+ageGroupInput.addEventListener("change", () => {
+  syncCurrentCustomer("customerUpdated");
+  renderCustomers();
+  updateWorkflowAssistant();
+});
 customerNotesInput.addEventListener("input", () => {
   syncCurrentCustomer("customerUpdated");
   updateAdvice();
@@ -2286,6 +2448,7 @@ if (confirmedFaceShapeInput) {
     if (markMeasuredButton) {
       markMeasuredButton.disabled = !confirmedFaceShape;
     }
+    updateWorkflowAssistant();
   });
 }
 
@@ -2297,6 +2460,15 @@ if (customerViewToggle) {
 
 if (saveFeedbackButton) {
   saveFeedbackButton.addEventListener("click", saveFeedback);
+}
+
+if (workflowNextButton) {
+  workflowNextButton.addEventListener("click", () => {
+    handleWorkflowNext().catch((error) => {
+      console.error(error);
+      statusText.textContent = "Không thể chuyển bước";
+    });
+  });
 }
 
 startButton.addEventListener("click", async () => {
