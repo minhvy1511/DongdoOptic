@@ -1,8 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260720-18";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-18";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-18";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-18";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-18";
+import { startUserCamera } from "./camera.js?v=20260720-19";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-19";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-19";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-19";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-19";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +12,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-18";
+} from "./customer-store.js?v=20260720-19";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -119,6 +119,7 @@ const SCAN_CONFIG = {
   ROLL_TOLERANCE_DEG: 8,
   HOLD_DURATION_MS: 500,
   STEP_TIMEOUT_MS: 8000,
+  SOFT_PARTIAL_TIMEOUT_MS: 3500,
   MIN_CONFIDENCE_TO_SHOW_RESULT: 50,
   MIN_FRAME_CONFIDENCE: 0.42,
   PARTIAL_MIN_CAPTURED: 2,
@@ -246,8 +247,21 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
     autoScanState.progress = condition.near ? 0.32 : 0;
   }
 
-  if ((now - autoScanState.stepStartedAt) > SCAN_CONFIG.STEP_TIMEOUT_MS) {
-    const capturedCount = autoScanState.captureList.length;
+  const stepElapsedMs = now - autoScanState.stepStartedAt;
+  const capturedCount = autoScanState.captureList.length;
+  if (capturedCount >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED
+    && stepElapsedMs > SCAN_CONFIG.SOFT_PARTIAL_TIMEOUT_MS
+    && autoScanState.stepIndex >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED) {
+    finalizeMultiAngleScan({
+      partial: true,
+      reason: condition.near
+        ? "Góc cuối gần đạt, hệ thống tạm tổng hợp để không làm gián đoạn tư vấn."
+        : "Khách khó giữ đủ góc cuối, hệ thống tạm tổng hợp từ dữ liệu đã có."
+    });
+    return;
+  }
+
+  if (stepElapsedMs > SCAN_CONFIG.STEP_TIMEOUT_MS) {
     if (capturedCount >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED) {
       finalizeMultiAngleScan({
         partial: true,
@@ -619,7 +633,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-18");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-19");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1360,8 +1374,12 @@ function renderMetricsV2(metrics, quality = null, diagnostics = null) {
   `;
 }
 
-function renderRecommendations(frames) {
-  frameList.innerHTML = frames
+function renderRecommendations(frames, isDraft = false) {
+  const draftNotice = isDraft
+    ? `<p class="draft-advice-note">Gợi ý nháp từ AI. Hãy xác nhận dạng mặt ở VisionID trước khi đánh dấu đã đo hoặc chốt tư vấn.</p>`
+    : "";
+
+  frameList.innerHTML = draftNotice + frames
     .map(
       (frame) => `
         <article class="frame-card">
@@ -1864,16 +1882,32 @@ function updateAdvice() {
   renderLensPreview(lensAdvice, latestLensRecommendations);
   renderCurrentCustomerSummary(readCustomerSnapshot());
 
-  if (!confirmedFaceShape) {
+  const draftFaceShape = getDraftFaceShapeForAdvice();
+  const adviceFaceShape = confirmedFaceShape || draftFaceShape;
+
+  if (!adviceFaceShape) {
     latestRecommendations = [];
     frameList.innerHTML = `<p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để lấy gợi ý gọng.</p>`;
     renderConsultationSummary();
     return;
   }
 
-  latestRecommendations = getFrameRecommendations(confirmedFaceShape);
-  renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences));
+  latestRecommendations = getFrameRecommendations(adviceFaceShape);
+  renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences), !confirmedFaceShape);
   renderConsultationSummary();
+}
+
+function getDraftFaceShapeForAdvice() {
+  if (!latestAiFaceShape || latestAiFaceShape === "unknown" || !latestAnalysis) {
+    return "";
+  }
+
+  const confidenceState = getConfidenceState(latestAnalysis);
+  if (confidenceState.level === "low" && !latestAnalysis.diagnostics?.partialScan) {
+    return "";
+  }
+
+  return latestAiFaceShape;
 }
 
 function renderLensPreview(lensAdvice, lenses = []) {
@@ -1941,7 +1975,11 @@ function renderConsultationSummary() {
     return;
   }
 
-  if (!confirmedFaceShape) {
+  const draftFaceShape = getDraftFaceShapeForAdvice();
+  const summaryFaceShape = confirmedFaceShape || draftFaceShape;
+  const isDraft = !confirmedFaceShape && Boolean(draftFaceShape);
+
+  if (!summaryFaceShape) {
     consultationSummary.innerHTML = `
       <p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để tạo kết luận tư vấn.</p>
     `;
@@ -1950,7 +1988,7 @@ function renderConsultationSummary() {
 
   const customer = readCustomerSnapshot();
   const preferences = readPreferences();
-  const topFrames = (latestRecommendations.length ? latestRecommendations : getFrameRecommendations(confirmedFaceShape))
+  const topFrames = (latestRecommendations.length ? latestRecommendations : getFrameRecommendations(summaryFaceShape))
     .slice(0, 3);
   const lensLine = latestLensRecommendations[0]
     ? `${latestLensRecommendations[0].brand} ${latestLensRecommendations[0].line}`
@@ -1958,16 +1996,16 @@ function renderConsultationSummary() {
 
   consultationSummary.innerHTML = `
     <div class="summary-hero">
-      <div class="face-icon large">${FACE_SHAPE_ICONS[confirmedFaceShape] || "?"}</div>
+      <div class="face-icon large">${FACE_SHAPE_ICONS[summaryFaceShape] || "?"}</div>
       <div>
-        <span>Kết luận VisionID</span>
-        <strong>${getFaceShapeLabel(confirmedFaceShape)}</strong>
-        <p>${customer.customer_name || "Khách hàng"} nên thử các form gọng cân bằng với nhu cầu ${purposeLabel(preferences.purpose).toLowerCase()}.</p>
+        <span>${isDraft ? "Gợi ý nháp VisionID" : "Kết luận VisionID"}</span>
+        <strong>${getFaceShapeLabel(summaryFaceShape)}</strong>
+        <p>${customer.customer_name || "Khách hàng"} nên thử các form gọng cân bằng với nhu cầu ${purposeLabel(preferences.purpose).toLowerCase()}.${isDraft ? " Cần xác nhận dạng mặt trước khi chốt." : ""}</p>
       </div>
     </div>
     <div class="summary-grid">
       <div><span>Dạng mặt AI</span><strong>${latestAiFaceShape ? getFaceShapeLabel(latestAiFaceShape) : "Chưa có"}</strong></div>
-      <div><span>Nhân viên xác nhận</span><strong>${getFaceShapeLabel(confirmedFaceShape)}</strong></div>
+      <div><span>Nhân viên xác nhận</span><strong>${confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : "Chưa xác nhận"}</strong></div>
       <div><span>Tròng kính</span><strong>${lensLine}</strong></div>
       <div><span>Trạng thái</span><strong>${statusLabel(customer.customer_status)}</strong></div>
     </div>
