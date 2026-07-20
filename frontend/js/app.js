@@ -1,8 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260720-13";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-13";
-import { analyzeFaceShape, getFaceShapeLabel } from "./face-analysis.js?v=20260720-13";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-13";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-13";
+import { startUserCamera } from "./camera.js?v=20260720-14";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-14";
+import { analyzeFaceShape, getFaceShapeLabel } from "./face-analysis.js?v=20260720-14";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-14";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-14";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +12,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-13";
+} from "./customer-store.js?v=20260720-14";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -36,6 +36,7 @@ const cameraModeHint = document.getElementById("cameraModeHint");
 const analyzeFaceButton = document.getElementById("analyzeFaceButton");
 const markMeasuredButton = document.getElementById("markMeasuredButton");
 const confidenceNotice = document.getElementById("confidenceNotice");
+const cameraConfidenceOverlay = document.getElementById("cameraConfidenceOverlay");
 const confirmedFaceShapeInput = document.getElementById("confirmedFaceShape");
 const customerViewToggle = document.getElementById("customerViewToggle");
 const customerResultCard = document.getElementById("customerResultCard");
@@ -130,7 +131,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-13");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-14");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -444,6 +445,7 @@ function getConfidenceState(analysis) {
 
 function renderConfidenceNotice(analysis, confidenceState, finalResult, overrideMessage = "") {
   if (!confidenceNotice) {
+    renderCameraConfidenceOverlay(analysis, confidenceState, overrideMessage);
     return;
   }
 
@@ -459,6 +461,31 @@ function renderConfidenceNotice(analysis, confidenceState, finalResult, override
     <strong>${overrideMessage || messages[confidenceState.level]}</strong>
     <span>${reasons.join(" ")}</span>
     ${finalResult ? `<em>Kết quả được tổng hợp từ nhiều khung hình.</em>` : ""}
+  `;
+  renderCameraConfidenceOverlay(analysis, confidenceState, overrideMessage);
+}
+
+function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low", percent: 0 }, overrideMessage = "") {
+  if (!cameraConfidenceOverlay) {
+    return;
+  }
+
+  const shape = confirmedFaceShape || (confidenceState.level === "low" ? "" : latestAiFaceShape);
+  const shapeLabel = shape ? getFaceShapeLabel(shape) : "Chưa đủ dữ liệu";
+  const percentLabel = confidenceState.percent ? `${confidenceState.percent}%` : "--";
+  const statusTextValue = overrideMessage || (
+    confidenceState.level === "high"
+      ? `Tin cậy cao - ${shapeLabel}`
+      : confidenceState.level === "medium"
+        ? `Nên xác nhận - ${shapeLabel}`
+        : "Cần chụp lại hoặc căn mặt"
+  );
+
+  cameraConfidenceOverlay.className = `camera-confidence-overlay ${confidenceState.level || "low"}`;
+  cameraConfidenceOverlay.innerHTML = `
+    <span>Độ tin cậy</span>
+    <strong>${percentLabel}</strong>
+    <em>${statusTextValue}</em>
   `;
 }
 
@@ -1687,6 +1714,7 @@ if (confirmedFaceShapeInput) {
     }
     faceShapeText.textContent = confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : "Chưa xác nhận";
     renderCustomerResult();
+    renderCameraConfidenceOverlay(latestAnalysis, latestAnalysis ? getConfidenceState(latestAnalysis) : { level: "low", percent: 0 });
     updateAdvice();
     syncCurrentCustomer("customerUpdated");
     if (markMeasuredButton) {
