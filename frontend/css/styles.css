@@ -1441,7 +1441,10 @@ h1 {
   }
 
   .camera-panel {
-    min-height: 260px;
+    width: 100%;
+    height: min(72vh, 560px);
+    min-height: 360px;
+    border-radius: 14px;
   }
 
   .camera-stage {
@@ -1459,15 +1462,25 @@ h1 {
 
   .privacy-note {
     left: 10px;
-    right: 10px;
+    right: auto;
     bottom: 10px;
+    max-width: calc(100% - 20px);
     font-size: 11px;
+  }
+
+  .camera-panel.camera-active .privacy-note {
+    max-width: 230px;
+    padding: 6px 9px;
+    opacity: 0.82;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .camera-confidence-overlay {
     top: 10px;
     left: 10px;
-    max-width: calc(100% - 20px);
+    max-width: min(280px, calc(100% - 20px));
     padding: 8px 10px;
   }
 
@@ -1520,7 +1533,7 @@ h1 {
   }
 
   .camera-panel {
-    aspect-ratio: 4 / 5;
+    aspect-ratio: auto;
   }
 
   .sidebar-art {

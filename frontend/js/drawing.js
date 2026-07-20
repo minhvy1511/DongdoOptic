@@ -13,7 +13,7 @@ export function clearCanvas(canvas) {
   context.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-export function drawCalibrationGuide(canvas) {
+export function drawCalibrationGuide(canvas, landmarks = null) {
   const context = canvas.getContext("2d");
   const width = canvas.width || canvas.clientWidth;
   const height = canvas.height || canvas.clientHeight;
@@ -22,18 +22,19 @@ export function drawCalibrationGuide(canvas) {
     return;
   }
 
-  const centerX = width / 2;
-  const centerY = height * 0.5;
-  const guideWidth = width * 0.34;
-  const guideHeight = height * 0.52;
+  const faceBox = landmarks?.length ? getLandmarkBox(landmarks, width, height) : null;
+  const centerX = faceBox ? faceBox.centerX : width / 2;
+  const centerY = faceBox ? faceBox.centerY : height * 0.5;
+  const guideWidth = faceBox ? Math.min(width * 0.82, faceBox.width * 1.18) : width * 0.38;
+  const guideHeight = faceBox ? Math.min(height * 0.82, faceBox.height * 1.12) : height * 0.56;
   const inset = Math.min(width, height) * 0.08;
 
   context.save();
-  context.fillStyle = "rgba(255, 255, 255, 0.04)";
+  context.fillStyle = "rgba(255, 255, 255, 0.025)";
   context.fillRect(inset, inset, width - inset * 2, height - inset * 2);
-  context.strokeStyle = "rgba(47, 100, 240, 0.24)";
+  context.strokeStyle = faceBox ? "rgba(245, 159, 0, 0.42)" : "rgba(47, 100, 240, 0.2)";
   context.lineWidth = Math.max(1, Math.min(width, height) * 0.004);
-  context.setLineDash([10, 12]);
+  context.setLineDash(faceBox ? [] : [10, 12]);
   context.beginPath();
   context.ellipse(centerX, centerY, guideWidth / 2, guideHeight / 2, 0, 0, Math.PI * 2);
   context.stroke();
@@ -47,4 +48,27 @@ export function drawCalibrationGuide(canvas) {
   context.lineTo(centerX, centerY + guideHeight * 0.58);
   context.stroke();
   context.restore();
+}
+
+function getLandmarkBox(landmarks, canvasWidth, canvasHeight) {
+  const xs = landmarks.map((point) => point?.x).filter(Number.isFinite);
+  const ys = landmarks.map((point) => point?.y).filter(Number.isFinite);
+
+  if (!xs.length || !ys.length) {
+    return null;
+  }
+
+  const minX = Math.min(...xs) * canvasWidth;
+  const maxX = Math.max(...xs) * canvasWidth;
+  const minY = Math.min(...ys) * canvasHeight;
+  const maxY = Math.max(...ys) * canvasHeight;
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+
+  return {
+    centerX: minX + width / 2,
+    centerY: minY + height / 2,
+    width,
+    height
+  };
 }

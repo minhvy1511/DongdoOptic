@@ -1,8 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260720-14";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-14";
-import { analyzeFaceShape, getFaceShapeLabel } from "./face-analysis.js?v=20260720-14";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-14";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-14";
+import { startUserCamera } from "./camera.js?v=20260720-15";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-15";
+import { analyzeFaceShape, getFaceShapeLabel } from "./face-analysis.js?v=20260720-15";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-15";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-15";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +12,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-14";
+} from "./customer-store.js?v=20260720-15";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -131,7 +131,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-14");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-15");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -193,10 +193,9 @@ function detectFrame(sessionToken) {
 }
 
 function drawResults(results) {
-  clearCanvas(canvas);
-  drawCalibrationGuide(canvas);
-
   const faces = results.faceLandmarks ?? [];
+  clearCanvas(canvas);
+  drawCalibrationGuide(canvas, faces[0] || null);
   faceCountText.textContent = String(faces.length);
   landmarkCountText.textContent = faces[0] ? String(faces[0].length) : "0";
 
