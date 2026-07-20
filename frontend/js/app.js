@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-22";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-22";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-22";
+import { startUserCamera } from "./camera.js?v=20260720-24";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-24";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-24";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-22";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-22";
+} from "./recommendations.js?v=20260720-24";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-24";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-22";
+} from "./customer-store.js?v=20260720-24";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -129,12 +129,10 @@ const SCAN_CONFIG = {
   ROLL_TOLERANCE_DEG: 12,
   HOLD_DURATION_MS: 320,
   STEP_TIMEOUT_MS: 5200,
-  SOFT_PARTIAL_TIMEOUT_MS: 2400,
+  TIMEOUT_EXTENSION_MS: 5000,
   MIN_CONFIDENCE_TO_SHOW_RESULT: 50,
   MIN_FRAME_CONFIDENCE: 0.34,
-  FALLBACK_FRAME_CONFIDENCE: 0.28,
-  PARTIAL_MIN_CAPTURED: 1,
-  PARTIAL_MIN_CONFIDENCE: 0.32
+  REQUIRED_CAPTURED_FRAMES: 3
 };
 
 const SCAN_STEPS = [
@@ -162,6 +160,7 @@ function createAutoScanState() {
     token: 0,
     stepIndex: 0,
     stepStartedAt: 0,
+    stepTimeoutMs: 0,
     holdStartedAt: 0,
     transitionUntil: 0,
     progress: 0,
@@ -169,9 +168,10 @@ function createAutoScanState() {
     prompt: "Bật camera để bắt đầu quét.",
     detail: "Hệ thống sẽ tự chụp khi khuôn mặt ổn định.",
     error: "",
+    errorReason: "",
     captures: {},
     captureList: [],
-    bestCaptures: {},
+    timeoutExtensions: {},
     lastPose: null,
     lastAnalysis: null
   };
@@ -191,6 +191,7 @@ function startAutoScanFlow(reason = "auto") {
   autoScanState.phase = "CENTERING";
   autoScanState.token = token;
   autoScanState.stepStartedAt = performance.now();
+  autoScanState.stepTimeoutMs = SCAN_CONFIG.STEP_TIMEOUT_MS;
   autoScanState.prompt = SCAN_STEPS[0].label;
   autoScanState.detail = "Giữ mặt giữa khung. Máy sẽ tự chụp khi ổn định.";
   isAnalyzingFace = true;
@@ -247,7 +248,6 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   autoScanState.prompt = step.label;
   autoScanState.detail = condition.detail;
   autoScanState.status = condition.status;
-  rememberBestScanCandidate(step, analysis, pose, condition);
 
   if (condition.ready) {
     if (!autoScanState.holdStartedAt) {
@@ -264,43 +264,26 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   }
 
   const stepElapsedMs = now - autoScanState.stepStartedAt;
-  const capturedCount = autoScanState.captureList.length;
-  const fallbackCapture = getFallbackCaptureForStep(step);
-  if (!autoScanState.captures[step.key]
-    && fallbackCapture
-    && stepElapsedMs > SCAN_CONFIG.SOFT_PARTIAL_TIMEOUT_MS
-    && (step.key === "center" || capturedCount >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED || condition.near)) {
-    captureScanStep(step, fallbackCapture.analysis, fallbackCapture.pose, { fallback: true });
-    return;
-  }
-
-  if (capturedCount >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED
-    && stepElapsedMs > SCAN_CONFIG.SOFT_PARTIAL_TIMEOUT_MS
-    && autoScanState.stepIndex >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED) {
-    finalizeMultiAngleScan({
-      partial: true,
-      reason: condition.near
-        ? "Góc cuối gần đạt, hệ thống tạm tổng hợp để không làm gián đoạn tư vấn."
-        : "Khách khó giữ đủ góc cuối, hệ thống tạm tổng hợp từ dữ liệu đã có."
-    });
-    return;
-  }
-
-  if (stepElapsedMs > SCAN_CONFIG.STEP_TIMEOUT_MS) {
-    if (fallbackCapture && !autoScanState.captures[step.key]) {
-      captureScanStep(step, fallbackCapture.analysis, fallbackCapture.pose, { fallback: true });
-      return;
-    }
-
-    if (capturedCount >= SCAN_CONFIG.PARTIAL_MIN_CAPTURED) {
-      finalizeMultiAngleScan({
-        partial: true,
-        reason: condition.timeoutDetail || "Không bắt được đủ 3 góc, nên tạm tổng hợp từ số ảnh đã chụp."
+  if (stepElapsedMs > autoScanState.stepTimeoutMs) {
+    if (!autoScanState.timeoutExtensions[step.key]) {
+      autoScanState.timeoutExtensions[step.key] = 1;
+      autoScanState.stepStartedAt = now;
+      autoScanState.stepTimeoutMs = SCAN_CONFIG.TIMEOUT_EXTENSION_MS;
+      autoScanState.holdStartedAt = 0;
+      autoScanState.progress = 0;
+      autoScanState.status = "near";
+      autoScanState.detail = "Cố lên, quay thêm chút nữa. Hệ thống gia hạn một lần cho góc này.";
+      console.debug(`[VisionID] Timeout extension granted for ${step.key}`, {
+        capturedFrames: autoScanState.captureList.length,
+        stepIndex: autoScanState.stepIndex,
+        condition
       });
+      updateScanHud();
       return;
     }
 
-    failAutoScan(condition.timeoutDetail || "Không nhận diện rõ khuôn mặt, hãy đảm bảo đủ sáng và không bị che mặt.");
+    failIncompleteScan(step, condition.timeoutDetail || "Không bắt được đủ góc cần quét.");
+    return;
   }
 
   updateScanHud();
@@ -329,89 +312,45 @@ function evaluateScanFrame(step, analysis, pose, faceCount) {
   const yawOk = yawDiff <= step.tolerance;
   const yawNear = yawDiff <= step.tolerance + 7;
   const frameOk = centerOk && distanceOk && rollOk && confidenceOk;
-  const fallbackOk = centerOk
-    && distanceOk
-    && Math.abs(Number(pose.rollDeg || 0)) <= SCAN_CONFIG.ROLL_TOLERANCE_DEG + 6
-    && confidence >= SCAN_CONFIG.FALLBACK_FRAME_CONFIDENCE
-    && yawDiff <= step.tolerance + (step.key === "center" ? 7 : 14);
-  const score = confidence * 0.5
-    + clamp01((coverage - 0.06) / 0.24) * 0.18
-    + clamp01(1 - (Math.abs(Number(quality.centerOffsetX || 0)) + Math.abs(Number(quality.centerOffsetY || 0))) * 2.5) * 0.18
-    + clamp01(1 - yawDiff / 30) * 0.14;
 
   if (frameOk && yawOk) {
-    return { ready: true, near: true, fallbackOk: true, score, status: "hold", detail: "Giữ nguyên một chút để máy tự chụp." };
+    return { ready: true, near: true, status: "hold", detail: "Giữ nguyên một chút để máy tự chụp." };
   }
 
   if (frameOk && yawNear) {
-    return { ready: false, near: true, fallbackOk: true, score, status: "near", detail: "Gần đúng rồi, máy sẽ tự chọn khung tốt nhất nếu khó giữ đúng góc." };
+    return { ready: false, near: true, status: "near", detail: "Gần đúng rồi, quay chậm thêm một chút." };
   }
 
   if (!confidenceOk) {
-    return { ready: false, near: fallbackOk, fallbackOk, score, status: "prompt", detail: "Giữ đủ sáng, nhìn rõ mắt và mũi.", timeoutDetail: "Tín hiệu khuôn mặt còn yếu." };
+    return { ready: false, near: false, status: "prompt", detail: "Giữ đủ sáng, nhìn rõ mắt và mũi.", timeoutDetail: "Tín hiệu khuôn mặt còn yếu." };
   }
 
   if (!centerOk) {
-    return { ready: false, near: false, fallbackOk, score, status: "prompt", detail: "Đưa mặt vào giữa khung trước khi quét.", timeoutDetail: "Khuôn mặt chưa nằm giữa khung." };
+    return { ready: false, near: false, status: "prompt", detail: "Đưa mặt vào giữa khung trước khi quét.", timeoutDetail: "Khuôn mặt chưa nằm giữa khung." };
   }
 
   if (!distanceOk) {
-    return { ready: false, near: false, fallbackOk, score, status: "prompt", detail: coverage < 0.08 ? "Đưa mặt gần camera hơn." : "Lùi mặt ra xa camera hơn.", timeoutDetail: "Khoảng cách khuôn mặt chưa phù hợp." };
+    return { ready: false, near: false, status: "prompt", detail: coverage < 0.08 ? "Đưa mặt gần camera hơn." : "Lùi mặt ra xa camera hơn.", timeoutDetail: "Khoảng cách khuôn mặt chưa phù hợp." };
   }
 
   if (!rollOk) {
-    return { ready: false, near: fallbackOk, fallbackOk, score, status: "prompt", detail: "Giữ đầu thẳng, không nghiêng vai.", timeoutDetail: "Đầu đang nghiêng quá nhiều." };
+    return { ready: false, near: false, status: "prompt", detail: "Giữ đầu thẳng, không nghiêng vai.", timeoutDetail: "Đầu đang nghiêng quá nhiều." };
   }
 
   return {
     ready: false,
-    near: fallbackOk,
-    fallbackOk,
-    score,
+    near: false,
     status: "prompt",
     detail: getYawGuidance(step, pose.yawDeg),
     timeoutDetail: "Chưa đạt đúng hướng mặt cần quét."
   };
 }
 
-function rememberBestScanCandidate(step, analysis, pose, condition) {
-  if (!analysis?.metrics || !pose || !condition?.fallbackOk) {
-    return;
-  }
-
-  const existing = autoScanState.bestCaptures[step.key];
-  const candidate = {
-    analysis: cloneAnalysis(analysis),
-    pose: { ...pose },
-    score: Number(condition.score || 0),
-    capturedAt: Date.now()
-  };
-
-  if (!existing || candidate.score > Number(existing.score || 0)) {
-    autoScanState.bestCaptures[step.key] = candidate;
-  }
-}
-
-function getFallbackCaptureForStep(step) {
-  const candidate = autoScanState.bestCaptures[step.key];
-  if (!candidate?.analysis?.metrics) {
-    return null;
-  }
-
-  const confidence = Number(candidate.analysis.quality?.confidence || 0);
-  if (confidence < SCAN_CONFIG.FALLBACK_FRAME_CONFIDENCE) {
-    return null;
-  }
-
-  return candidate;
-}
-
-function captureScanStep(step, analysis, pose, options = {}) {
+function captureScanStep(step, analysis, pose) {
   const capture = {
     key: step.key,
     label: step.shortLabel,
     capturedAt: Date.now(),
-    fallback: Boolean(options.fallback),
     pose: { ...pose },
     analysis: cloneAnalysis(analysis)
   };
@@ -421,10 +360,12 @@ function captureScanStep(step, analysis, pose, options = {}) {
   autoScanState.status = "captured";
   autoScanState.progress = 1;
   autoScanState.phase = `CAPTURED_${step.key.toUpperCase()}`;
-  autoScanState.detail = options.fallback
-    ? `Đã chọn khung tốt nhất cho góc ${step.shortLabel.toLowerCase()}.`
-    : `Đã chụp góc ${step.shortLabel.toLowerCase()}.`;
+  autoScanState.detail = `Đã chụp góc ${step.shortLabel.toLowerCase()}.`;
   autoScanState.transitionUntil = performance.now() + 420;
+  console.debug(`[VisionID] Captured ${step.key}`, {
+    capturedFrames: autoScanState.captureList.length,
+    capturedKeys: autoScanState.captureList.map((item) => item.key)
+  });
   updateScanHud();
 
   const token = autoScanState.token;
@@ -433,14 +374,20 @@ function captureScanStep(step, analysis, pose, options = {}) {
       return;
     }
 
-    if (autoScanState.stepIndex >= SCAN_STEPS.length - 1) {
+    if (autoScanState.captureList.length >= SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES) {
       finalizeMultiAngleScan();
+      return;
+    }
+
+    if (autoScanState.stepIndex >= SCAN_STEPS.length - 1) {
+      failIncompleteScan(step, "Luồng quét đã tới bước cuối nhưng chưa đủ 3 khung.");
       return;
     }
 
     autoScanState.stepIndex += 1;
     autoScanState.phase = `PROMPT_${SCAN_STEPS[autoScanState.stepIndex].key.toUpperCase()}`;
     autoScanState.stepStartedAt = performance.now();
+    autoScanState.stepTimeoutMs = SCAN_CONFIG.STEP_TIMEOUT_MS;
     autoScanState.holdStartedAt = 0;
     autoScanState.progress = 0;
     autoScanState.transitionUntil = 0;
@@ -451,37 +398,37 @@ function captureScanStep(step, analysis, pose, options = {}) {
   }, 420);
 }
 
-function finalizeMultiAngleScan(options = {}) {
-  const partial = Boolean(options.partial);
-  const partialReason = options.reason || "";
+function finalizeMultiAngleScan() {
   const capturedCount = autoScanState.captureList.length;
+  if (capturedCount < SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES) {
+    failIncompleteScan(SCAN_STEPS[autoScanState.stepIndex], `Chỉ chụp được ${capturedCount}/3 khung, vui lòng quét lại.`);
+    return;
+  }
+
   autoScanState.phase = "AGGREGATING";
   autoScanState.active = false;
   autoScanState.progress = 1;
   autoScanState.status = "captured";
   autoScanState.prompt = "Đang tổng hợp kết quả";
-  autoScanState.detail = partial
-    ? `Đã chụp ${capturedCount}/3 góc. ${partialReason || "Kết quả sẽ được tổng hợp từ số ảnh đã có."}`
-    : "Đã đủ 3 góc quét.";
+  autoScanState.detail = "Đã đủ 3 góc quét.";
   updateScanHud();
+  console.debug("[VisionID] Aggregating scan", {
+    capturedFrames: capturedCount,
+    capturedKeys: autoScanState.captureList.map((item) => item.key)
+  });
 
   const finalAnalysis = buildMultiAngleAnalysis(autoScanState.captureList);
   isAnalyzingFace = false;
   setAnalyzingState(false);
 
-  if (!finalAnalysis || capturedCount < SCAN_CONFIG.PARTIAL_MIN_CAPTURED) {
+  if (!finalAnalysis) {
     failAutoScan("Chưa đủ tin cậy, vui lòng quét lại với ánh sáng đều và giữ mặt rõ hơn.");
     return;
   }
 
   const finalConfidence = Math.round((finalAnalysis.quality?.confidence || 0) * 100);
-  if (!partial && (finalAnalysis.shape === "unknown" || finalConfidence < SCAN_CONFIG.MIN_CONFIDENCE_TO_SHOW_RESULT)) {
+  if (finalAnalysis.shape === "unknown" || finalConfidence < SCAN_CONFIG.MIN_CONFIDENCE_TO_SHOW_RESULT) {
     failAutoScan("Chưa đủ tin cậy, vui lòng quét lại với ánh sáng đều và giữ mặt rõ hơn.");
-    return;
-  }
-
-  if (partial && finalConfidence < SCAN_CONFIG.PARTIAL_MIN_CONFIDENCE * 100 && finalAnalysis.shape === "unknown") {
-    failAutoScan("Chưa bắt đủ dữ liệu để tổng hợp, hãy thử quét lại.");
     return;
   }
 
@@ -493,9 +440,56 @@ function finalizeMultiAngleScan(options = {}) {
   autoScanState.phase = "RESULT";
   autoScanState.status = "captured";
   autoScanState.prompt = "Đã quét xong";
-  autoScanState.detail = partial
-    ? `Đã chốt tạm từ ${capturedCount}/3 góc. Hãy xác nhận dạng mặt trước khi tư vấn chính thức.`
-    : "Kiểm tra kết quả và xác nhận dạng mặt trước khi tư vấn.";
+  autoScanState.detail = "Kiểm tra kết quả và xác nhận dạng mặt trước khi tư vấn.";
+  updateScanHud();
+  updateWorkflowAssistant();
+}
+
+function failIncompleteScan(step, message) {
+  const capturedKeys = autoScanState.captureList.map((capture) => capture.key);
+  const missingSteps = SCAN_STEPS.filter((item) => !capturedKeys.includes(item.key));
+  const missingLabels = missingSteps.map((item) => item.shortLabel.toLowerCase()).join(", ");
+  console.debug("[VisionID] Incomplete scan blocked", {
+    reason: "INCOMPLETE_FRAMES",
+    capturedFrames: autoScanState.captureList.length,
+    capturedKeys,
+    missingKeys: missingSteps.map((item) => item.key),
+    step: step?.key || ""
+  });
+
+  latestAnalysis = null;
+  latestAiFaceShape = "";
+  clearConfirmedFaceShape();
+  autoScanState.active = false;
+  autoScanState.phase = "ERROR";
+  autoScanState.status = "error";
+  autoScanState.progress = 0;
+  autoScanState.errorReason = "INCOMPLETE_FRAMES";
+  autoScanState.error = message;
+  autoScanState.prompt = "Chụp thiếu khung";
+  autoScanState.detail = `${message} Thiếu góc: ${missingLabels || "chưa xác định"}.`;
+  isAnalyzingFace = false;
+  setAnalyzingState(false);
+  statusText.textContent = "Cần quét lại từ đầu";
+  faceShapeText.textContent = "Chưa đủ 3 khung";
+  renderConfidenceNotice(null, { level: "low", percent: 0 }, false, autoScanState.detail);
+  renderCustomerResult();
+  renderMetricsV2({
+    lengthToWidth: 0,
+    foreheadToCheek: 0,
+    jawToCheek: 0,
+    jawToForehead: 0,
+    cheekToJaw: 0
+  });
+  if (confirmedFaceShapeInput) {
+    confirmedFaceShapeInput.value = "";
+    confirmedFaceShapeInput.disabled = true;
+  }
+  if (markMeasuredButton) {
+    markMeasuredButton.disabled = true;
+  }
+  frameList.innerHTML = `<p class="empty-state">VisionID chưa đủ 3 khung. Hãy quét lại từ đầu để nhận gợi ý gọng.</p>`;
+  renderConsultationSummary();
   updateScanHud();
   updateWorkflowAssistant();
 }
@@ -519,7 +513,7 @@ function failAutoScan(message) {
 function buildMultiAngleAnalysis(captures) {
   const usableCaptures = captures.filter((capture) => {
     const confidence = Number(capture?.analysis?.quality?.confidence || 0);
-    return capture?.analysis?.metrics && confidence >= SCAN_CONFIG.FALLBACK_FRAME_CONFIDENCE;
+    return capture?.analysis?.metrics && confidence >= SCAN_CONFIG.MIN_FRAME_CONFIDENCE;
   });
 
   if (!usableCaptures.length) {
@@ -718,8 +712,11 @@ function updateScanHud() {
   const step = SCAN_STEPS[autoScanState.stepIndex] || SCAN_STEPS[0];
   const isIdle = autoScanState.phase === "IDLE";
   const completeCount = autoScanState.captureList?.length || 0;
+  const displayStep = autoScanState.phase === "RESULT"
+    ? SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES
+    : Math.min(completeCount + 1, SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES);
   scanHud.classList.toggle("is-idle", isIdle);
-  scanStepLabel.textContent = isIdle ? "VisionID" : `Bước ${Math.min(autoScanState.stepIndex + 1, 3)}/3 · ${completeCount}/3 đã chụp`;
+  scanStepLabel.textContent = isIdle ? "VisionID" : `Bước ${displayStep}/3 · ${completeCount}/3 đã chụp`;
   scanPromptLabel.textContent = autoScanState.prompt || step.label;
   scanSubLabel.textContent = autoScanState.detail || "Hệ thống sẽ tự chụp khi khuôn mặt ổn định.";
   scanProgressFill.style.width = `${Math.round(clamp01(autoScanState.progress) * 100)}%`;
@@ -748,7 +745,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-22");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-24");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
