@@ -1,8 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-21";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-21";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-21";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-21";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-21";
+import { startUserCamera } from "./camera.js?v=20260720-22";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-22";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-22";
+import {
+  buildConsultationScript,
+  getColorGuidance,
+  getFaceShapeAdvice,
+  getFitGuidance,
+  getFrameRecommendations
+} from "./recommendations.js?v=20260720-22";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-22";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-21";
+} from "./customer-store.js?v=20260720-22";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -742,7 +748,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-21");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-22");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1506,6 +1512,8 @@ function renderRecommendations(frames, isDraft = false) {
   const draftNotice = isDraft
     ? `<p class="draft-advice-note">Gợi ý nháp từ AI. Hãy xác nhận dạng mặt ở VisionID trước khi đánh dấu đã đo hoặc chốt tư vấn.</p>`
     : "";
+  const adviceFaceShape = confirmedFaceShape || getDraftFaceShapeForAdvice();
+  const shapeAdvice = adviceFaceShape ? getFaceShapeAdvice(adviceFaceShape) : null;
 
   frameList.innerHTML = draftNotice + frames
     .map(
@@ -1517,6 +1525,10 @@ function renderRecommendations(frames, isDraft = false) {
             <p>${frame.style}</p>
           </div>
           <p>${frame.reason}</p>
+          <div class="frame-details">
+            <span>Nên tránh: ${frame.avoidNote || shapeAdvice?.avoid?.[0] || "Gọng lệch tỷ lệ khuôn mặt"}</span>
+            <span>Fit: ${frame.fitNote || shapeAdvice?.fit?.[0] || "Kiểm tra chân mày, độ rộng và vị trí mắt trong tròng"}</span>
+          </div>
         </article>
       `
     )
@@ -2255,6 +2267,21 @@ function renderConsultationSummary() {
 
   const customer = readCustomerSnapshot();
   const preferences = readPreferences();
+  const shapeAdvice = getFaceShapeAdvice(summaryFaceShape);
+  const fitNotes = getFitGuidance({
+    faceShape: summaryFaceShape,
+    metrics: latestAnalysis?.metrics || {},
+    frameWidthMm: customer.frame_width_mm,
+    prescription: customer.prescription || {},
+    preference: preferences.frame_preference
+  });
+  const consultationScript = buildConsultationScript({
+    customerName: customer.customer_name || "Anh/chị",
+    faceShape: summaryFaceShape,
+    faceShapeLabel: getFaceShapeLabel(summaryFaceShape),
+    purposeLabel: purposeLabel(preferences.purpose),
+    preference: preferences.frame_preference
+  });
   const topFrames = (latestRecommendations.length ? latestRecommendations : getFrameRecommendations(summaryFaceShape))
     .slice(0, 3);
   const lensLine = latestLensRecommendations[0]
@@ -2267,7 +2294,7 @@ function renderConsultationSummary() {
       <div>
         <span>${isDraft ? "Gợi ý nháp VisionID" : "Kết luận VisionID"}</span>
         <strong>${getFaceShapeLabel(summaryFaceShape)}</strong>
-        <p>${customer.customer_name || "Khách hàng"} nên thử các form gọng cân bằng với nhu cầu ${purposeLabel(preferences.purpose).toLowerCase()}.${isDraft ? " Cần xác nhận dạng mặt trước khi chốt." : ""}</p>
+        <p>${consultationScript}${isDraft ? " Cần xác nhận dạng mặt trước khi chốt." : ""}</p>
       </div>
     </div>
     <div class="summary-grid">
@@ -2275,6 +2302,27 @@ function renderConsultationSummary() {
       <div><span>Nhân viên xác nhận</span><strong>${confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : "Chưa xác nhận"}</strong></div>
       <div><span>Tròng kính</span><strong>${lensLine}</strong></div>
       <div><span>Trạng thái</span><strong>${statusLabel(customer.customer_status)}</strong></div>
+    </div>
+    <div class="aesthetic-advice">
+      <div>
+        <span>Nguyên tắc</span>
+        <strong>${shapeAdvice.principle}</strong>
+      </div>
+      <div>
+        <span>Nên chọn</span>
+        <strong>${shapeAdvice.choose.join(" · ")}</strong>
+      </div>
+      <div>
+        <span>Nên tránh</span>
+        <strong>${shapeAdvice.avoid.join(" · ")}</strong>
+      </div>
+      <div>
+        <span>Màu gọng</span>
+        <strong>${getColorGuidance(preferences.frame_preference)}</strong>
+      </div>
+    </div>
+    <div class="fit-checklist">
+      ${fitNotes.map((note) => `<span>${note}</span>`).join("")}
     </div>
     <div class="summary-picks">
       ${topFrames.map((frame) => `<span>${frame.name}</span>`).join("")}
@@ -2317,6 +2365,17 @@ function loadFeedbackRecords() {
 }
 
 function enrichFrameRecommendations(frames, preferences) {
+  const adviceFaceShape = confirmedFaceShape || getDraftFaceShapeForAdvice();
+  const shapeAdvice = adviceFaceShape ? getFaceShapeAdvice(adviceFaceShape) : null;
+  const customer = readCustomerSnapshot();
+  const fitNotes = getFitGuidance({
+    faceShape: adviceFaceShape,
+    metrics: latestAnalysis?.metrics || {},
+    frameWidthMm: customer.frame_width_mm,
+    prescription: customer.prescription || {},
+    preference: preferences.frame_preference
+  });
+
   return frames.map((frame) => {
     const extra = [];
     if (preferences.frame_preference === "light") extra.push("ưu tiên chất liệu titanium hoặc nhựa mỏng nhẹ");
@@ -2328,7 +2387,9 @@ function enrichFrameRecommendations(frames, preferences) {
 
     return {
       ...frame,
-      reason: extra.length ? `${frame.reason} Gợi ý thêm: ${extra.join(", ")}.` : frame.reason
+      reason: extra.length ? `${frame.reason} Gợi ý thêm: ${extra.join(", ")}.` : frame.reason,
+      avoidNote: shapeAdvice?.avoid?.[0] || "",
+      fitNote: [frame.fitNote, fitNotes[0]].filter(Boolean).join(" ")
     };
   });
 }

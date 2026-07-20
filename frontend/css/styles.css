@@ -1277,6 +1277,47 @@ h1 {
   line-height: 1.3;
 }
 
+.aesthetic-advice,
+.fit-checklist {
+  display: grid;
+  gap: 10px;
+}
+
+.aesthetic-advice {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.aesthetic-advice div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(13, 107, 98, 0.12);
+  border-radius: var(--radius);
+  background: #f7fbfa;
+}
+
+.aesthetic-advice span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.aesthetic-advice strong {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.fit-checklist span {
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .summary-picks {
   display: flex;
   flex-wrap: wrap;
@@ -1402,6 +1443,20 @@ h1 {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.45;
+}
+
+.frame-details {
+  display: grid;
+  gap: 6px;
+}
+
+.frame-details span {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .lens-list {
@@ -1549,6 +1604,7 @@ h1 {
   .advice-grid,
   .preference-grid,
   .summary-grid,
+  .aesthetic-advice,
   .feedback-form {
     grid-template-columns: 1fr;
   }
