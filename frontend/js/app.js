@@ -1,8 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260720-12";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-12";
-import { analyzeFaceShape, getFaceShapeLabel } from "./face-analysis.js?v=20260720-12";
-import { getFrameRecommendations } from "./recommendations.js?v=20260720-12";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-12";
+import { startUserCamera } from "./camera.js?v=20260720-13";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-13";
+import { analyzeFaceShape, getFaceShapeLabel } from "./face-analysis.js?v=20260720-13";
+import { getFrameRecommendations } from "./recommendations.js?v=20260720-13";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-13";
 import {
   createCustomerCode,
   createSessionCode,
@@ -12,7 +12,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-12";
+} from "./customer-store.js?v=20260720-13";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -130,7 +130,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-12");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-13");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
