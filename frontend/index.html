@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DongDo Optic - Tư vấn gọng kính</title>
-    <link rel="stylesheet" href="./css/styles.css?v=20260720-15" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260720-17" />
   </head>
   <body>
     <main class="app-shell">
@@ -240,11 +240,19 @@
                   <strong>--</strong>
                   <em>Chưa phân tích</em>
                 </div>
+                <div id="scanHud" class="scan-hud" aria-live="polite">
+                  <span id="scanStepLabel">Bước 1/3</span>
+                  <strong id="scanPromptLabel">Nhìn thẳng vào camera</strong>
+                  <div class="scan-progress-track" aria-hidden="true">
+                    <span id="scanProgressFill"></span>
+                  </div>
+                  <em id="scanSubLabel">Hệ thống sẽ tự chụp khi khuôn mặt ổn định.</em>
+                </div>
                 <p class="privacy-note">Ảnh được xử lý trực tiếp trên thiết bị, không lưu trữ hay gửi lên máy chủ.</p>
               </div>
               <div class="camera-actions">
                 <button id="cameraStartButton" type="button">Bật camera</button>
-                <button id="analyzeFaceButton" type="button" class="secondary-action" disabled>Phân tích</button>
+                <button id="analyzeFaceButton" type="button" class="secondary-action" disabled>Quét lại từ đầu</button>
                 <button id="markMeasuredButton" type="button" class="secondary-action" disabled>Đánh dấu đã đo</button>
               </div>
             </div>
@@ -267,7 +275,7 @@
                 <div>
                   <span>Dạng mặt tư vấn</span>
                   <strong id="customerFaceShape">Chưa có kết quả</strong>
-                  <p id="customerResultSummary">Bấm Phân tích để chốt kết quả trước khi tư vấn gọng.</p>
+                  <p id="customerResultSummary">Bật camera để hệ thống tự quét 3 góc, sau đó xác nhận dạng mặt trước khi tư vấn gọng.</p>
                 </div>
               </div>
               <div id="confidenceNotice" class="confidence-notice neutral" aria-live="polite">
@@ -422,6 +430,6 @@
       </section>
     </main>
 
-    <script type="module" src="./js/app.mobile.js?v=20260720-15"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260720-17"></script>
   </body>
 </html>

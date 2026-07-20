@@ -9,6 +9,12 @@ const LANDMARKS = {
   rightJaw: 397
 };
 
+const HEAD_POSE_LANDMARKS = {
+  leftEyeOuter: 33,
+  rightEyeOuter: 263,
+  noseTip: 1
+};
+
 const FACE_SHAPE_LABELS = {
   oval: "Trái xoan",
   round: "Tròn",
@@ -86,30 +92,99 @@ export function getFaceShapeLabel(shape) {
   return FACE_SHAPE_LABELS[shape] ?? FACE_SHAPE_LABELS.unknown;
 }
 
+export function classifyFaceShapeFromMetrics(metrics) {
+  return classifyShape(metrics);
+}
+
+export function estimateHeadPose(landmarks) {
+  const leftEye = landmarks?.[HEAD_POSE_LANDMARKS.leftEyeOuter];
+  const rightEye = landmarks?.[HEAD_POSE_LANDMARKS.rightEyeOuter];
+  const noseTip = landmarks?.[HEAD_POSE_LANDMARKS.noseTip];
+
+  if (!leftEye || !rightEye || !noseTip) {
+    return emptyHeadPose();
+  }
+
+  const eyeDistance = distance(leftEye, rightEye);
+  if (!eyeDistance) {
+    return emptyHeadPose();
+  }
+
+  const eyeCenterX = (leftEye.x + rightEye.x) / 2;
+  const eyeCenterY = (leftEye.y + rightEye.y) / 2;
+  const yawOffset = (noseTip.x - eyeCenterX) / eyeDistance;
+  const yawDeg = clamp(yawOffset * 65, -35, 35);
+  const rollDeg = clamp(Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * (180 / Math.PI), -25, 25);
+
+  return {
+    yawDeg,
+    rollDeg,
+    yawOffset,
+    eyeDistance,
+    centerX: eyeCenterX,
+    centerY: eyeCenterY,
+    confidence: clamp(1 - Math.min(1, Math.abs(yawDeg) / 40) * 0.35 - Math.min(1, Math.abs(rollDeg) / 30) * 0.2, 0, 1)
+  };
+}
+
 function classifyShape(metrics) {
-  const { lengthToWidth, jawToCheek, foreheadToCheek, jawToForehead } = metrics;
+  const candidates = {
+    long: scoreShapeMatch(metrics, {
+      lengthToWidth: [1.7, 0.22],
+      jawToCheek: [0.82, 0.18],
+      foreheadToCheek: [0.92, 0.12]
+    }),
+    round: scoreShapeMatch(metrics, {
+      lengthToWidth: [1.12, 0.12],
+      jawToCheek: [0.82, 0.08],
+      foreheadToCheek: [0.84, 0.08]
+    }),
+    square: scoreShapeMatch(metrics, {
+      lengthToWidth: [1.28, 0.14],
+      jawToCheek: [0.9, 0.08],
+      foreheadToCheek: [0.88, 0.08]
+    }),
+    heart: scoreShapeMatch(metrics, {
+      lengthToWidth: [1.35, 0.14],
+      foreheadToCheek: [1.04, 0.08],
+      jawToForehead: [0.82, 0.08],
+      jawToCheek: [0.9, 0.08]
+    }),
+    diamond: scoreShapeMatch(metrics, {
+      lengthToWidth: [1.34, 0.14],
+      foreheadToCheek: [0.86, 0.08],
+      jawToCheek: [0.8, 0.08]
+    }),
+    oval: scoreShapeMatch(metrics, {
+      lengthToWidth: [1.42, 0.14],
+      foreheadToCheek: [0.94, 0.08],
+      jawToCheek: [0.86, 0.08]
+    })
+  };
 
-  if (lengthToWidth >= 1.52) {
-    return "long";
+  const ordered = Object.entries(candidates).sort((a, b) => b[1] - a[1]);
+  const [bestShape, bestScore] = ordered[0];
+  const secondScore = ordered[1]?.[1] ?? 0;
+  const confidenceGate = 0.6;
+  const marginGate = 0.06;
+
+  if (bestScore < confidenceGate || (bestScore - secondScore) < marginGate) {
+    return "unknown";
   }
 
-  if (lengthToWidth <= 1.22 && jawToCheek >= 0.82 && foreheadToCheek >= 0.84) {
-    return "round";
-  }
+  return bestShape;
+}
 
-  if (jawToCheek >= 0.9 && foreheadToCheek >= 0.88 && lengthToWidth <= 1.42) {
-    return "square";
-  }
-
-  if (foreheadToCheek >= 0.92 && jawToForehead <= 0.82 && jawToCheek <= 0.9) {
-    return "heart";
-  }
-
-  if (foreheadToCheek <= 0.86 && jawToCheek <= 0.8) {
-    return "diamond";
-  }
-
-  return "oval";
+function emptyHeadPose() {
+  return {
+    yawDeg: 0,
+    rollDeg: 0,
+    yawOffset: 0,
+    eyeDistance: 0,
+    centerX: 0.5,
+    centerY: 0.5,
+    confidence: 0
+  };
 }
 
 function distance(pointA, pointB) {
@@ -174,6 +249,25 @@ function pairBalance(pointA, pointB) {
   }
 
   return Math.min(1, Math.hypot(Math.abs(pointA.x - pointB.x), Math.abs(pointA.y - pointB.y)));
+}
+
+function scoreShapeMatch(metrics, targets) {
+  const scores = Object.entries(targets).map(([name, [target, tolerance]]) => {
+    const value = Number(metrics?.[name] || 0);
+    if (!value) {
+      return 0.55;
+    }
+
+    return clamp(1 - Math.abs(value - target) / tolerance, 0, 1);
+  });
+
+  if (!scores.length) {
+    return 0;
+  }
+
+  const averageScore = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+  const weakestScore = Math.min(...scores);
+  return clamp(averageScore * 0.82 + weakestScore * 0.18, 0, 1);
 }
 
 function clamp(value, min, max) {
