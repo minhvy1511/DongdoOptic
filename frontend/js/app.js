@@ -1,6 +1,6 @@
 import { startUserCamera } from "./camera.js?v=20260720-39";
 import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-39";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-39";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260721-40";
 import {
   getColorGuidance,
   getFaceShapeAdvice,
@@ -2193,7 +2193,8 @@ function renderMetricsV2(metrics, quality = null, diagnostics = null) {
         ["Pose", formatPercent(confidenceComponents.poseStability)],
         ["Phan loai", formatPercent(confidenceComponents.classificationClarity)],
         ["Goc nghieng", formatPercent(confidenceComponents.sideAgreement)],
-        ["Center burst", diagnostics?.centerBurst ? `${diagnostics.centerBurst.sampleCount || 0}/${diagnostics.centerBurst.totalSamples || 0}` : "--"]
+        ["Center burst", diagnostics?.centerBurst ? `${diagnostics.centerBurst.sampleCount || 0}/${diagnostics.centerBurst.totalSamples || 0}` : "--"],
+        ["Nguồn chuẩn", diagnostics?.calibrationSource || diagnostics?.classification?.calibrationSource || "--"]
       ].filter(([, value]) => value !== "--")
     : [];
   const qualityRows = quality

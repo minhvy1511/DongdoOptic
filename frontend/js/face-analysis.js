@@ -1,3 +1,5 @@
+import { PUBLIC_FACE_SHAPE_CALIBRATION, getCalibrationSourceLabel } from "./face-calibration.js?v=20260721-40";
+
 const LANDMARKS = {
   topFace: 10,
   chin: 152,
@@ -99,9 +101,10 @@ export function getClassificationDetail(metrics) {
   const [bestShape, bestScore] = ordered[0] || ["unknown", 0];
   const [secondShape, secondScore] = ordered[1] || ["unknown", 0];
   const margin = bestScore - secondScore;
-  const confidenceGate = 0.6;
-  const marginGate = 0.06;
-  const clarity = clamp((margin - marginGate) / 0.22, 0, 1) * clamp(bestScore / 0.84, 0, 1);
+  const confidenceGate = PUBLIC_FACE_SHAPE_CALIBRATION.scoreGates.confidence;
+  const marginGate = PUBLIC_FACE_SHAPE_CALIBRATION.scoreGates.margin;
+  const claritySpan = PUBLIC_FACE_SHAPE_CALIBRATION.scoreGates.claritySpan;
+  const clarity = clamp((margin - marginGate) / claritySpan, 0, 1) * clamp(bestScore / 0.84, 0, 1);
   const shape = bestScore < confidenceGate || margin < marginGate ? "unknown" : bestShape;
 
   return {
@@ -112,6 +115,7 @@ export function getClassificationDetail(metrics) {
     secondScore,
     margin,
     clarity,
+    calibrationSource: getCalibrationSourceLabel(),
     candidates: ordered.map(([name, score]) => ({ name, score }))
   };
 }
@@ -152,39 +156,12 @@ function classifyShape(metrics) {
 }
 
 function getShapeCandidates(metrics) {
-  const candidates = {
-    long: scoreShapeMatch(metrics, {
-      lengthToWidth: [1.7, 0.22],
-      jawToCheek: [0.82, 0.18],
-      foreheadToCheek: [0.92, 0.12]
-    }),
-    round: scoreShapeMatch(metrics, {
-      lengthToWidth: [1.12, 0.12],
-      jawToCheek: [0.82, 0.08],
-      foreheadToCheek: [0.84, 0.08]
-    }),
-    square: scoreShapeMatch(metrics, {
-      lengthToWidth: [1.28, 0.14],
-      jawToCheek: [0.9, 0.08],
-      foreheadToCheek: [0.88, 0.08]
-    }),
-    heart: scoreShapeMatch(metrics, {
-      lengthToWidth: [1.35, 0.14],
-      foreheadToCheek: [1.04, 0.08],
-      jawToForehead: [0.82, 0.08],
-      jawToCheek: [0.9, 0.08]
-    }),
-    diamond: scoreShapeMatch(metrics, {
-      lengthToWidth: [1.34, 0.14],
-      foreheadToCheek: [0.86, 0.08],
-      jawToCheek: [0.8, 0.08]
-    }),
-    oval: scoreShapeMatch(metrics, {
-      lengthToWidth: [1.42, 0.14],
-      foreheadToCheek: [0.94, 0.08],
-      jawToCheek: [0.86, 0.08]
-    })
-  };
+  const candidates = Object.fromEntries(
+    Object.entries(PUBLIC_FACE_SHAPE_CALIBRATION.shapeTargets).map(([shape, profile]) => [
+      shape,
+      scoreCalibratedShape(metrics, profile)
+    ])
+  );
 
   return Object.entries(candidates).sort((a, b) => b[1] - a[1]);
 }
@@ -277,22 +254,81 @@ function pairBalance(pointA, pointB) {
 }
 
 function scoreShapeMatch(metrics, targets) {
-  const scores = Object.entries(targets).map(([name, [target, tolerance]]) => {
+  const scores = Object.entries(targets).map(([name, [target, tolerance, weight = 1]]) => {
     const value = Number(metrics?.[name] || 0);
     if (!value) {
-      return 0.55;
+      return 0.55 * weight;
     }
 
-    return clamp(1 - Math.abs(value - target) / tolerance, 0, 1);
+    return clamp(1 - Math.abs(value - target) / tolerance, 0, 1) * weight;
   });
 
   if (!scores.length) {
     return 0;
   }
 
-  const averageScore = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+  const totalWeight = Object.values(targets).reduce((sum, [, , weight = 1]) => sum + weight, 0);
+  const averageScore = scores.reduce((sum, value) => sum + value, 0) / Math.max(totalWeight, 0.0001);
   const weakestScore = Math.min(...scores);
   return clamp(averageScore * 0.82 + weakestScore * 0.18, 0, 1);
+}
+
+function scoreCalibratedShape(metrics, profile = {}) {
+  const baseScore = scoreShapeMatch(metrics, profile.targets || {});
+  const evidenceScore = scoreEvidence(metrics, profile.evidence || {});
+  return clamp(baseScore * evidenceScore * Number(profile.prior || 1), 0, 1);
+}
+
+function scoreEvidence(metrics, evidence = {}) {
+  const checks = [];
+
+  if (Number.isFinite(evidence.minLengthToWidth)) {
+    checks.push(edgeScore(metrics.lengthToWidth, evidence.minLengthToWidth, "min", 0.1));
+  }
+
+  if (Number.isFinite(evidence.maxLengthToWidth)) {
+    checks.push(edgeScore(metrics.lengthToWidth, evidence.maxLengthToWidth, "max", 0.1));
+  }
+
+  if (Number.isFinite(evidence.minJawToCheek)) {
+    checks.push(edgeScore(metrics.jawToCheek, evidence.minJawToCheek, "min", 0.08));
+  }
+
+  if (Number.isFinite(evidence.maxJawToCheek)) {
+    checks.push(edgeScore(metrics.jawToCheek, evidence.maxJawToCheek, "max", 0.08));
+  }
+
+  if (Number.isFinite(evidence.minForeheadToCheek)) {
+    checks.push(edgeScore(metrics.foreheadToCheek, evidence.minForeheadToCheek, "min", 0.08));
+  }
+
+  if (Number.isFinite(evidence.maxForeheadToCheek)) {
+    checks.push(edgeScore(metrics.foreheadToCheek, evidence.maxForeheadToCheek, "max", 0.08));
+  }
+
+  if (Number.isFinite(evidence.maxJawToForehead)) {
+    checks.push(edgeScore(metrics.jawToForehead, evidence.maxJawToForehead, "max", 0.08));
+  }
+
+  if (Number.isFinite(evidence.minCheekToJaw)) {
+    checks.push(edgeScore(metrics.cheekToJaw, evidence.minCheekToJaw, "min", 0.12));
+  }
+
+  if (!checks.length) {
+    return 1;
+  }
+
+  return clamp(checks.reduce((sum, value) => sum + value, 0) / checks.length, 0.45, 1);
+}
+
+function edgeScore(value, edge, direction, softness) {
+  const metricValue = Number(value || 0);
+  if (!metricValue) {
+    return 0.7;
+  }
+
+  const delta = direction === "min" ? metricValue - edge : edge - metricValue;
+  return clamp(0.7 + delta / softness * 0.3, 0.55, 1);
 }
 
 function clamp(value, min, max) {
@@ -349,6 +385,7 @@ function buildDiagnostics({ metrics, quality, shape, classification = null }) {
     ready: readinessScore >= 0.7 && confidence >= 0.52,
     readinessScore,
     classification: classificationDetail,
+    calibrationSource: getCalibrationSourceLabel(),
     measurementSource: "center_browline_estimated_height",
     warnings: warnings.slice(0, 3),
     summary: warnings[0] || (shape === "unknown" ? "Cần thêm tín hiệu khuôn mặt." : "Khung đo đã sẵn sàng.")
@@ -411,31 +448,11 @@ function getConfidenceBand(confidence = 0) {
 }
 
 function idealLengthRatio(shape) {
-  const targets = {
-    long: 1.7,
-    round: 1.12,
-    square: 1.28,
-    heart: 1.35,
-    diamond: 1.34,
-    oval: 1.42,
-    unknown: 1.32
-  };
-
-  return targets[shape] ?? targets.unknown;
+  return PUBLIC_FACE_SHAPE_CALIBRATION.shapeTargets[shape]?.targets?.lengthToWidth?.[0] ?? 1.32;
 }
 
 function idealForeheadRatio(shape) {
-  const targets = {
-    long: 0.92,
-    round: 0.96,
-    square: 0.98,
-    heart: 1.04,
-    diamond: 0.86,
-    oval: 0.94,
-    unknown: 0.94
-  };
-
-  return targets[shape] ?? targets.unknown;
+  return PUBLIC_FACE_SHAPE_CALIBRATION.shapeTargets[shape]?.targets?.foreheadToCheek?.[0] ?? 0.94;
 }
 
 function emptyAnalysis() {
