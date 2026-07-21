@@ -1373,16 +1373,18 @@ h1 {
 .summary-frame-visuals article {
   display: grid;
   gap: 8px;
-  min-height: 132px;
-  padding: 12px;
-  border: 1px solid rgba(13, 107, 98, 0.16);
+  min-height: 154px;
+  padding: 14px;
+  border: 1px solid rgba(13, 107, 98, 0.18);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.78);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 251, 250, 0.86));
+  box-shadow: 0 12px 30px rgba(6, 40, 36, 0.06);
 }
 
 .summary-frame-visuals svg {
   width: 100%;
-  min-height: 70px;
+  min-height: 88px;
 }
 
 .summary-frame-visuals strong {
@@ -1391,17 +1393,74 @@ h1 {
   line-height: 1.25;
 }
 
-.frame-sketch-line {
-  fill: rgba(13, 107, 98, 0.04);
+.frame-sketch {
+  overflow: visible;
+}
+
+.frame-shadow {
+  fill: rgba(5, 28, 25, 0.08);
+}
+
+.frame-lens {
+  fill: rgba(255, 255, 255, 0.64);
+  stroke: rgba(13, 107, 98, 0.08);
+  stroke-width: 1;
+}
+
+.frame-lens.rimless {
+  fill: rgba(255, 255, 255, 0.36);
+}
+
+.frame-rim,
+.frame-temple,
+.frame-bridge,
+.frame-brow {
+  fill: none;
   stroke: var(--frame-accent, var(--accent));
-  stroke-width: 4;
+  stroke-width: 6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.frame-sketch-line .frame-brow {
+.frame-rim.light {
+  stroke-width: 3;
+  opacity: 0.62;
+}
+
+.frame-rim.rimless {
+  stroke-width: 4;
+  stroke-dasharray: 5 5;
+  opacity: 0.72;
+}
+
+.frame-temple {
+  stroke-width: 7;
+}
+
+.frame-bridge {
+  stroke-width: 5;
+}
+
+.frame-brow {
+  stroke-width: 8;
+}
+
+.frame-pad,
+.frame-highlight {
   fill: none;
-  stroke-width: 6;
+  stroke: var(--frame-accent, var(--accent));
+  stroke-linecap: round;
+  opacity: 0.34;
+}
+
+.frame-pad {
+  stroke-width: 2.5;
+}
+
+.frame-highlight {
+  stroke: #fff;
+  stroke-width: 3;
+  opacity: 0.58;
 }
 
 .face-icon.large {

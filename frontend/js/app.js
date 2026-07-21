@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-37";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-37";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-37";
+import { startUserCamera } from "./camera.js?v=20260720-38";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-38";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-38";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-37";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-37";
+} from "./recommendations.js?v=20260720-38";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-38";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-37";
+} from "./customer-store.js?v=20260720-38";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -1264,7 +1264,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-37");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-38");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1811,28 +1811,76 @@ function getFrameSketchSvg(frameName = "", index = 0) {
       : name.includes("rimless") || name.includes("không viền")
         ? "rimless"
         : name.includes("vuông") || name.includes("chữ nhật") || name.includes("rectangle")
-          ? "square"
-          : "oval";
-  const accent = ["#0d6b62", "#1f7a8c", "#7b5ea7"][index % 3];
-  const lensPaths = {
-    oval: [`<ellipse cx="34" cy="50" rx="22" ry="16"></ellipse>`, `<ellipse cx="66" cy="50" rx="22" ry="16"></ellipse>`],
-    square: [`<rect x="13" y="34" width="40" height="29" rx="8"></rect>`, `<rect x="57" y="34" width="40" height="29" rx="8"></rect>`],
-    cat: [`<path d="M11 50 C18 30 42 30 55 45 C47 62 22 66 11 50 Z"></path>`, `<path d="M89 50 C82 30 58 30 45 45 C53 62 78 66 89 50 Z"></path>`],
-    brow: [`<path d="M13 47 C20 35 45 35 53 47 C49 63 21 65 13 47 Z"></path>`, `<path d="M87 47 C80 35 55 35 47 47 C51 63 79 65 87 47 Z"></path>`],
-    rimless: [`<ellipse cx="34" cy="50" rx="21" ry="15" stroke-dasharray="3 4"></ellipse>`, `<ellipse cx="66" cy="50" rx="21" ry="15" stroke-dasharray="3 4"></ellipse>`]
+        ? "square"
+        : "oval";
+  const accent = ["#0d6b62", "#176f7d", "#7657a6"][index % 3];
+  const sketches = {
+    oval: {
+      lens: `
+        <ellipse class="frame-lens" cx="37" cy="49" rx="24" ry="18"></ellipse>
+        <ellipse class="frame-lens" cx="73" cy="49" rx="24" ry="18"></ellipse>
+      `,
+      rim: `
+        <ellipse class="frame-rim" cx="37" cy="49" rx="24" ry="18"></ellipse>
+        <ellipse class="frame-rim" cx="73" cy="49" rx="24" ry="18"></ellipse>
+      `
+    },
+    square: {
+      lens: `
+        <rect class="frame-lens" x="14" y="33" width="45" height="32" rx="10"></rect>
+        <rect class="frame-lens" x="61" y="33" width="45" height="32" rx="10"></rect>
+      `,
+      rim: `
+        <rect class="frame-rim" x="14" y="33" width="45" height="32" rx="10"></rect>
+        <rect class="frame-rim" x="61" y="33" width="45" height="32" rx="10"></rect>
+      `
+    },
+    cat: {
+      lens: `
+        <path class="frame-lens" d="M12 48 C20 27 47 31 62 43 C56 63 28 69 12 48 Z"></path>
+        <path class="frame-lens" d="M108 48 C100 27 73 31 58 43 C64 63 92 69 108 48 Z"></path>
+      `,
+      rim: `
+        <path class="frame-rim" d="M12 48 C20 27 47 31 62 43 C56 63 28 69 12 48 Z"></path>
+        <path class="frame-rim" d="M108 48 C100 27 73 31 58 43 C64 63 92 69 108 48 Z"></path>
+      `
+    },
+    brow: {
+      lens: `
+        <path class="frame-lens" d="M15 47 C22 33 50 33 59 46 C55 65 25 68 15 47 Z"></path>
+        <path class="frame-lens" d="M105 47 C98 33 70 33 61 46 C65 65 95 68 105 47 Z"></path>
+      `,
+      rim: `
+        <path class="frame-rim light" d="M15 47 C22 33 50 33 59 46 C55 65 25 68 15 47 Z"></path>
+        <path class="frame-rim light" d="M105 47 C98 33 70 33 61 46 C65 65 95 68 105 47 Z"></path>
+        <path class="frame-brow" d="M16 39 C30 26 48 28 60 42 M60 42 C72 28 90 26 104 39"></path>
+      `
+    },
+    rimless: {
+      lens: `
+        <ellipse class="frame-lens rimless" cx="37" cy="49" rx="23" ry="17"></ellipse>
+        <ellipse class="frame-lens rimless" cx="73" cy="49" rx="23" ry="17"></ellipse>
+      `,
+      rim: `
+        <ellipse class="frame-rim rimless" cx="37" cy="49" rx="23" ry="17"></ellipse>
+        <ellipse class="frame-rim rimless" cx="73" cy="49" rx="23" ry="17"></ellipse>
+      `
+    }
   };
-  const browLine = type === "brow"
-    ? `<path d="M14 38 C25 30 42 31 54 40 M46 40 C58 31 75 30 86 38" class="frame-brow"></path>`
-    : "";
+  const sketch = sketches[type] || sketches.oval;
 
   return `
-    <svg viewBox="0 0 110 82" role="img" aria-label="Mô phỏng ${frameName || "gọng kính"}" style="--frame-accent:${accent}">
-      <g class="frame-sketch-line">
-        ${lensPaths[type].join("")}
-        <path d="M53 48 C56 45 59 45 62 48"></path>
-        <path d="M12 50 L3 45"></path>
-        <path d="M98 50 L107 45"></path>
-        ${browLine}
+    <svg class="frame-sketch" viewBox="0 0 120 86" role="img" aria-label="Mô phỏng ${frameName || "gọng kính"}" style="--frame-accent:${accent}">
+      <ellipse class="frame-shadow" cx="60" cy="72" rx="45" ry="7"></ellipse>
+      <g>
+        <path class="frame-temple" d="M15 49 L4 42"></path>
+        <path class="frame-temple" d="M105 49 L116 42"></path>
+        ${sketch.lens.replaceAll("frame-lens", `frame-lens lens-${index}`)}
+        ${sketch.rim}
+        <path class="frame-bridge" d="M58 48 C60 44 62 44 64 48"></path>
+        <path class="frame-pad" d="M55 53 C52 55 51 59 52 62"></path>
+        <path class="frame-pad" d="M65 53 C68 55 69 59 68 62"></path>
+        <path class="frame-highlight" d="M27 39 C35 34 45 35 52 39"></path>
       </g>
     </svg>
   `;
