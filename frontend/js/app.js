@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-29";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-29";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-29";
+import { startUserCamera } from "./camera.js?v=20260720-30";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-30";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-30";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-29";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-29";
+} from "./recommendations.js?v=20260720-30";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-30";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-29";
+} from "./customer-store.js?v=20260720-30";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -809,7 +809,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-29");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-30");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -902,7 +902,7 @@ function drawResults(results) {
 
   if (!faces.length) {
     updateAutoScanFlow(null, null, 0);
-    drawCalibrationGuide(canvas, null, getScanGuideState());
+    drawCalibrationGuide(canvas, null, getScanGuideState(), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL);
     if ((autoScanState.phase === "RESULT" || autoScanState.phase === "ERROR") && !isAnalyzingFace) {
       return;
     }
@@ -920,7 +920,7 @@ function drawResults(results) {
     headPoseLabel: formatPoseLabel(headPose)
   };
   updateAutoScanFlow(analysis, faces[0], faces.length);
-  drawCalibrationGuide(canvas, faces[0] || null, getScanGuideState());
+  drawCalibrationGuide(canvas, faces[0] || null, getScanGuideState(), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL);
   renderAnalysis(analysis);
   recordAnalysisSnapshot(analysis, faces.length);
   updateCameraStatus(faces.length, analysis);
@@ -930,12 +930,6 @@ function drawResults(results) {
       landmarks,
       FaceLandmarkerApi.FACE_LANDMARKS_TESSELATION,
       { color: "rgba(32, 201, 151, 0.28)", lineWidth: 1 }
-    );
-
-    drawingUtils.drawConnectors(
-      landmarks,
-      FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL,
-      { color: "#f59f00", lineWidth: 2 }
     );
 
     drawingUtils.drawConnectors(

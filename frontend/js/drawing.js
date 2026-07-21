@@ -13,7 +13,7 @@ export function clearCanvas(canvas) {
   context.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-export function drawCalibrationGuide(canvas, landmarks = null, scanState = null) {
+export function drawCalibrationGuide(canvas, landmarks = null, scanState = null, faceOvalConnections = null) {
   const context = canvas.getContext("2d");
   const width = canvas.width || canvas.clientWidth;
   const height = canvas.height || canvas.clientHeight;
@@ -23,6 +23,7 @@ export function drawCalibrationGuide(canvas, landmarks = null, scanState = null)
   }
 
   const faceBox = landmarks?.length ? getLandmarkBox(landmarks, width, height) : null;
+  const contourPoints = getFaceContourPoints(landmarks, faceOvalConnections, width, height);
   const centerX = faceBox ? faceBox.centerX : width / 2;
   const centerY = faceBox ? faceBox.centerY : height * 0.5;
   const guideWidth = faceBox ? Math.min(width * 0.82, faceBox.width * 1.18) : width * 0.38;
@@ -40,16 +41,20 @@ export function drawCalibrationGuide(canvas, landmarks = null, scanState = null)
   context.lineWidth = Math.max(2, Math.min(width, height) * 0.006);
   context.setLineDash(guideMode === "idle" ? [10, 12] : []);
   context.beginPath();
-  context.ellipse(centerX, centerY, guideWidth / 2, guideHeight / 2, 0, 0, Math.PI * 2);
+  if (contourPoints.length >= 4) {
+    drawSmoothClosedPath(context, contourPoints);
+  } else {
+    context.ellipse(centerX, centerY, guideWidth / 2, guideHeight / 2, 0, 0, Math.PI * 2);
+  }
   context.stroke();
 
-  if (progress > 0) {
+  if (progress > 0 && contourPoints.length >= 4) {
     context.save();
     context.strokeStyle = guideColor;
     context.globalAlpha = 0.9;
     context.lineWidth = Math.max(4, Math.min(width, height) * 0.01);
     context.beginPath();
-    context.arc(centerX, centerY, Math.min(guideWidth, guideHeight) * 0.58, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+    drawContourProgress(context, contourPoints, progress);
     context.stroke();
     context.restore();
   }
@@ -80,6 +85,119 @@ export function drawCalibrationGuide(canvas, landmarks = null, scanState = null)
     context.fillText(guideLabel, centerX, chipY + 12);
   }
   context.restore();
+}
+
+function getFaceContourPoints(landmarks, connections, canvasWidth, canvasHeight) {
+  if (!landmarks?.length || !connections?.length) {
+    return [];
+  }
+
+  const edges = connections
+    .map(normalizeConnection)
+    .filter((edge) => Number.isInteger(edge.start) && Number.isInteger(edge.end));
+  const orderedIndexes = orderContourIndexes(edges);
+  const indexes = orderedIndexes.length ? orderedIndexes : orderIndexesByAngle([...new Set(edges.flatMap((edge) => [edge.start, edge.end]))], landmarks);
+
+  return indexes
+    .map((index) => landmarks[index])
+    .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+    .map((point) => ({ x: point.x * canvasWidth, y: point.y * canvasHeight }));
+}
+
+function normalizeConnection(connection) {
+  if (Array.isArray(connection)) {
+    return { start: connection[0], end: connection[1] };
+  }
+
+  return {
+    start: connection?.start ?? connection?.from,
+    end: connection?.end ?? connection?.to
+  };
+}
+
+function orderContourIndexes(edges) {
+  if (!edges.length) {
+    return [];
+  }
+
+  const adjacency = new Map();
+  edges.forEach(({ start, end }) => {
+    if (!adjacency.has(start)) {
+      adjacency.set(start, []);
+    }
+    if (!adjacency.has(end)) {
+      adjacency.set(end, []);
+    }
+    adjacency.get(start).push(end);
+    adjacency.get(end).push(start);
+  });
+
+  const start = edges[0].start;
+  const ordered = [start];
+  let previous = null;
+  let current = start;
+
+  for (let index = 0; index < edges.length + 2; index += 1) {
+    const next = (adjacency.get(current) || []).find((candidate) => candidate !== previous);
+    if (!Number.isInteger(next) || next === start) {
+      break;
+    }
+
+    ordered.push(next);
+    previous = current;
+    current = next;
+  }
+
+  return ordered.length >= 4 ? ordered : [];
+}
+
+function orderIndexesByAngle(indexes, landmarks) {
+  const valid = indexes.filter((index) => {
+    const point = landmarks[index];
+    return point && Number.isFinite(point.x) && Number.isFinite(point.y);
+  });
+
+  if (!valid.length) {
+    return [];
+  }
+
+  const center = valid.reduce((accumulator, index) => {
+    accumulator.x += landmarks[index].x;
+    accumulator.y += landmarks[index].y;
+    return accumulator;
+  }, { x: 0, y: 0 });
+  center.x /= valid.length;
+  center.y /= valid.length;
+
+  return valid.sort((a, b) => {
+    const pointA = landmarks[a];
+    const pointB = landmarks[b];
+    return Math.atan2(pointA.y - center.y, pointA.x - center.x) - Math.atan2(pointB.y - center.y, pointB.x - center.x);
+  });
+}
+
+function drawSmoothClosedPath(context, points) {
+  context.moveTo(points[0].x, points[0].y);
+
+  points.forEach((point, index) => {
+    const next = points[(index + 1) % points.length];
+    const nextNext = points[(index + 2) % points.length];
+    const controlX = next.x + (next.x - point.x) * 0.12;
+    const controlY = next.y + (next.y - point.y) * 0.12;
+    const nextControlX = next.x - (nextNext.x - point.x) * 0.08;
+    const nextControlY = next.y - (nextNext.y - point.y) * 0.08;
+    context.bezierCurveTo(controlX, controlY, nextControlX, nextControlY, next.x, next.y);
+  });
+
+  context.closePath();
+}
+
+function drawContourProgress(context, points, progress) {
+  const count = Math.max(2, Math.ceil(points.length * clamp01(progress)));
+  context.moveTo(points[0].x, points[0].y);
+  for (let index = 1; index < count; index += 1) {
+    context.lineTo(points[index].x, points[index].y);
+  }
 }
 
 function getLandmarkBox(landmarks, canvasWidth, canvasHeight) {
