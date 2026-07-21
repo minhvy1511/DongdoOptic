@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-27";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-27";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-27";
+import { startUserCamera } from "./camera.js?v=20260720-28";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-28";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-28";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-27";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-27";
+} from "./recommendations.js?v=20260720-28";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-28";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-27";
+} from "./customer-store.js?v=20260720-28";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -570,22 +570,38 @@ function buildMultiAngleAnalysis(captures) {
     const confidence = Number(capture?.analysis?.quality?.confidence || 0);
     return capture?.analysis?.metrics && confidence >= SCAN_CONFIG.MIN_FRAME_CONFIDENCE;
   });
+  const centerCapture = usableCaptures.find((capture) => capture.key === "center");
 
-  if (!usableCaptures.length) {
+  if (usableCaptures.length < SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES || !centerCapture) {
     return null;
   }
 
-  const metrics = weightedAverageMetrics(usableCaptures);
-  const quality = weightedAverageQuality(usableCaptures);
-  const shapeFromMetrics = classifyFaceShapeFromMetrics(metrics);
-  const shapeVotes = usableCaptures
-    .map((capture) => capture.analysis.shape)
-    .filter((shape) => shape && shape !== "unknown");
-  const voteShape = mode(shapeVotes);
-  const voteConsistency = shapeVotes.length
-    ? shapeVotes.filter((shape) => shape === voteShape).length / shapeVotes.length
-    : 0;
-  const shape = shapeFromMetrics !== "unknown" ? shapeFromMetrics : (voteConsistency >= 0.8 ? voteShape : "unknown");
+  const metrics = { ...centerCapture.analysis.metrics };
+  const centerClassification = getClassificationDetail(metrics);
+  const shapeFromMetrics = centerClassification.shape;
+  const sideAnalysis = buildSideFrameSupport(usableCaptures, shapeFromMetrics);
+  const sideAgreement = sideAnalysis.agreement;
+  const poseStability = calculatePoseStability(usableCaptures);
+  const landmarkQuality = Number(centerCapture.analysis.quality?.confidence || 0);
+  const classificationClarity = Number(centerClassification.clarity || 0);
+  const sideAgreementScore = Number.isFinite(sideAgreement) ? sideAgreement : 0.65;
+  const compositeConfidence = clamp01(
+    landmarkQuality * 0.42 +
+    poseStability * 0.22 +
+    classificationClarity * 0.24 +
+    sideAgreementScore * 0.12
+  );
+  const quality = {
+    ...centerCapture.analysis.quality,
+    confidence: compositeConfidence,
+    confidenceComponents: {
+      landmarkQuality,
+      poseStability,
+      classificationClarity,
+      sideAgreement: sideAgreementScore
+    }
+  };
+  const shape = shapeFromMetrics;
   const fallbackShape = shape === "unknown" ? estimateFaceShapeFromRatios(metrics) : "";
   const resolvedShape = shape !== "unknown" ? shape : fallbackShape;
   const baseAnalysis = analyzeFaceShapeFromMetrics(resolvedShape, metrics, quality);
@@ -594,11 +610,15 @@ function buildMultiAngleAnalysis(captures) {
     confidenceBand: getConfidenceBandLabel(quality.confidence),
     sampleCount: usableCaptures.length,
     totalSamples: SCAN_STEPS.length,
-    shapeConsistency: voteConsistency,
-    autoConfirmed: resolvedShape !== "unknown" && !fallbackShape && quality.confidence >= CONFIDENCE_THRESHOLDS.high && voteConsistency >= 0.8,
+    shapeConsistency: sideAgreementScore,
+    sideAgreement: sideAgreementScore,
+    sideAnalysis: sideAnalysis.items,
+    confidenceComponents: quality.confidenceComponents,
+    classification: centerClassification,
+    autoConfirmed: resolvedShape !== "unknown" && !fallbackShape && quality.confidence >= CONFIDENCE_THRESHOLDS.high && classificationClarity >= 0.55 && sideAgreementScore >= 0.5,
     partialScan: usableCaptures.length < SCAN_STEPS.length,
     shapeFallback: Boolean(fallbackShape),
-    scanMode: "multi-angle",
+    scanMode: "center-primary-plus-profile",
     capturedAngles: usableCaptures.map((capture) => capture.label).join(", "),
     headPose: {
       center: usableCaptures.find((capture) => capture.key === "center")?.pose || null,
@@ -607,7 +627,7 @@ function buildMultiAngleAnalysis(captures) {
     }
   };
 
-  diagnostics.warnings = getConfidenceReasons({ ...baseAnalysis, quality, diagnostics }).slice(0, 3);
+  diagnostics.warnings = getConfidenceReasons({ ...baseAnalysis, quality, diagnostics }).slice(0, 4);
 
   return {
     ...baseAnalysis,
@@ -655,51 +675,77 @@ function estimateFaceShapeFromRatios(metrics = {}) {
   return "oval";
 }
 
-function weightedAverageMetrics(captures) {
+function buildSideFrameSupport(captures, centerShape) {
+  const sideCaptures = captures.filter((capture) => capture.key === "left" || capture.key === "right");
+  const usableShape = centerShape && centerShape !== "unknown" ? centerShape : "";
+  const items = sideCaptures.map((capture) => {
+    const compensatedMetrics = compensateSideMetrics(capture.analysis.metrics, capture.pose?.yawDeg);
+    const shape = classifyFaceShapeFromMetrics(compensatedMetrics);
+    return {
+      key: capture.key,
+      label: capture.label,
+      yawDeg: capture.pose?.yawDeg || 0,
+      shape,
+      compensatedMetrics,
+      supportsCenter: usableShape ? isAdjacentFaceShape(usableShape, shape) : false
+    };
+  });
+  const comparable = items.filter((item) => item.shape && item.shape !== "unknown");
+  const agreement = usableShape && comparable.length
+    ? comparable.filter((item) => item.supportsCenter).length / comparable.length
+    : 0.65;
+
+  return { items, agreement };
+}
+
+function compensateSideMetrics(metrics = {}, yawDeg = 0) {
+  const yawRadians = Math.abs(Number(yawDeg || 0)) * Math.PI / 180;
+  const widthCorrection = 1 / Math.max(0.78, Math.cos(yawRadians));
+
   return {
-    lengthToWidth: weightedAverage(captures, (capture) => capture.analysis.metrics.lengthToWidth),
-    foreheadToCheek: weightedAverage(captures, (capture) => capture.analysis.metrics.foreheadToCheek),
-    jawToCheek: weightedAverage(captures, (capture) => capture.analysis.metrics.jawToCheek),
-    jawToForehead: weightedAverage(captures, (capture) => capture.analysis.metrics.jawToForehead),
-    cheekToJaw: weightedAverage(captures, (capture) => capture.analysis.metrics.cheekToJaw)
+    ...metrics,
+    lengthToWidth: Number(metrics.lengthToWidth || 0) / widthCorrection
   };
 }
 
-function weightedAverageQuality(captures) {
-  const averageConfidence = average(captures.map((capture) => Number(capture.analysis.quality.confidence || 0)));
-  const minConfidence = Math.min(...captures.map((capture) => Number(capture.analysis.quality.confidence || 0)));
-  return {
-    centerOffsetX: weightedAverage(captures, (capture) => capture.analysis.quality.centerOffsetX),
-    centerOffsetY: weightedAverage(captures, (capture) => capture.analysis.quality.centerOffsetY),
-    coverage: weightedAverage(captures, (capture) => capture.analysis.quality.coverage),
-    symmetryScore: weightedAverage(captures, (capture) => capture.analysis.quality.symmetryScore),
-    confidence: Math.min(averageConfidence, minConfidence + 0.18),
-    faceBox: captures.find((capture) => capture.key === "center")?.analysis.quality.faceBox || captures.at(-1)?.analysis.quality.faceBox || null
-  };
-}
-
-function weightedAverage(captures, getter) {
-  const weighted = captures.reduce((accumulator, capture) => {
-    const value = Number(getter(capture));
-    if (!Number.isFinite(value)) {
-      return accumulator;
-    }
-
-    const weight = getStepWeight(capture.key) * (0.7 + Number(capture.analysis.quality?.confidence || 0) * 0.3);
-    accumulator.sum += value * weight;
-    accumulator.weight += weight;
-    return accumulator;
-  }, { sum: 0, weight: 0 });
-
-  return weighted.weight ? weighted.sum / weighted.weight : 0;
-}
-
-function getStepWeight(key) {
-  if (key === "center") {
-    return 0.5;
+function isAdjacentFaceShape(primaryShape, supportShape) {
+  if (!primaryShape || !supportShape || supportShape === "unknown") {
+    return false;
   }
 
-  return 0.25;
+  if (primaryShape === supportShape) {
+    return true;
+  }
+
+  const adjacentShapes = {
+    oval: ["long", "round", "heart"],
+    long: ["oval", "diamond"],
+    round: ["oval", "square"],
+    square: ["round", "oval"],
+    heart: ["oval", "diamond"],
+    diamond: ["heart", "oval", "long"]
+  };
+
+  return adjacentShapes[primaryShape]?.includes(supportShape) || false;
+}
+
+function calculatePoseStability(captures) {
+  if (!captures.length) {
+    return 0;
+  }
+
+  const scores = captures.map((capture) => {
+    const step = SCAN_STEPS.find((item) => item.key === capture.key);
+    const targetYaw = Number(step?.targetYaw || 0);
+    const tolerance = Number(step?.tolerance || SCAN_CONFIG.YAW_TOLERANCE_DEG);
+    const yawError = Math.abs(Number(capture.pose?.yawDeg || 0) - targetYaw);
+    const rollError = Math.abs(Number(capture.pose?.rollDeg || 0));
+    const yawScore = clamp01(1 - yawError / (tolerance + 10));
+    const rollScore = clamp01(1 - rollError / 18);
+    return yawScore * 0.76 + rollScore * 0.24;
+  });
+
+  return average(scores);
 }
 
 function cloneAnalysis(analysis) {
@@ -800,7 +846,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-27");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-28");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1146,8 +1192,8 @@ function renderConfidenceNotice(analysis, confidenceState, finalResult, override
   const reasons = analysis ? getConfidenceReasons(analysis) : ["Đưa mặt vào giữa khung, đủ sáng và nhìn thẳng camera."];
   const diagnostics = analysis?.diagnostics || {};
   const sampleText = diagnostics.sampleCount ? `${diagnostics.sampleCount}/${diagnostics.totalSamples || diagnostics.sampleCount} khung` : "";
-  const consistencyText = Number.isFinite(diagnostics.shapeConsistency)
-    ? `${Math.round(diagnostics.shapeConsistency * 100)}% đồng thuận`
+  const consistencyText = Number.isFinite(diagnostics.sideAgreement ?? diagnostics.shapeConsistency)
+    ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
   const partialText = diagnostics.partialScan ? "Đã chụp chưa đủ 3 góc, đang chốt tạm." : "";
   const hasDraftShape = diagnostics.partialScan && analysis?.shape && analysis.shape !== "unknown";
@@ -1179,8 +1225,8 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
   const shapeLabel = shape ? getFaceShapeLabel(shape) : "Chưa đủ dữ liệu";
   const percentLabel = confidenceState.percent ? `${confidenceState.percent}%` : "--";
   const sampleLabel = diagnostics.sampleCount ? `${diagnostics.sampleCount}/${diagnostics.totalSamples || diagnostics.sampleCount} khung` : "";
-  const consistencyLabel = Number.isFinite(diagnostics.shapeConsistency)
-    ? `${Math.round(diagnostics.shapeConsistency * 100)}% đồng thuận`
+  const consistencyLabel = Number.isFinite(diagnostics.sideAgreement ?? diagnostics.shapeConsistency)
+    ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
   const partialLabel = diagnostics.partialScan ? "Chốt tạm từ dữ liệu hiện có" : "";
   const statusTextValue = overrideMessage || (
@@ -1220,6 +1266,20 @@ function getConfidenceReasons(analysis) {
     reasons.push("Có thể đang nghiêng mặt hoặc bị che một phần.");
   }
 
+  const components = diagnostics.confidenceComponents || quality.confidenceComponents || {};
+  const classification = diagnostics.classification || {};
+  if (Number(components.classificationClarity || 0) < 0.45 && classification.bestShape && classification.secondShape) {
+    reasons.push(`Ranh giới dạng mặt mập mờ giữa ${getFaceShapeLabel(classification.bestShape)} và ${getFaceShapeLabel(classification.secondShape)}.`);
+  }
+
+  if (Number(components.poseStability || 0) < 0.55) {
+    reasons.push("Góc quay khi chụp chưa ổn định, nên giữ đúng hướng được nhắc.");
+  }
+
+  if (Number(components.sideAgreement || 0) < 0.5) {
+    reasons.push("Khung nghiêng cho tín hiệu khác khung thẳng, cần nhân viên xác nhận thủ công.");
+  }
+
   if (Array.isArray(diagnostics.warnings)) {
     diagnostics.warnings.forEach((warning) => {
       if (warning && !reasons.includes(warning)) {
@@ -1247,8 +1307,8 @@ function renderCustomerResult() {
   const aiLabel = canShowAiShape ? getFaceShapeLabel(latestAiFaceShape) : "Chưa đủ dữ liệu";
   const confirmedLabel = shape ? getFaceShapeLabel(shape) : "Chưa xác nhận";
   const sampleText = diagnostics.sampleCount ? `${diagnostics.sampleCount}/${diagnostics.totalSamples || diagnostics.sampleCount} khung` : "";
-  const consistencyText = Number.isFinite(diagnostics.shapeConsistency)
-    ? `${Math.round(diagnostics.shapeConsistency * 100)}% đồng thuận`
+  const consistencyText = Number.isFinite(diagnostics.sideAgreement ?? diagnostics.shapeConsistency)
+    ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
   const resultLabel = shape
     ? (confirmedFaceShapeSource === "manual" ? `Đã xác nhận · ${confirmedLabel}` : confirmedLabel)
@@ -1539,12 +1599,22 @@ function renderMetrics(metrics) {
 }
 
 function renderMetricsV2(metrics, quality = null, diagnostics = null) {
+  const confidenceComponents = diagnostics?.confidenceComponents || quality?.confidenceComponents || {};
+  const componentRows = quality
+    ? [
+        ["Landmark", formatPercent(confidenceComponents.landmarkQuality)],
+        ["Pose", formatPercent(confidenceComponents.poseStability)],
+        ["Phan loai", formatPercent(confidenceComponents.classificationClarity)],
+        ["Goc nghieng", formatPercent(confidenceComponents.sideAgreement)]
+      ].filter(([, value]) => value !== "--")
+    : [];
   const qualityRows = quality
     ? [
         ["Độ tin cậy", diagnostics?.confidenceBand || `${Math.round((quality.confidence || 0) * 100)}%`],
         ["Tâm khung", diagnostics?.centerLabel || getCenterLabelV2(quality)],
         ["Khoảng cách", diagnostics?.distanceLabel || getDistanceLabel(quality.coverage || 0)],
-        ["Góc đầu", diagnostics?.headPoseLabel || "Chưa có"]
+        ["Góc đầu", diagnostics?.headPoseLabel || "Chưa có"],
+        ...componentRows
       ]
     : [];
 
@@ -1637,6 +1707,10 @@ function renderLensRecommendations(lenses, shouldShow = true) {
 
 function formatMetric(value) {
   return value ? value.toFixed(2) : "--";
+}
+
+function formatPercent(value) {
+  return Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : "--";
 }
 
 function getDefaultCameraMode() {
