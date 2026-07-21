@@ -1311,6 +1311,99 @@ h1 {
   background: linear-gradient(135deg, #ffffff, #eef7f5);
 }
 
+.summary-showcase {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(13, 107, 98, 0.2);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(238, 247, 245, 0.92)),
+    radial-gradient(circle at 12% 15%, rgba(13, 107, 98, 0.08), transparent 34%);
+  box-shadow: var(--shadow-sm);
+}
+
+.summary-showcase > div {
+  min-width: 0;
+}
+
+.summary-showcase span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.summary-showcase p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.summary-face-visual {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.summary-face-visual strong {
+  display: block;
+  font-size: 30px;
+  line-height: 1.05;
+}
+
+.summary-face-visual em {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 700;
+}
+
+.summary-frame-visuals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.summary-frame-visuals article {
+  display: grid;
+  gap: 8px;
+  min-height: 132px;
+  padding: 12px;
+  border: 1px solid rgba(13, 107, 98, 0.16);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.summary-frame-visuals svg {
+  width: 100%;
+  min-height: 70px;
+}
+
+.summary-frame-visuals strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.frame-sketch-line {
+  fill: rgba(13, 107, 98, 0.04);
+  stroke: var(--frame-accent, var(--accent));
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.frame-sketch-line .frame-brow {
+  fill: none;
+  stroke-width: 6;
+}
+
 .face-icon.large {
   width: 72px;
   height: 72px;
@@ -1796,6 +1889,29 @@ h1 {
 
   .summary-hero {
     grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .summary-showcase {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .summary-face-visual {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .summary-face-visual strong {
+    font-size: 24px;
+  }
+
+  .summary-frame-visuals {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-frame-visuals article {
+    grid-template-columns: 96px minmax(0, 1fr);
+    align-items: center;
+    min-height: auto;
   }
 
   .face-icon.large {

@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-36";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-36";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-36";
+import { startUserCamera } from "./camera.js?v=20260720-37";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-37";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-37";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-36";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-36";
+} from "./recommendations.js?v=20260720-37";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-37";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-36";
+} from "./customer-store.js?v=20260720-37";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -1264,7 +1264,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-36");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-37");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1758,10 +1758,14 @@ function renderFaceShapeIcon(target, shape, includeText = false) {
     return;
   }
 
+  target.innerHTML = getFaceShapeSvg(shape, includeText);
+}
+
+function getFaceShapeSvg(shape, includeText = false) {
   const key = FACE_SHAPE_REFERENCE[shape] ? shape : "unknown";
   const reference = FACE_SHAPE_REFERENCE[key];
   const code = FACE_SHAPE_ICONS[key] || "?";
-  target.innerHTML = `
+  return `
     <svg viewBox="0 0 100 100" role="img" aria-label="${reference.label}">
       <path class="shape-line" d="${reference.path}"></path>
       <path class="shape-axis" d="M50 20 L50 84"></path>
@@ -1796,6 +1800,42 @@ function renderShapeReference(activeShape = "") {
       `;
     })
     .join("");
+}
+
+function getFrameSketchSvg(frameName = "", index = 0) {
+  const name = String(frameName || "").toLowerCase();
+  const type = name.includes("cat") || name.includes("mắt mèo")
+    ? "cat"
+    : name.includes("brow") || name.includes("nửa")
+      ? "brow"
+      : name.includes("rimless") || name.includes("không viền")
+        ? "rimless"
+        : name.includes("vuông") || name.includes("chữ nhật") || name.includes("rectangle")
+          ? "square"
+          : "oval";
+  const accent = ["#0d6b62", "#1f7a8c", "#7b5ea7"][index % 3];
+  const lensPaths = {
+    oval: [`<ellipse cx="34" cy="50" rx="22" ry="16"></ellipse>`, `<ellipse cx="66" cy="50" rx="22" ry="16"></ellipse>`],
+    square: [`<rect x="13" y="34" width="40" height="29" rx="8"></rect>`, `<rect x="57" y="34" width="40" height="29" rx="8"></rect>`],
+    cat: [`<path d="M11 50 C18 30 42 30 55 45 C47 62 22 66 11 50 Z"></path>`, `<path d="M89 50 C82 30 58 30 45 45 C53 62 78 66 89 50 Z"></path>`],
+    brow: [`<path d="M13 47 C20 35 45 35 53 47 C49 63 21 65 13 47 Z"></path>`, `<path d="M87 47 C80 35 55 35 47 47 C51 63 79 65 87 47 Z"></path>`],
+    rimless: [`<ellipse cx="34" cy="50" rx="21" ry="15" stroke-dasharray="3 4"></ellipse>`, `<ellipse cx="66" cy="50" rx="21" ry="15" stroke-dasharray="3 4"></ellipse>`]
+  };
+  const browLine = type === "brow"
+    ? `<path d="M14 38 C25 30 42 31 54 40 M46 40 C58 31 75 30 86 38" class="frame-brow"></path>`
+    : "";
+
+  return `
+    <svg viewBox="0 0 110 82" role="img" aria-label="Mô phỏng ${frameName || "gọng kính"}" style="--frame-accent:${accent}">
+      <g class="frame-sketch-line">
+        ${lensPaths[type].join("")}
+        <path d="M53 48 C56 45 59 45 62 48"></path>
+        <path d="M12 50 L3 45"></path>
+        <path d="M98 50 L107 45"></path>
+        ${browLine}
+      </g>
+    </svg>
+  `;
 }
 
 function clearConfirmedFaceShape() {
@@ -2958,12 +2998,28 @@ function renderConsultationSummary() {
     : "Chưa cần chốt tròng, bổ sung đơn kính nếu có.";
 
   consultationSummary.innerHTML = `
-    <div class="summary-hero">
-      <div class="face-icon large">${FACE_SHAPE_ICONS[summaryFaceShape] || "?"}</div>
+    <div class="summary-showcase">
       <div>
-        <span>${isDraft ? "Gợi ý nháp VisionID" : "Kết luận VisionID"}</span>
-        <strong>${getFaceShapeLabel(summaryFaceShape)}</strong>
+        <span>${isDraft ? "Kết luận mô phỏng khuôn mặt" : "Kết luận mô phỏng khuôn mặt"}</span>
+        <div class="summary-face-visual">
+          <div class="face-icon large">${getFaceShapeSvg(summaryFaceShape, true)}</div>
+          <div>
+            <strong>${getFaceShapeLabel(summaryFaceShape)}</strong>
+            <em>${isDraft ? "Gợi ý sơ bộ, cần xác nhận" : "Dạng mặt dùng để tư vấn"}</em>
+          </div>
+        </div>
         <p>${consultationScript}${isDraft ? " Cần xác nhận dạng mặt trước khi chốt." : ""}</p>
+      </div>
+      <div>
+        <span>Mô phỏng gọng nên chọn</span>
+        <div class="summary-frame-visuals">
+          ${topFrames.map((frame, index) => `
+            <article>
+              ${getFrameSketchSvg(frame.name, index)}
+              <strong>${frame.name}</strong>
+            </article>
+          `).join("")}
+        </div>
       </div>
     </div>
     <div class="summary-grid">
@@ -2972,7 +3028,7 @@ function renderConsultationSummary() {
       <div><span>Tròng kính</span><strong>${lensLine}</strong></div>
       <div><span>Trạng thái</span><strong>${statusLabel(customer.customer_status)}</strong></div>
     </div>
-    <div class="aesthetic-advice">
+    <div class="aesthetic-advice visual-advice">
       <div>
         <span>Nguyên tắc</span>
         <strong>${shapeAdvice.principle}</strong>
