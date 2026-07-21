@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-35";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-35";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-35";
+import { startUserCamera } from "./camera.js?v=20260720-36";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-36";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-36";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-35";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-35";
+} from "./recommendations.js?v=20260720-36";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-36";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-35";
+} from "./customer-store.js?v=20260720-36";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -129,6 +129,10 @@ const SCAN_CONFIG = {
   CENTER_YAW_TOLERANCE_DEG: 8,
   ROLL_TOLERANCE_DEG: 12,
   HOLD_DURATION_MS: 320,
+  CENTER_BURST_FRAMES: 24,
+  CENTER_BURST_DURATION_MS: 2200,
+  CENTER_BURST_MIN_SAMPLES: 8,
+  CENTER_BURST_MIN_CONFIDENCE: 0.25,
   STEP_TIMEOUT_MS: 5200,
   TIMEOUT_EXTENSION_MS: 5000,
   MIN_FRAME_CONFIDENCE: 0.34,
@@ -235,6 +239,7 @@ function createAutoScanState() {
     captures: {},
     captureList: [],
     timeoutExtensions: {},
+    centerBurstActive: false,
     lastPose: null,
     lastAnalysis: null,
     lastDistanceCheckedAt: 0,
@@ -321,6 +326,14 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   if (!autoScanState.lastDistanceCheckedAt || now - autoScanState.lastDistanceCheckedAt >= 100) {
     autoScanState.distance = evaluateDistanceGuide(landmarks, faceCount);
     autoScanState.lastDistanceCheckedAt = now;
+  }
+
+  if (autoScanState.centerBurstActive) {
+    autoScanState.prompt = "Đang lấy khung thẳng";
+    autoScanState.detail = "Giữ yên, nhìn vào camera để hệ thống lấy nhiều frame ổn định.";
+    autoScanState.status = "hold";
+    updateScanHud();
+    return;
   }
 
   if (autoScanState.phase === "CHECK_DISTANCE") {
@@ -672,8 +685,151 @@ function isValidPoint(point) {
   return point && Number.isFinite(point.x) && Number.isFinite(point.y);
 }
 
+async function captureCenterBurst(step, initialAnalysis, initialPose, options = {}) {
+  if (autoScanState.centerBurstActive || autoScanState.captures[step.key]) {
+    return;
+  }
+
+  const token = autoScanState.token;
+  autoScanState.centerBurstActive = true;
+  autoScanState.status = "hold";
+  autoScanState.progress = 0.5;
+  autoScanState.prompt = "Đang lấy khung thẳng";
+  autoScanState.detail = "Giữ nhìn thẳng vào camera trong khoảng 2 giây.";
+  updateScanHud();
+
+  const samples = await captureCenterBurstSamples(
+    SCAN_CONFIG.CENTER_BURST_FRAMES,
+    SCAN_CONFIG.CENTER_BURST_DURATION_MS
+  );
+
+  if (autoScanState.token !== token || autoScanState.captures[step.key]) {
+    autoScanState.centerBurstActive = false;
+    return;
+  }
+
+  autoScanState.centerBurstActive = false;
+  const stableCapture = buildCenterBurstCapture(samples, step, initialAnalysis, initialPose);
+  if (!stableCapture) {
+    autoScanState.status = "near";
+    autoScanState.progress = 0.25;
+    autoScanState.detail = "Chưa lấy được khung thẳng rõ, giữ mặt giữa camera thêm chút nữa.";
+    updateScanHud();
+    return;
+  }
+
+  console.debug("[VisionID] Center burst captured", {
+    totalSamples: samples.length,
+    usableSamples: stableCapture.sampleCount,
+    fallbackUsed: stableCapture.fallbackUsed,
+    confidence: Math.round((stableCapture.analysis.quality?.confidence || 0) * 100)
+  });
+
+  captureScanStep(step, stableCapture.analysis, stableCapture.pose, {
+    ...options,
+    fromCenterBurst: true,
+    burst: {
+      sampleCount: stableCapture.sampleCount,
+      totalSamples: samples.length,
+      fallbackUsed: stableCapture.fallbackUsed
+    }
+  });
+}
+
+async function captureCenterBurstSamples(targetFrames, durationMs) {
+  const samples = [];
+  const delayMs = Math.max(60, Math.round(durationMs / targetFrames));
+
+  for (let index = 0; index < targetFrames; index += 1) {
+    const results = faceLandmarker.detectForVideo(video, performance.now());
+    const faces = results.faceLandmarks ?? [];
+    if (faces.length === 1) {
+      const landmarks = faces[0];
+      const analysis = analyzeFaceShape(landmarks);
+      const pose = estimateHeadPose(landmarks);
+      samples.push({ analysis, pose, landmarks });
+    }
+
+    if (index < targetFrames - 1) {
+      await delay(delayMs);
+    }
+  }
+
+  return samples;
+}
+
+function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
+  const usableSamples = samples.filter(isUsableCenterBurstSample);
+  const fallbackSamples = samples
+    .filter((sample) => sample?.analysis?.metrics)
+    .sort((a, b) => Number(b.analysis?.quality?.confidence || 0) - Number(a.analysis?.quality?.confidence || 0));
+  const selectedSamples = usableSamples.length >= SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
+    ? usableSamples
+    : fallbackSamples.slice(0, Math.max(1, Math.min(fallbackSamples.length, SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES)));
+
+  if (!selectedSamples.length && initialAnalysis) {
+    return {
+      analysis: cloneAnalysis(initialAnalysis),
+      pose: { ...(initialPose || emptyPose()) },
+      sampleCount: 1,
+      fallbackUsed: true
+    };
+  }
+
+  if (!selectedSamples.length) {
+    return null;
+  }
+
+  const metrics = medianMetrics(selectedSamples.map((sample) => sample.analysis.metrics));
+  const quality = averageQuality(selectedSamples.map((sample) => sample.analysis.quality));
+  quality.confidence = Math.max(
+    quality.confidence || 0,
+    Math.min(0.72, average(selectedSamples.map((sample) => Number(sample.analysis.quality?.confidence || 0))) + 0.08)
+  );
+  const classification = getClassificationDetail(metrics);
+  const shape = classification.shape !== "unknown" ? classification.shape : classification.bestShape;
+  const analysis = analyzeFaceShapeFromMetrics(shape, metrics, quality);
+  analysis.diagnostics = {
+    ...analysis.diagnostics,
+    classification,
+    centerBurst: {
+      sampleCount: selectedSamples.length,
+      totalSamples: samples.length,
+      fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
+    },
+    warnings: analysis.diagnostics.warnings || []
+  };
+  analysis.warnings = analysis.diagnostics.warnings;
+
+  return {
+    analysis,
+    pose: averagePose(selectedSamples.map((sample) => sample.pose)),
+    sampleCount: selectedSamples.length,
+    fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
+  };
+}
+
+function isUsableCenterBurstSample(sample) {
+  const quality = sample?.analysis?.quality || {};
+  const pose = sample?.pose || {};
+  const confidence = Number(quality.confidence || 0);
+  return Boolean(sample?.analysis?.metrics)
+    && confidence >= SCAN_CONFIG.CENTER_BURST_MIN_CONFIDENCE
+    && Math.abs(Number(pose.yawDeg || 0)) <= SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG + 5
+    && Math.abs(Number(pose.rollDeg || 0)) <= SCAN_CONFIG.ROLL_TOLERANCE_DEG + 4
+    && Math.abs(Number(quality.centerOffsetX || 0)) <= 0.22
+    && Math.abs(Number(quality.centerOffsetY || 0)) <= 0.22
+    && Number(quality.coverage || 0) >= 0.03
+    && Number(quality.coverage || 0) <= 0.66;
+}
+
 function captureScanStep(step, analysis, pose, options = {}) {
   if (autoScanState.captures[step.key]) {
+    return;
+  }
+
+  if (step.key === "center" && !options.fromCenterBurst) {
+    captureCenterBurst(step, analysis, pose, options);
     return;
   }
 
@@ -682,7 +838,8 @@ function captureScanStep(step, analysis, pose, options = {}) {
     label: step.shortLabel,
     capturedAt: Date.now(),
     pose: { ...pose },
-    analysis: cloneAnalysis(analysis)
+    analysis: cloneAnalysis(analysis),
+    burst: options.burst || null
   };
 
   autoScanState.captures[step.key] = capture;
@@ -897,6 +1054,7 @@ function buildMultiAngleAnalysis(captures) {
     autoConfirmed: resolvedShape !== "unknown" && !isAdvisoryShape && quality.confidence >= CONFIDENCE_THRESHOLDS.high && classificationClarity >= 0.55 && sideAgreementScore >= 0.5,
     partialScan: usableCaptures.length < SCAN_STEPS.length,
     scanMode: "center-primary-plus-profile",
+    centerBurst: centerCapture.burst || centerCapture.analysis?.diagnostics?.centerBurst || null,
     capturedAngles: usableCaptures.map((capture) => capture.label).join(", "),
     headPose: {
       center: usableCaptures.find((capture) => capture.key === "center")?.pose || null,
@@ -1106,7 +1264,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-35");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-36");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1917,7 +2075,8 @@ function renderMetricsV2(metrics, quality = null, diagnostics = null) {
         ["Landmark", formatPercent(confidenceComponents.landmarkQuality)],
         ["Pose", formatPercent(confidenceComponents.poseStability)],
         ["Phan loai", formatPercent(confidenceComponents.classificationClarity)],
-        ["Goc nghieng", formatPercent(confidenceComponents.sideAgreement)]
+        ["Goc nghieng", formatPercent(confidenceComponents.sideAgreement)],
+        ["Center burst", diagnostics?.centerBurst ? `${diagnostics.centerBurst.sampleCount || 0}/${diagnostics.centerBurst.totalSamples || 0}` : "--"]
       ].filter(([, value]) => value !== "--")
     : [];
   const qualityRows = quality
@@ -2098,6 +2257,56 @@ function averageMetrics(metricsListValue) {
     jawToCheek: average(metricsListValue.map((metrics) => metrics.jawToCheek)),
     jawToForehead: average(metricsListValue.map((metrics) => metrics.jawToForehead)),
     cheekToJaw: average(metricsListValue.map((metrics) => metrics.cheekToJaw))
+  };
+}
+
+function medianMetrics(metricsListValue) {
+  return {
+    lengthToWidth: median(metricsListValue.map((metrics) => metrics.lengthToWidth)),
+    foreheadToCheek: median(metricsListValue.map((metrics) => metrics.foreheadToCheek)),
+    jawToCheek: median(metricsListValue.map((metrics) => metrics.jawToCheek)),
+    jawToForehead: median(metricsListValue.map((metrics) => metrics.jawToForehead)),
+    cheekToJaw: median(metricsListValue.map((metrics) => metrics.cheekToJaw))
+  };
+}
+
+function median(values) {
+  const numericValues = values
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+
+  if (!numericValues.length) {
+    return 0;
+  }
+
+  const middle = Math.floor(numericValues.length / 2);
+  return numericValues.length % 2
+    ? numericValues[middle]
+    : (numericValues[middle - 1] + numericValues[middle]) / 2;
+}
+
+function averagePose(poses) {
+  return {
+    yawDeg: average(poses.map((pose) => pose?.yawDeg)),
+    rollDeg: average(poses.map((pose) => pose?.rollDeg)),
+    yawOffset: average(poses.map((pose) => pose?.yawOffset)),
+    eyeDistance: average(poses.map((pose) => pose?.eyeDistance)),
+    centerX: average(poses.map((pose) => pose?.centerX)),
+    centerY: average(poses.map((pose) => pose?.centerY)),
+    confidence: average(poses.map((pose) => pose?.confidence))
+  };
+}
+
+function emptyPose() {
+  return {
+    yawDeg: 0,
+    rollDeg: 0,
+    yawOffset: 0,
+    eyeDistance: 0,
+    centerX: 0.5,
+    centerY: 0.5,
+    confidence: 0
   };
 }
 
