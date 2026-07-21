@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-31";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-31";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-31";
+import { startUserCamera } from "./camera.js?v=20260720-32";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-32";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-32";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-31";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-31";
+} from "./recommendations.js?v=20260720-32";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-32";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-31";
+} from "./customer-store.js?v=20260720-32";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -140,12 +140,13 @@ const DISTANCE_CONFIG = {
   GUIDE_TOP_RATIO: 0.1,
   GUIDE_WIDTH_RATIO: 0.62,
   GUIDE_HEIGHT_RATIO: 0.78,
-  MIN_FACE_WIDTH_RATIO: 0.45,
+  MIN_FACE_WIDTH_RATIO: 0.28,
   MAX_FACE_WIDTH_RATIO: 0.6,
   MIN_TOP_MARGIN_RATIO: 0.1,
   MAX_TOP_MARGIN_RATIO: 0.18,
   CHIN_POSITION_RATIO_MIN: 0.65,
-  CHIN_POSITION_RATIO_MAX: 0.82
+  CHIN_POSITION_RATIO_MAX: 0.82,
+  BYPASS_AFTER_MS: 10000
 };
 
 const DISTANCE_LANDMARKS = {
@@ -286,14 +287,38 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   }
 
   if (autoScanState.phase === "CHECK_DISTANCE") {
+    const distanceElapsedMs = now - autoScanState.stepStartedAt;
+    const canBypassDistance = distanceElapsedMs >= DISTANCE_CONFIG.BYPASS_AFTER_MS
+      && autoScanState.distance?.metrics
+      && autoScanState.distance.reason !== "NO_FACE"
+      && autoScanState.distance.reason !== "MULTIPLE_FACES"
+      && autoScanState.distance.reason !== "MISSING_LANDMARKS";
     autoScanState.prompt = "Căn khoảng cách camera";
-    autoScanState.detail = autoScanState.distance.message;
-    autoScanState.status = autoScanState.distance.status;
-    autoScanState.progress = autoScanState.distance.ready ? 1 : 0;
+    autoScanState.detail = canBypassDistance
+      ? `${autoScanState.distance.message} Đã tự nới kiểm tra khoảng cách để tiếp tục quét.`
+      : autoScanState.distance.message;
+    autoScanState.status = canBypassDistance ? "near" : autoScanState.distance.status;
+    autoScanState.progress = autoScanState.distance.ready ? 1 : clamp01(distanceElapsedMs / DISTANCE_CONFIG.BYPASS_AFTER_MS);
     autoScanState.holdStartedAt = 0;
     autoScanState.holdStepKey = "";
 
-    if (autoScanState.distance.ready) {
+    if (autoScanState.distance.ready || canBypassDistance) {
+      if (canBypassDistance) {
+        autoScanState.distance = {
+          ...autoScanState.distance,
+          ready: true,
+          bypassed: true,
+          status: "near",
+          message: "Đã nới kiểm tra khoảng cách sau 10 giây."
+        };
+        console.debug("[VisionID][distance] bypassed after timeout", {
+          elapsedMs: Math.round(distanceElapsedMs),
+          reason: autoScanState.distance.reason,
+          metrics: autoScanState.distance.metrics,
+          videoWidth: video?.videoWidth || 0,
+          videoHeight: video?.videoHeight || 0
+        });
+      }
       autoScanState.phase = "CENTERING";
       autoScanState.stepStartedAt = now;
       autoScanState.stepTimeoutMs = SCAN_CONFIG.STEP_TIMEOUT_MS;
@@ -501,9 +526,17 @@ function evaluateDistanceGuide(landmarks, faceCount) {
   const faceWidthRatio = faceWidth / guide.width;
   const topMarginRatio = (foreheadY - guide.top) / guide.height;
   const chinPositionRatio = (chinPoint.y - guide.top) / guide.height;
-  const metrics = { faceWidthRatio, topMarginRatio, chinPositionRatio };
+  const metrics = {
+    faceWidthRatio,
+    topMarginRatio,
+    chinPositionRatio,
+    videoWidth: video?.videoWidth || 0,
+    videoHeight: video?.videoHeight || 0,
+    guide
+  };
 
   if (foreheadCut || topMarginRatio < DISTANCE_CONFIG.MIN_TOP_MARGIN_RATIO) {
+    debugDistanceGuide("FOREHEAD_CUT", metrics);
     return {
       ready: false,
       status: "near",
@@ -514,6 +547,7 @@ function evaluateDistanceGuide(landmarks, faceCount) {
   }
 
   if (faceWidthRatio < DISTANCE_CONFIG.MIN_FACE_WIDTH_RATIO) {
+    debugDistanceGuide("TOO_FAR", metrics);
     return {
       ready: false,
       status: "near",
@@ -524,6 +558,7 @@ function evaluateDistanceGuide(landmarks, faceCount) {
   }
 
   if (faceWidthRatio > DISTANCE_CONFIG.MAX_FACE_WIDTH_RATIO) {
+    debugDistanceGuide("TOO_CLOSE", metrics);
     return {
       ready: false,
       status: "near",
@@ -534,6 +569,7 @@ function evaluateDistanceGuide(landmarks, faceCount) {
   }
 
   if (topMarginRatio > DISTANCE_CONFIG.MAX_TOP_MARGIN_RATIO) {
+    debugDistanceGuide("FACE_TOO_LOW", metrics);
     return {
       ready: false,
       status: "near",
@@ -544,6 +580,7 @@ function evaluateDistanceGuide(landmarks, faceCount) {
   }
 
   if (chinPositionRatio < DISTANCE_CONFIG.CHIN_POSITION_RATIO_MIN) {
+    debugDistanceGuide("CHIN_TOO_HIGH", metrics);
     return {
       ready: false,
       status: "near",
@@ -554,6 +591,7 @@ function evaluateDistanceGuide(landmarks, faceCount) {
   }
 
   if (chinPositionRatio > DISTANCE_CONFIG.CHIN_POSITION_RATIO_MAX) {
+    debugDistanceGuide("CHIN_TOO_LOW", metrics);
     return {
       ready: false,
       status: "near",
@@ -563,6 +601,7 @@ function evaluateDistanceGuide(landmarks, faceCount) {
     };
   }
 
+  debugDistanceGuide("OK", metrics);
   return {
     ready: true,
     status: "captured",
@@ -570,6 +609,30 @@ function evaluateDistanceGuide(landmarks, faceCount) {
     message: "Khoảng cách đã ổn, giữ yên để quét.",
     metrics
   };
+}
+
+function debugDistanceGuide(reason, metrics = {}) {
+  console.debug("[VisionID][distance]", {
+    reason,
+    faceWidthRatio: roundDebug(metrics.faceWidthRatio),
+    topMarginRatio: roundDebug(metrics.topMarginRatio),
+    chinPositionRatio: roundDebug(metrics.chinPositionRatio),
+    videoWidth: metrics.videoWidth || 0,
+    videoHeight: metrics.videoHeight || 0,
+    guide: metrics.guide,
+    thresholds: {
+      minFaceWidth: DISTANCE_CONFIG.MIN_FACE_WIDTH_RATIO,
+      maxFaceWidth: DISTANCE_CONFIG.MAX_FACE_WIDTH_RATIO,
+      minTopMargin: DISTANCE_CONFIG.MIN_TOP_MARGIN_RATIO,
+      maxTopMargin: DISTANCE_CONFIG.MAX_TOP_MARGIN_RATIO,
+      chinMin: DISTANCE_CONFIG.CHIN_POSITION_RATIO_MIN,
+      chinMax: DISTANCE_CONFIG.CHIN_POSITION_RATIO_MAX
+    }
+  });
+}
+
+function roundDebug(value) {
+  return Number.isFinite(Number(value)) ? Math.round(Number(value) * 1000) / 1000 : null;
 }
 
 function getDistanceGuideBox() {
@@ -1015,7 +1078,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-31");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-32");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
