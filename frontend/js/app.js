@@ -53,6 +53,7 @@ const customerResultCard = document.getElementById("customerResultCard");
 const customerFaceShape = document.getElementById("customerFaceShape");
 const customerResultSummary = document.getElementById("customerResultSummary");
 const faceShapeIcon = document.getElementById("faceShapeIcon");
+const shapeCandidateStack = document.getElementById("shapeCandidateStack");
 const shapeReferenceGrid = document.getElementById("shapeReferenceGrid");
 const customerCodeInput = document.getElementById("customerCode");
 const customerNameInput = document.getElementById("customerName");
@@ -1749,7 +1750,98 @@ function renderCustomerResult() {
     : canShowAiShape
       ? `AI nghiêng về: ${aiLabel}. ${[sampleText, consistencyText, "cần xác nhận thủ công"].filter(Boolean).join(" · ")}.`
       : `AI chưa đủ chắc để chốt. Hãy chụp lại rõ hơn.`;
+  renderShapeCandidateStack(latestAnalysis);
   customerResultCard?.classList.toggle("has-result", Boolean(shape));
+}
+
+function renderShapeCandidateStack(analysis) {
+  if (!shapeCandidateStack) {
+    return;
+  }
+
+  const candidates = analysis?.diagnostics?.classification?.candidates || [];
+  const visibleCandidates = candidates
+    .filter((candidate) => candidate?.name && candidate.name !== "unknown")
+    .slice(0, 3);
+
+  if (!visibleCandidates.length) {
+    shapeCandidateStack.innerHTML = "";
+    shapeCandidateStack.hidden = true;
+    return;
+  }
+
+  const bestScore = Math.max(...visibleCandidates.map((candidate) => Number(candidate.score || 0)), 0.0001);
+  const metrics = analysis?.metrics || {};
+  const source = analysis?.diagnostics?.calibrationSource || analysis?.diagnostics?.classification?.calibrationSource || "";
+
+  shapeCandidateStack.hidden = false;
+  shapeCandidateStack.innerHTML = `
+    <div class="shape-candidate-heading">
+      <span>AI đang cân nhắc</span>
+      ${source ? `<em>${source}</em>` : ""}
+    </div>
+    <div class="shape-candidate-list">
+      ${visibleCandidates.map((candidate, index) => renderShapeCandidate(candidate, index, bestScore, metrics)).join("")}
+    </div>
+  `;
+}
+
+function renderShapeCandidate(candidate, index, bestScore, metrics) {
+  const shape = candidate.name;
+  const score = Number(candidate.score || 0);
+  const relativeScore = clamp01(score / bestScore);
+  const isPrimary = index === 0;
+  return `
+    <article class="shape-candidate ${isPrimary ? "is-primary" : ""}">
+      <div class="shape-candidate-topline">
+        <strong>${getFaceShapeLabel(shape)}</strong>
+        <span>${formatPercent(relativeScore)}</span>
+      </div>
+      <div class="shape-candidate-bar" aria-hidden="true">
+        <i style="width: ${Math.max(8, Math.round(relativeScore * 100))}%"></i>
+      </div>
+      <p>${getShapeEvidenceText(shape, metrics)}</p>
+    </article>
+  `;
+}
+
+function getShapeEvidenceText(shape, metrics = {}) {
+  const lengthToWidth = Number(metrics.lengthToWidth || 0);
+  const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
+  const jawToCheek = Number(metrics.jawToCheek || 0);
+  const cheekToJaw = Number(metrics.cheekToJaw || 0);
+
+  if (shape === "long") {
+    return lengthToWidth >= 1.48
+      ? "Chiều dài mặt nổi bật hơn chiều rộng."
+      : "Có xu hướng dài, nhưng cần kiểm tra lại tỷ lệ.";
+  }
+
+  if (shape === "round") {
+    return lengthToWidth <= 1.28
+      ? "Dài và rộng khá gần nhau, đường nét mềm."
+      : "Đường nét mềm nhưng chưa thật sự tròn.";
+  }
+
+  if (shape === "square") {
+    return jawToCheek >= 0.84
+      ? "Hàm gần bằng gò má, tổng thể rõ góc."
+      : "Có tín hiệu hàm rõ, cần xác nhận thêm.";
+  }
+
+  if (shape === "heart") {
+    return foreheadToCheek >= 0.96 && jawToCheek <= 0.9
+      ? "Phần trên rộng hơn, cằm/hàm gọn hơn."
+      : "Có xu hướng phần trên nổi bật hơn phần dưới.";
+  }
+
+  if (shape === "diamond") {
+    return cheekToJaw >= 1.12 && foreheadToCheek <= 0.92
+      ? "Gò má là điểm rộng nhất, trán và hàm hẹp hơn."
+      : "Có tín hiệu gò má nổi, cần xem thêm hàm/trán.";
+  }
+
+  return "Tỷ lệ cân bằng, ít cực trị giữa trán, gò má và hàm.";
 }
 
 function renderFaceShapeIcon(target, shape, includeText = false) {

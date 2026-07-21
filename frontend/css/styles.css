@@ -824,6 +824,91 @@ h1 {
   line-height: 1.45;
 }
 
+.shape-candidate-stack {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(13, 107, 98, 0.12);
+}
+
+.shape-candidate-stack[hidden] {
+  display: none;
+}
+
+.shape-candidate-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.shape-candidate-heading span {
+  color: var(--accent-strong);
+  font-size: 11px;
+}
+
+.shape-candidate-heading em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  text-transform: none;
+}
+
+.shape-candidate-list {
+  display: grid;
+  gap: 8px;
+}
+
+.shape-candidate {
+  padding: 9px;
+  border: 1px solid rgba(13, 107, 98, 0.12);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.shape-candidate.is-primary {
+  border-color: rgba(13, 107, 98, 0.34);
+  background: rgba(236, 248, 245, 0.82);
+}
+
+.shape-candidate-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.shape-candidate-topline strong {
+  margin: 0;
+  font-size: 13px;
+}
+
+.shape-candidate-topline span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  text-transform: none;
+}
+
+.shape-candidate-bar {
+  height: 5px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(13, 107, 98, 0.1);
+}
+
+.shape-candidate-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #98b9af);
+}
+
+.shape-candidate p {
+  margin: 7px 0 0;
+  font-size: 12px;
+}
+
 .confidence-notice {
   display: grid;
   gap: 4px;
