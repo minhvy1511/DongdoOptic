@@ -5,8 +5,9 @@ import {
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
-  getFrameRecommendations
-} from "./recommendations.js?v=20260720-39";
+  getFrameRecommendations,
+  getMaterialRecommendations
+} from "./recommendations.js?v=20260721-43";
 import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-39";
 import {
   createCustomerCode,
@@ -3156,6 +3157,12 @@ function renderConsultationSummary() {
   });
   const topFrames = (latestRecommendations.length ? latestRecommendations : getFrameRecommendations(summaryFaceShape))
     .slice(0, 3);
+  const materialRecommendations = getMaterialRecommendations({
+    faceShape: summaryFaceShape,
+    preferences,
+    prescription: customer.prescription || {},
+    ageGroup: customer.age_group
+  });
   const summaryHighlights = getSummaryHighlights(shapeAdvice, topFrames, preferences);
   const lensLine = latestLensRecommendations[0]
     ? `${latestLensRecommendations[0].brand} ${latestLensRecommendations[0].line}`
@@ -3212,6 +3219,22 @@ function renderConsultationSummary() {
       <div>
         <span>Màu gọng</span>
         <strong>${getColorGuidance(preferences.frame_preference)}</strong>
+      </div>
+    </div>
+    <div class="material-advice">
+      <div class="material-heading">
+        <span>Chất liệu gọng</span>
+        <strong>Nên tư vấn theo cảm giác đeo và ngân sách</strong>
+      </div>
+      <div class="material-grid">
+        ${materialRecommendations.map((material) => `
+          <article>
+            <span>${material.tagline}</span>
+            <strong>${material.name}</strong>
+            <p>${material.fitReason}</p>
+            <em>${material.strengths.slice(0, 3).join(" · ")}</em>
+          </article>
+        `).join("")}
       </div>
     </div>
     <div class="fit-checklist">

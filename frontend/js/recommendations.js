@@ -102,6 +102,153 @@ const FRAME_CATALOG = [
   }
 ];
 
+const MATERIAL_CATALOG = [
+  {
+    id: "tr90",
+    name: "TR90",
+    tagline: "Siêu nhẹ, dẻo, bền",
+    priceTier: "low-medium",
+    strengths: ["cực nhẹ", "đàn hồi tốt", "khó gãy", "hợp vận động"],
+    cautions: ["ít hoạ tiết cao cấp hơn acetate"],
+    bestFor: ["active", "daily", "budget"],
+    preferences: ["light", "minimal"],
+    score: {
+      active: 3,
+      daily: 1.4,
+      budget: 1.5,
+      low: 1.2,
+      medium: 0.8,
+      light: 2.2,
+      minimal: 0.8,
+      child: 2
+    },
+    reason: "Hợp khi khách cần gọng nhẹ, dẻo và bền để đeo lâu hoặc vận động nhiều."
+  },
+  {
+    id: "ultem",
+    name: "Ultem",
+    tagline: "Nhẹ, dẻo, chịu nhiệt",
+    priceTier: "medium",
+    strengths: ["rất nhẹ", "đàn hồi", "chịu nhiệt", "ổn định form"],
+    cautions: ["màu sắc không sâu bằng acetate"],
+    bestFor: ["active", "daily", "high_rx"],
+    preferences: ["light", "minimal"],
+    score: {
+      active: 2.4,
+      daily: 1.3,
+      high_rx: 1.2,
+      medium: 1,
+      light: 2.4,
+      minimal: 1,
+      child: 1.4
+    },
+    reason: "Nên thử khi muốn cảm giác nhẹ như TR90 nhưng cần form chắc và chịu nhiệt tốt hơn."
+  },
+  {
+    id: "acetate",
+    name: "Acetate",
+    tagline: "Đẹp màu, thời trang",
+    priceTier: "medium",
+    strengths: ["màu sắc sâu", "hoạ tiết đa dạng", "cảm giác đeo ấm", "dễ chỉnh bằng nhiệt"],
+    cautions: ["có thể nặng hơn nhựa dẻo", "cần tránh mồ hôi/hoá chất lâu ngày"],
+    bestFor: ["fashion", "daily"],
+    preferences: ["bold", "office"],
+    score: {
+      fashion: 2.8,
+      daily: 1,
+      medium: 1.1,
+      high: 1.3,
+      bold: 2.5,
+      office: 0.9,
+      oval: 0.8,
+      long: 0.7
+    },
+    reason: "Phù hợp khi khách ưu tiên vẻ sang, màu đẹp, tortoise/trong suốt hoặc gọng bản rõ."
+  },
+  {
+    id: "titanium",
+    name: "Titanium",
+    tagline: "Cao cấp, chống dị ứng",
+    priceTier: "high",
+    strengths: ["rất nhẹ", "bền", "chống gỉ", "hiếm gây dị ứng"],
+    cautions: ["giá cao", "khó sửa nếu gãy"],
+    bestFor: ["daily", "screen", "high_rx"],
+    preferences: ["light", "minimal", "office"],
+    score: {
+      daily: 1.7,
+      screen: 1.5,
+      high_rx: 2.4,
+      high: 1.8,
+      premium: 2.8,
+      light: 2.6,
+      minimal: 1.6,
+      office: 1.5,
+      square: 0.9,
+      long: 0.8,
+      diamond: 0.8
+    },
+    reason: "Rất hợp khách đeo cả ngày, da nhạy cảm, độ cao hoặc muốn đầu tư gọng lâu dài."
+  },
+  {
+    id: "metal-alloy",
+    name: "Hợp kim / Monel",
+    tagline: "Mảnh, dễ tiếp cận",
+    priceTier: "low-medium",
+    strengths: ["mảnh", "dễ chỉnh", "giá dễ chịu", "tạo chi tiết tốt"],
+    cautions: ["có thể dị ứng niken", "cần lớp mạ tốt để hạn chế oxy hoá"],
+    bestFor: ["daily", "office", "budget"],
+    preferences: ["office", "minimal"],
+    score: {
+      daily: 1,
+      office: 1.7,
+      budget: 1.6,
+      low: 1.6,
+      medium: 0.8,
+      minimal: 1,
+      round: 0.8
+    },
+    reason: "Tốt cho khách cần gọng kim loại mảnh, thanh lịch và ngân sách vừa phải."
+  },
+  {
+    id: "rimless",
+    name: "Không viền / nửa viền",
+    tagline: "Nhẹ mặt, ít hiện diện",
+    priceTier: "medium-high",
+    strengths: ["rất nhẹ", "kín đáo", "giảm cảm giác nặng trên mặt"],
+    cautions: ["kém bền khi va đập", "tròng khoan/dây cước cần bảo dưỡng kỹ"],
+    bestFor: ["office", "daily"],
+    preferences: ["minimal", "light"],
+    score: {
+      office: 1.6,
+      daily: 1,
+      high: 0.8,
+      premium: 1,
+      minimal: 2.4,
+      light: 1.8,
+      square: 1,
+      diamond: 1,
+      long: 0.8
+    },
+    reason: "Hợp khi cần làm gọng nhẹ mắt, giảm độ hiện diện của kính trên khuôn mặt."
+  },
+  {
+    id: "natural",
+    name: "Gỗ / sừng tự nhiên",
+    tagline: "Độc bản, khác biệt",
+    priceTier: "high",
+    strengths: ["vân độc bản", "cảm giác ấm", "khác biệt rõ"],
+    cautions: ["giá cao", "kén bảo quản", "nguồn hàng hạn chế"],
+    bestFor: ["fashion"],
+    preferences: ["bold"],
+    score: {
+      fashion: 1.5,
+      premium: 1.4,
+      bold: 1.7
+    },
+    reason: "Chỉ nên đưa vào khi khách muốn phong cách độc đáo, cao cấp hoặc thiên về tự nhiên."
+  }
+];
+
 export function getFaceShapeAdvice(faceShape) {
   return FACE_SHAPE_ADVICE[faceShape] || FACE_SHAPE_ADVICE.oval;
 }
@@ -112,6 +259,32 @@ export function getFrameRecommendations(faceShape) {
   );
 
   return matchedFrames.length ? matchedFrames : FRAME_CATALOG.slice(0, 3);
+}
+
+export function getMaterialRecommendations({ faceShape = "", preferences = {}, prescription = {}, ageGroup = "" } = {}) {
+  const totalPower = Math.max(Math.abs(Number(prescription.sph || 0)), Math.abs(Number(prescription.cyl || 0)));
+  const context = {
+    faceShape,
+    purpose: preferences.purpose || "daily",
+    budget: preferences.budget || "medium",
+    preference: preferences.frame_preference || "balanced",
+    prescriptionLevel: preferences.prescription_level || "unknown",
+    ageGroup,
+    highRx: totalPower >= 4 || preferences.prescription_level === "high",
+    child: ["preschool", "primary", "secondary"].includes(ageGroup)
+  };
+
+  return MATERIAL_CATALOG
+    .map((material) => {
+      const score = scoreMaterial(material, context);
+      return {
+        ...material,
+        score,
+        fitReason: buildMaterialReason(material, context)
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
 }
 
 export function getFitGuidance({ faceShape, metrics = {}, frameWidthMm = 0, prescription = {}, preference = "balanced" } = {}) {
@@ -152,6 +325,62 @@ export function getFitGuidance({ faceShape, metrics = {}, frameWidthMm = 0, pres
   }
 
   return notes.slice(0, 5);
+}
+
+function scoreMaterial(material, context) {
+  let score = 1;
+  const weights = material.score || {};
+
+  score += Number(weights[context.purpose] || 0);
+  score += Number(weights[context.budget] || 0);
+  score += Number(weights[context.preference] || 0);
+  score += Number(weights[context.faceShape] || 0);
+
+  if (context.highRx) {
+    score += Number(weights.high_rx || 0);
+  }
+
+  if (context.child) {
+    score += Number(weights.child || 0);
+  }
+
+  if (context.budget === "low" && material.priceTier === "high") {
+    score -= 1.6;
+  }
+
+  if (context.preference === "bold" && ["tr90", "ultem", "metal-alloy"].includes(material.id)) {
+    score -= 0.35;
+  }
+
+  if (context.highRx && ["acetate", "natural"].includes(material.id)) {
+    score -= 0.5;
+  }
+
+  return Math.max(0, score);
+}
+
+function buildMaterialReason(material, context) {
+  if (material.id === "tr90" && (context.child || context.purpose === "active")) {
+    return "Ưu tiên vì nhẹ, dẻo, khó gãy khi trẻ em hoặc khách vận động nhiều.";
+  }
+
+  if (material.id === "ultem" && (context.preference === "light" || context.highRx)) {
+    return "Cân bằng tốt giữa nhẹ, đàn hồi và giữ form, hợp khách cần đeo lâu.";
+  }
+
+  if (material.id === "titanium" && (context.highRx || context.budget === "premium")) {
+    return "Đáng tư vấn khi khách muốn cao cấp, nhẹ, bền và ít kích ứng da.";
+  }
+
+  if (material.id === "acetate" && (context.purpose === "fashion" || context.preference === "bold")) {
+    return "Hợp khi khách muốn màu sắc, hoạ tiết và cảm giác thời trang rõ hơn.";
+  }
+
+  if (material.id === "rimless" && context.preference === "minimal") {
+    return "Giúp kính nhẹ mặt và ít lấn khuôn mặt, hợp phong cách tối giản.";
+  }
+
+  return material.reason;
 }
 
 export function getColorGuidance(preference = "balanced") {

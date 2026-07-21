@@ -1700,6 +1700,7 @@ h1 {
 }
 
 .aesthetic-advice,
+.material-advice,
 .fit-checklist {
   display: grid;
   gap: 10px;
@@ -1728,6 +1729,68 @@ h1 {
 .aesthetic-advice strong {
   font-size: 14px;
   line-height: 1.45;
+}
+
+.material-advice {
+  padding: 14px;
+  border: 1px solid rgba(13, 107, 98, 0.14);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #ffffff, #f4faf8);
+}
+
+.material-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.material-heading span,
+.material-grid article span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.material-heading strong {
+  color: var(--accent-strong);
+  font-size: 15px;
+}
+
+.material-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.material-grid article {
+  display: grid;
+  gap: 7px;
+  min-height: 150px;
+  padding: 13px;
+  border: 1px solid rgba(219, 226, 234, 0.95);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--shadow-sm);
+}
+
+.material-grid article strong {
+  font-size: 20px;
+  color: var(--text);
+}
+
+.material-grid article p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.material-grid article em {
+  color: var(--accent-strong);
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .fit-checklist span {
@@ -2052,6 +2115,7 @@ h1 {
   .quick-profile-grid,
   .summary-grid,
   .aesthetic-advice,
+  .material-grid,
   .feedback-form {
     grid-template-columns: 1fr;
   }
