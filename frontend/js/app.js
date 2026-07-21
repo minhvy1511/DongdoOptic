@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-33";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-33";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-33";
+import { startUserCamera } from "./camera.js?v=20260720-34";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-34";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-34";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-33";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-33";
+} from "./recommendations.js?v=20260720-34";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-34";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-33";
+} from "./customer-store.js?v=20260720-34";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -130,7 +130,6 @@ const SCAN_CONFIG = {
   HOLD_DURATION_MS: 320,
   STEP_TIMEOUT_MS: 5200,
   TIMEOUT_EXTENSION_MS: 5000,
-  MIN_CONFIDENCE_TO_SHOW_RESULT: 50,
   MIN_FRAME_CONFIDENCE: 0.34,
   REQUIRED_CAPTURED_FRAMES: 3
 };
@@ -727,12 +726,6 @@ function finalizeMultiAngleScan() {
     return;
   }
 
-  const finalConfidence = Math.round((finalAnalysis.quality?.confidence || 0) * 100);
-  if (finalAnalysis.shape === "unknown" || finalConfidence < SCAN_CONFIG.MIN_CONFIDENCE_TO_SHOW_RESULT) {
-    failAutoScan("Chưa đủ tin cậy, vui lòng quét lại với ánh sáng đều và giữ mặt rõ hơn.");
-    return;
-  }
-
   latestAnalysis = finalAnalysis;
   latestAiFaceShape = finalAnalysis.faceShape_ai;
   renderMetricsV2(finalAnalysis.metrics, finalAnalysis.quality, finalAnalysis.diagnostics);
@@ -825,7 +818,10 @@ function buildMultiAngleAnalysis(captures) {
   const metrics = { ...centerCapture.analysis.metrics };
   const centerClassification = getClassificationDetail(metrics);
   const shapeFromMetrics = centerClassification.shape;
-  const sideAnalysis = buildSideFrameSupport(usableCaptures, shapeFromMetrics);
+  const advisoryShape = shapeFromMetrics === "unknown" ? centerClassification.bestShape : "";
+  const resolvedShape = shapeFromMetrics !== "unknown" ? shapeFromMetrics : (advisoryShape || "unknown");
+  const isAdvisoryShape = shapeFromMetrics === "unknown" && resolvedShape !== "unknown";
+  const sideAnalysis = buildSideFrameSupport(usableCaptures, resolvedShape);
   const sideAgreement = sideAnalysis.agreement;
   const poseStability = calculatePoseStability(usableCaptures);
   const landmarkQuality = Number(centerCapture.analysis.quality?.confidence || 0);
@@ -847,7 +843,6 @@ function buildMultiAngleAnalysis(captures) {
       sideAgreement: sideAgreementScore
     }
   };
-  const resolvedShape = shapeFromMetrics;
   const baseAnalysis = analyzeFaceShapeFromMetrics(resolvedShape, metrics, quality);
   const diagnostics = {
     ...baseAnalysis.diagnostics,
@@ -859,7 +854,8 @@ function buildMultiAngleAnalysis(captures) {
     sideAnalysis: sideAnalysis.items,
     confidenceComponents: quality.confidenceComponents,
     classification: centerClassification,
-    autoConfirmed: resolvedShape !== "unknown" && quality.confidence >= CONFIDENCE_THRESHOLDS.high && classificationClarity >= 0.55 && sideAgreementScore >= 0.5,
+    advisoryShape: isAdvisoryShape,
+    autoConfirmed: resolvedShape !== "unknown" && !isAdvisoryShape && quality.confidence >= CONFIDENCE_THRESHOLDS.high && classificationClarity >= 0.55 && sideAgreementScore >= 0.5,
     partialScan: usableCaptures.length < SCAN_STEPS.length,
     scanMode: "center-primary-plus-profile",
     capturedAngles: usableCaptures.map((capture) => capture.label).join(", "),
@@ -870,7 +866,14 @@ function buildMultiAngleAnalysis(captures) {
     }
   };
 
-  diagnostics.warnings = getConfidenceReasons({ ...baseAnalysis, quality, diagnostics }).slice(0, 4);
+  if (isAdvisoryShape) {
+    diagnostics.warnings = [
+      `AI nghiêng về ${getFaceShapeLabel(resolvedShape)} nhưng ranh giới còn mập mờ, cần nhân viên xác nhận.`,
+      ...getConfidenceReasons({ ...baseAnalysis, quality, diagnostics })
+    ].slice(0, 4);
+  } else {
+    diagnostics.warnings = getConfidenceReasons({ ...baseAnalysis, quality, diagnostics }).slice(0, 4);
+  }
 
   return {
     ...baseAnalysis,
@@ -1064,7 +1067,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-33");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-34");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1324,24 +1327,34 @@ function applyAnalysisConfidence(analysis, shouldDefaultConfirmed) {
   const diagnostics = analysis?.diagnostics || {};
   const autoConfirmed = Boolean(diagnostics.autoConfirmed);
   const sampleCount = Number(diagnostics.sampleCount || 0);
+  const hasAiShape = analysis?.shape && analysis.shape !== "unknown";
 
   if (confidenceState.level === "low") {
-    const hasDraftShape = diagnostics.partialScan && analysis?.shape && analysis.shape !== "unknown";
     if (confirmedFaceShapeSource !== "manual") {
       clearConfirmedFaceShape();
     }
-    if (hasDraftShape) {
-      faceShapeText.textContent = "Gợi ý nháp";
+    if (hasAiShape) {
+      confirmedFaceShape = analysis.shape;
+      confirmedFaceShapeSource = "suggested";
+      latestAnalysis.faceShape_confirmed = confirmedFaceShape;
+      faceShapeText.textContent = "Gợi ý sơ bộ";
       statusText.textContent = "Cần xác nhận";
       if (confirmedFaceShapeInput) {
         confirmedFaceShapeInput.disabled = false;
+        confirmedFaceShapeInput.value = analysis.shape;
       }
     } else {
       faceShapeText.textContent = confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : "Không đủ dữ liệu";
       statusText.textContent = confirmedFaceShape ? "Đã xác nhận thủ công" : "Không đủ dữ liệu";
     }
   } else if (!autoConfirmed && confirmedFaceShapeSource !== "manual") {
-    clearConfirmedFaceShape();
+    confirmedFaceShape = hasAiShape ? analysis.shape : "";
+    confirmedFaceShapeSource = hasAiShape ? "suggested" : "";
+    latestAnalysis.faceShape_confirmed = confirmedFaceShape;
+    if (confirmedFaceShapeInput) {
+      confirmedFaceShapeInput.value = confirmedFaceShape;
+      confirmedFaceShapeInput.disabled = !hasAiShape;
+    }
     faceShapeText.textContent = "Gợi ý sơ bộ";
     statusText.textContent = "Cần xác nhận";
   } else {
@@ -1511,7 +1524,7 @@ function renderCustomerResult() {
   const diagnostics = latestAnalysis?.diagnostics || {};
   const shape = confirmedFaceShape || "";
   const confidenceState = latestAnalysis ? getConfidenceState(latestAnalysis) : { level: "low" };
-  const canShowAiShape = latestAiFaceShape && (confidenceState.level !== "low" || diagnostics.partialScan);
+  const canShowAiShape = Boolean(latestAiFaceShape && latestAiFaceShape !== "unknown");
   const aiLabel = canShowAiShape ? getFaceShapeLabel(latestAiFaceShape) : "Chưa đủ dữ liệu";
   const confirmedLabel = shape ? getFaceShapeLabel(shape) : "Chưa xác nhận";
   const sampleText = diagnostics.sampleCount ? `${diagnostics.sampleCount}/${diagnostics.totalSamples || diagnostics.sampleCount} khung` : "";
@@ -1519,7 +1532,11 @@ function renderCustomerResult() {
     ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
   const resultLabel = shape
-    ? (confirmedFaceShapeSource === "manual" ? `Đã xác nhận · ${confirmedLabel}` : confirmedLabel)
+    ? (confirmedFaceShapeSource === "manual"
+      ? `Đã xác nhận · ${confirmedLabel}`
+      : confirmedFaceShapeSource === "suggested"
+        ? `Gợi ý sơ bộ · ${confirmedLabel}`
+        : confirmedLabel)
     : confidenceState.level === "low"
       ? "Chưa đủ dữ liệu"
       : "Gợi ý sơ bộ";
@@ -1529,10 +1546,12 @@ function renderCustomerResult() {
   customerResultSummary.textContent = shape
     ? (confirmedFaceShapeSource === "manual"
       ? `Nhân viên đã xác nhận thủ công: ${confirmedLabel}. AI gợi ý ban đầu: ${aiLabel}.`
-      : `AI gợi ý: ${aiLabel}. Nhân viên đã xác nhận: ${confirmedLabel}.`)
-    : confidenceState.level === "low"
-      ? `AI chưa đủ chắc để chốt. Hãy chụp lại rõ hơn.`
-      : `AI nghiêng về: ${aiLabel}. ${[sampleText, consistencyText, "nên xác nhận thủ công"].filter(Boolean).join(" · ")}.`;
+      : confirmedFaceShapeSource === "suggested"
+        ? `Đang dùng gợi ý sơ bộ: ${confirmedLabel}. Nhân viên có thể đổi trong dropdown trước khi tư vấn.`
+        : `AI gợi ý: ${aiLabel}. Nhân viên đã xác nhận: ${confirmedLabel}.`)
+    : canShowAiShape
+      ? `AI nghiêng về: ${aiLabel}. ${[sampleText, consistencyText, "cần xác nhận thủ công"].filter(Boolean).join(" · ")}.`
+      : `AI chưa đủ chắc để chốt. Hãy chụp lại rõ hơn.`;
   customerResultCard?.classList.toggle("has-result", Boolean(shape));
 }
 
