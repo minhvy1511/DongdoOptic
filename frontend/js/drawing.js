@@ -24,29 +24,38 @@ export function drawCalibrationGuide(canvas, landmarks = null, scanState = null,
 
   const faceBox = landmarks?.length ? getLandmarkBox(landmarks, width, height) : null;
   const contourPoints = getFaceContourPoints(landmarks, faceOvalConnections, width, height);
-  const centerX = faceBox ? faceBox.centerX : width / 2;
-  const centerY = faceBox ? faceBox.centerY : height * 0.5;
-  const guideWidth = faceBox ? Math.min(width * 0.82, faceBox.width * 1.18) : width * 0.38;
-  const guideHeight = faceBox ? Math.min(height * 0.82, faceBox.height * 1.12) : height * 0.56;
+  const guideBox = getFixedGuideBox(width, height);
+  const centerX = guideBox.centerX;
+  const centerY = guideBox.centerY;
+  const guideWidth = guideBox.width;
+  const guideHeight = guideBox.height;
   const inset = Math.min(width, height) * 0.08;
   const guideMode = scanState?.mode || (faceBox ? "tracking" : "idle");
   const guideColor = getGuideColor(scanState);
+  const distanceColor = getDistanceGuideColor(scanState);
   const progress = clamp01(Number(scanState?.progress || 0));
   const guideLabel = scanState?.label || "";
 
   context.save();
   context.fillStyle = "rgba(255, 255, 255, 0.025)";
   context.fillRect(inset, inset, width - inset * 2, height - inset * 2);
-  context.strokeStyle = guideColor;
-  context.lineWidth = Math.max(2, Math.min(width, height) * 0.006);
-  context.setLineDash(guideMode === "idle" ? [10, 12] : []);
+  context.strokeStyle = distanceColor;
+  context.globalAlpha = 0.78;
+  context.lineWidth = Math.max(2, Math.min(width, height) * 0.005);
+  context.setLineDash([12, 12]);
   context.beginPath();
-  if (contourPoints.length >= 4) {
-    drawSmoothClosedPath(context, contourPoints);
-  } else {
-    context.ellipse(centerX, centerY, guideWidth / 2, guideHeight / 2, 0, 0, Math.PI * 2);
-  }
+  context.ellipse(centerX, centerY, guideWidth / 2, guideHeight / 2, 0, 0, Math.PI * 2);
   context.stroke();
+
+  context.globalAlpha = 1;
+  context.setLineDash(guideMode === "idle" ? [10, 12] : []);
+  if (contourPoints.length >= 4) {
+    context.strokeStyle = guideColor;
+    context.lineWidth = Math.max(2, Math.min(width, height) * 0.006);
+    context.beginPath();
+    drawSmoothClosedPath(context, contourPoints);
+    context.stroke();
+  }
 
   if (progress > 0 && contourPoints.length >= 4) {
     context.save();
@@ -200,6 +209,22 @@ function drawContourProgress(context, points, progress) {
   }
 }
 
+function getFixedGuideBox(canvasWidth, canvasHeight) {
+  const guideWidth = canvasWidth * 0.62;
+  const guideHeight = canvasHeight * 0.78;
+  const centerX = canvasWidth / 2;
+  const centerY = canvasHeight * 0.49;
+
+  return {
+    centerX,
+    centerY,
+    width: guideWidth,
+    height: guideHeight,
+    left: centerX - guideWidth / 2,
+    top: centerY - guideHeight / 2
+  };
+}
+
 function getLandmarkBox(landmarks, canvasWidth, canvasHeight) {
   const xs = landmarks.map((point) => point?.x).filter(Number.isFinite);
   const ys = landmarks.map((point) => point?.y).filter(Number.isFinite);
@@ -241,6 +266,22 @@ function getGuideColor(scanState) {
   }
 
   return scanState?.mode ? "#20c997" : "rgba(47, 100, 240, 0.2)";
+}
+
+function getDistanceGuideColor(scanState) {
+  if (scanState?.distance?.ready) {
+    return "rgba(47, 158, 68, 0.82)";
+  }
+
+  if (scanState?.phase === "ERROR" || scanState?.status === "error") {
+    return "rgba(224, 49, 49, 0.78)";
+  }
+
+  if (scanState?.distance?.status === "near" || scanState?.status === "near") {
+    return "rgba(245, 159, 0, 0.86)";
+  }
+
+  return "rgba(116, 192, 252, 0.62)";
 }
 
 function roundRect(context, x, y, width, height, radius) {

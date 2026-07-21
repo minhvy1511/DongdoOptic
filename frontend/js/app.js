@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-30";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-30";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-30";
+import { startUserCamera } from "./camera.js?v=20260720-31";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-31";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-31";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-30";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-30";
+} from "./recommendations.js?v=20260720-31";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-31";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-30";
+} from "./customer-store.js?v=20260720-31";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -135,6 +135,30 @@ const SCAN_CONFIG = {
   REQUIRED_CAPTURED_FRAMES: 3
 };
 
+const DISTANCE_CONFIG = {
+  GUIDE_LEFT_RATIO: 0.19,
+  GUIDE_TOP_RATIO: 0.1,
+  GUIDE_WIDTH_RATIO: 0.62,
+  GUIDE_HEIGHT_RATIO: 0.78,
+  MIN_FACE_WIDTH_RATIO: 0.45,
+  MAX_FACE_WIDTH_RATIO: 0.6,
+  MIN_TOP_MARGIN_RATIO: 0.1,
+  MAX_TOP_MARGIN_RATIO: 0.18,
+  CHIN_POSITION_RATIO_MIN: 0.65,
+  CHIN_POSITION_RATIO_MAX: 0.82
+};
+
+const DISTANCE_LANDMARKS = {
+  topFace: 10,
+  chin: 152,
+  leftCheek: 234,
+  rightCheek: 454,
+  leftTemple: 127,
+  rightTemple: 356,
+  leftBrowOuter: 70,
+  rightBrowOuter: 300
+};
+
 const SCAN_STEPS = [
   { key: "center", label: "Nhìn thẳng vào camera", shortLabel: "Thẳng", targetYaw: 0, tolerance: SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG },
   { key: "left", label: "Quay nhẹ đầu sang trái", shortLabel: "Trái", targetYaw: SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG },
@@ -174,7 +198,19 @@ function createAutoScanState() {
     captureList: [],
     timeoutExtensions: {},
     lastPose: null,
-    lastAnalysis: null
+    lastAnalysis: null,
+    lastDistanceCheckedAt: 0,
+    distance: createDistanceState()
+  };
+}
+
+function createDistanceState() {
+  return {
+    ready: false,
+    status: "prompt",
+    reason: "NO_FACE",
+    message: "Đưa mặt vào khung hướng dẫn.",
+    metrics: null
   };
 }
 
@@ -189,12 +225,12 @@ function startAutoScanFlow(reason = "auto") {
   const token = autoScanState.token + 1;
   autoScanState = createAutoScanState();
   autoScanState.active = true;
-  autoScanState.phase = "CENTERING";
+  autoScanState.phase = "CHECK_DISTANCE";
   autoScanState.token = token;
   autoScanState.stepStartedAt = performance.now();
   autoScanState.stepTimeoutMs = SCAN_CONFIG.STEP_TIMEOUT_MS;
-  autoScanState.prompt = SCAN_STEPS[0].label;
-  autoScanState.detail = "Giữ mặt giữa khung. Máy sẽ tự chụp khi ổn định.";
+  autoScanState.prompt = "Căn khoảng cách camera";
+  autoScanState.detail = "Đưa khuôn mặt vừa khung oval trước khi quét.";
   isAnalyzingFace = true;
   clearConfirmedFaceShape();
   latestAnalysis = null;
@@ -244,6 +280,34 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
 
   autoScanState.lastPose = pose;
   autoScanState.lastAnalysis = analysis;
+  if (!autoScanState.lastDistanceCheckedAt || now - autoScanState.lastDistanceCheckedAt >= 100) {
+    autoScanState.distance = evaluateDistanceGuide(landmarks, faceCount);
+    autoScanState.lastDistanceCheckedAt = now;
+  }
+
+  if (autoScanState.phase === "CHECK_DISTANCE") {
+    autoScanState.prompt = "Căn khoảng cách camera";
+    autoScanState.detail = autoScanState.distance.message;
+    autoScanState.status = autoScanState.distance.status;
+    autoScanState.progress = autoScanState.distance.ready ? 1 : 0;
+    autoScanState.holdStartedAt = 0;
+    autoScanState.holdStepKey = "";
+
+    if (autoScanState.distance.ready) {
+      autoScanState.phase = "CENTERING";
+      autoScanState.stepStartedAt = now;
+      autoScanState.stepTimeoutMs = SCAN_CONFIG.STEP_TIMEOUT_MS;
+      autoScanState.progress = 0;
+      autoScanState.status = "prompt";
+      autoScanState.prompt = step.label;
+      autoScanState.detail = "Khoảng cách đã ổn. Giữ mặt giữa khung để máy tự chụp.";
+      updateScanHud();
+      return;
+    }
+
+    updateScanHud();
+    return;
+  }
 
   const condition = resolveScanCondition(step, analysis, pose, faceCount);
   const captureStep = condition.step || step;
@@ -342,6 +406,16 @@ function evaluateScanFrame(step, analysis, pose, faceCount) {
     };
   }
 
+  if (!autoScanState.distance?.ready) {
+    return {
+      ready: false,
+      near: false,
+      status: autoScanState.distance?.status || "prompt",
+      detail: autoScanState.distance?.message || "Căn lại khoảng cách camera trước khi chụp.",
+      timeoutDetail: "Khoảng cách camera chưa đạt chuẩn."
+    };
+  }
+
   const quality = analysis.quality || {};
   const confidence = Number(quality.confidence || 0);
   const coverage = Number(quality.coverage || 0);
@@ -386,6 +460,129 @@ function evaluateScanFrame(step, analysis, pose, faceCount) {
     detail: getYawGuidance(step, pose.yawDeg),
     timeoutDetail: "Chưa đạt đúng hướng mặt cần quét."
   };
+}
+
+function evaluateDistanceGuide(landmarks, faceCount) {
+  if (faceCount !== 1 || !landmarks?.length) {
+    return {
+      ready: false,
+      status: "prompt",
+      reason: faceCount > 1 ? "MULTIPLE_FACES" : "NO_FACE",
+      message: faceCount > 1 ? "Chỉ giữ một khuôn mặt trong khung." : "Đưa mặt vào khung oval hướng dẫn.",
+      metrics: null
+    };
+  }
+
+  const guide = getDistanceGuideBox();
+  const topPoint = landmarks[DISTANCE_LANDMARKS.topFace];
+  const chinPoint = landmarks[DISTANCE_LANDMARKS.chin];
+  const leftWidthPoint = landmarks[DISTANCE_LANDMARKS.leftTemple] || landmarks[DISTANCE_LANDMARKS.leftCheek];
+  const rightWidthPoint = landmarks[DISTANCE_LANDMARKS.rightTemple] || landmarks[DISTANCE_LANDMARKS.rightCheek];
+
+  if (!isValidPoint(chinPoint) || !isValidPoint(leftWidthPoint) || !isValidPoint(rightWidthPoint)) {
+    return {
+      ready: false,
+      status: "prompt",
+      reason: "MISSING_LANDMARKS",
+      message: "Giữ rõ mặt, mắt và cằm trong khung.",
+      metrics: null
+    };
+  }
+
+  const browTopY = Math.min(
+    ...[
+      landmarks[DISTANCE_LANDMARKS.leftBrowOuter]?.y,
+      landmarks[DISTANCE_LANDMARKS.rightBrowOuter]?.y
+    ].filter(Number.isFinite)
+  );
+  const foreheadY = Number.isFinite(topPoint?.y) ? topPoint.y : browTopY - Math.abs(chinPoint.y - browTopY) * 0.3;
+  const foreheadCut = !Number.isFinite(foreheadY) || foreheadY <= 0.015;
+  const faceWidth = Math.abs(rightWidthPoint.x - leftWidthPoint.x);
+  const faceWidthRatio = faceWidth / guide.width;
+  const topMarginRatio = (foreheadY - guide.top) / guide.height;
+  const chinPositionRatio = (chinPoint.y - guide.top) / guide.height;
+  const metrics = { faceWidthRatio, topMarginRatio, chinPositionRatio };
+
+  if (foreheadCut || topMarginRatio < DISTANCE_CONFIG.MIN_TOP_MARGIN_RATIO) {
+    return {
+      ready: false,
+      status: "near",
+      reason: "FOREHEAD_CUT",
+      message: "Hạ camera xuống hoặc lùi ra để thấy cả trán.",
+      metrics
+    };
+  }
+
+  if (faceWidthRatio < DISTANCE_CONFIG.MIN_FACE_WIDTH_RATIO) {
+    return {
+      ready: false,
+      status: "near",
+      reason: "TOO_FAR",
+      message: "Tiến lại gần hơn.",
+      metrics
+    };
+  }
+
+  if (faceWidthRatio > DISTANCE_CONFIG.MAX_FACE_WIDTH_RATIO) {
+    return {
+      ready: false,
+      status: "near",
+      reason: "TOO_CLOSE",
+      message: "Lùi ra xa hơn.",
+      metrics
+    };
+  }
+
+  if (topMarginRatio > DISTANCE_CONFIG.MAX_TOP_MARGIN_RATIO) {
+    return {
+      ready: false,
+      status: "near",
+      reason: "FACE_TOO_LOW",
+      message: "Nâng mặt lên gần giữa khung hơn.",
+      metrics
+    };
+  }
+
+  if (chinPositionRatio < DISTANCE_CONFIG.CHIN_POSITION_RATIO_MIN) {
+    return {
+      ready: false,
+      status: "near",
+      reason: "CHIN_TOO_HIGH",
+      message: "Hạ mặt xuống một chút để cằm nằm đúng khung.",
+      metrics
+    };
+  }
+
+  if (chinPositionRatio > DISTANCE_CONFIG.CHIN_POSITION_RATIO_MAX) {
+    return {
+      ready: false,
+      status: "near",
+      reason: "CHIN_TOO_LOW",
+      message: "Nâng mặt lên một chút để cằm không sát mép dưới.",
+      metrics
+    };
+  }
+
+  return {
+    ready: true,
+    status: "captured",
+    reason: "OK",
+    message: "Khoảng cách đã ổn, giữ yên để quét.",
+    metrics
+  };
+}
+
+function getDistanceGuideBox() {
+  return {
+    left: DISTANCE_CONFIG.GUIDE_LEFT_RATIO,
+    top: DISTANCE_CONFIG.GUIDE_TOP_RATIO,
+    width: DISTANCE_CONFIG.GUIDE_WIDTH_RATIO,
+    height: DISTANCE_CONFIG.GUIDE_HEIGHT_RATIO
+  };
+}
+
+function isValidPoint(point) {
+  return point && Number.isFinite(point.x) && Number.isFinite(point.y);
 }
 
 function captureScanStep(step, analysis, pose, options = {}) {
@@ -757,11 +954,15 @@ function getScanGuideState() {
     ? "Đã quét xong"
     : autoScanState.phase === "ERROR"
       ? "Cần quét lại"
-      : `${step.shortLabel || ""} ${Math.round(autoScanState.progress * 100)}%`;
+      : autoScanState.phase === "CHECK_DISTANCE"
+        ? "Canh khoảng cách"
+        : `${step.shortLabel || ""} ${Math.round(autoScanState.progress * 100)}%`;
   return {
     mode: autoScanState.phase !== "IDLE" ? "scan" : "",
+    phase: autoScanState.phase,
     status: autoScanState.status,
     progress: autoScanState.progress,
+    distance: autoScanState.distance,
     label: autoScanState.active || autoScanState.phase === "ERROR" || autoScanState.phase === "RESULT"
       ? label
       : ""
@@ -775,12 +976,17 @@ function updateScanHud() {
 
   const step = SCAN_STEPS[autoScanState.stepIndex] || SCAN_STEPS[0];
   const isIdle = autoScanState.phase === "IDLE";
+  const isCheckingDistance = autoScanState.phase === "CHECK_DISTANCE";
   const completeCount = autoScanState.captureList?.length || 0;
   const displayStep = autoScanState.phase === "RESULT"
     ? SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES
     : Math.min(completeCount + 1, SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES);
   scanHud.classList.toggle("is-idle", isIdle);
-  scanStepLabel.textContent = isIdle ? "VisionID" : `Bước ${displayStep}/3 · ${completeCount}/3 đã chụp`;
+  scanStepLabel.textContent = isIdle
+    ? "VisionID"
+    : isCheckingDistance
+      ? "Canh khoảng cách"
+      : `Bước ${displayStep}/3 · ${completeCount}/3 đã chụp`;
   scanPromptLabel.textContent = autoScanState.prompt || step.label;
   scanSubLabel.textContent = autoScanState.detail || "Hệ thống sẽ tự chụp khi khuôn mặt ổn định.";
   scanProgressFill.style.width = `${Math.round(clamp01(autoScanState.progress) * 100)}%`;
@@ -809,7 +1015,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-30");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-31");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
