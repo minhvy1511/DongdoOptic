@@ -82,6 +82,10 @@ const workflowAssistant = document.getElementById("workflowAssistant");
 const workflowStepLabel = document.getElementById("workflowStepLabel");
 const workflowNextLabel = document.getElementById("workflowNextLabel");
 const workflowNextButton = document.getElementById("workflowNextButton");
+const mobileNewButton = document.getElementById("mobileNewButton");
+const mobileSaveButton = document.getElementById("mobileSaveButton");
+const mobileScanButton = document.getElementById("mobileScanButton");
+const mobileConsultButton = document.getElementById("mobileConsultButton");
 const preferenceForm = document.getElementById("preferenceForm");
 const budgetInput = document.getElementById("budget");
 const purposeInput = document.getElementById("purpose");
@@ -694,8 +698,8 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
   autoScanState.centerBurstActive = true;
   autoScanState.status = "hold";
   autoScanState.progress = 0.5;
-  autoScanState.prompt = "Đang lấy khung thẳng";
-  autoScanState.detail = "Giữ nhìn thẳng vào camera trong khoảng 2 giây.";
+  autoScanState.prompt = "Đang chụp chuẩn tư vấn";
+  autoScanState.detail = "Giữ mặt thẳng, đủ sáng trong khoảng 2 giây.";
   updateScanHud();
 
   const samples = await captureCenterBurstSamples(
@@ -813,7 +817,7 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
   };
   if (!qualityGate.passed) {
     analysis.diagnostics.warnings = [
-      `Ảnh thẳng chưa đạt chuẩn: ${qualityGate.failedLabels.join(", ")}.`,
+      `Ảnh tư vấn cần rà lại: ${qualityGate.failedLabels.join(", ")}.`,
       ...analysis.diagnostics.warnings
     ].slice(0, 4);
   }
@@ -833,31 +837,31 @@ function buildCaptureQualityGate({ selectedSamples = [], allSamples = [], qualit
   const checks = [
     {
       key: "samples",
-      label: "Đủ mẫu ổn định",
+      label: "Ổn định",
       passed: sampleCount >= SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
       value: `${sampleCount}/${Math.max(totalSamples, SCAN_CONFIG.CENTER_BURST_FRAMES)} frame`
     },
     {
       key: "landmark",
-      label: "Landmark rõ",
+      label: "Nét mặt rõ",
       passed: Number(quality.confidence || 0) >= 0.5 && !fallbackUsed,
       value: formatPercent(Number(quality.confidence || 0))
     },
     {
       key: "pose",
-      label: "Mặt nhìn thẳng",
+      label: "Nhìn thẳng",
       passed: Math.abs(Number(pose.yawDeg || 0)) <= 8 && Math.abs(Number(pose.rollDeg || 0)) <= 10,
       value: `${Math.round(Number(pose.yawDeg || 0))}° / ${Math.round(Number(pose.rollDeg || 0))}°`
     },
     {
       key: "center",
-      label: "Nằm giữa khung",
+      label: "Giữa khung",
       passed: Math.abs(Number(quality.centerOffsetX || 0)) <= 0.14 && Math.abs(Number(quality.centerOffsetY || 0)) <= 0.14,
       value: `${Math.round(Math.abs(Number(quality.centerOffsetX || 0)) * 100)}% ngang`
     },
     {
       key: "distance",
-      label: "Khoảng cách vừa",
+      label: "Khoảng cách",
       passed: Number(quality.coverage || 0) >= 0.08 && Number(quality.coverage || 0) <= 0.42,
       value: getDistanceLabel(Number(quality.coverage || 0))
     }
@@ -1684,7 +1688,7 @@ function renderConfidenceNotice(analysis, confidenceState, finalResult, override
   const consistencyText = Number.isFinite(diagnostics.sideAgreement ?? diagnostics.shapeConsistency)
     ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
-  const partialText = diagnostics.scanMode === "center-burst-primary" ? "Ưu tiên ảnh thẳng chất lượng cao." : "";
+  const partialText = diagnostics.scanMode === "center-burst-primary" ? "Nguồn chính: ảnh thẳng đạt chuẩn tư vấn." : "";
   const hasDraftShape = diagnostics.partialScan && analysis?.shape && analysis.shape !== "unknown";
   const messages = {
     high: `Độ tin cậy ${confidenceState.percent}% - đây là gợi ý mạnh, vẫn nên rà lại.`,
@@ -1717,7 +1721,7 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
   const consistencyLabel = Number.isFinite(diagnostics.sideAgreement ?? diagnostics.shapeConsistency)
     ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
-  const partialLabel = diagnostics.scanMode === "center-burst-primary" ? "Ảnh thẳng là nguồn chính" : "";
+  const partialLabel = diagnostics.scanMode === "center-burst-primary" ? "Ảnh tư vấn là nguồn chính" : "";
   const statusTextValue = overrideMessage || (
     confirmedFaceShape
       ? `Đã xác nhận - ${shapeLabel}`
@@ -1838,7 +1842,7 @@ function renderCaptureQualityGate(analysis) {
   captureQualityGate.className = `capture-quality-gate ${gate.passed ? "is-passed" : "is-warning"}`;
   captureQualityGate.innerHTML = `
     <div class="capture-quality-heading">
-      <span>${gate.passed ? "Ảnh đạt chuẩn" : "Ảnh cần rà lại"}</span>
+      <span>${gate.passed ? "Ảnh đạt chuẩn tư vấn" : "Ảnh cần rà lại"}</span>
       <strong>${Math.round(gate.score * 100)}%</strong>
     </div>
     <div class="capture-quality-list">
@@ -2923,6 +2927,20 @@ function updateWorkflowAssistant() {
   workflowStepLabel.textContent = state.step;
   workflowNextLabel.textContent = state.next;
   workflowNextButton.textContent = state.action;
+  updateMobileActionBar();
+}
+
+function updateMobileActionBar() {
+  if (!mobileNewButton || !mobileSaveButton || !mobileScanButton || !mobileConsultButton) {
+    return;
+  }
+
+  const activeTabId = getActiveTabId();
+  mobileNewButton.classList.toggle("is-active", activeTabId === "tab-0");
+  mobileSaveButton.classList.toggle("is-active", activeTabId === "tab-1");
+  mobileScanButton.classList.toggle("is-active", activeTabId === "tab-3");
+  mobileConsultButton.classList.toggle("is-active", activeTabId === "tab-4");
+  mobileConsultButton.disabled = !Boolean(confirmedFaceShape || getDraftFaceShapeForAdvice());
 }
 
 async function handleWorkflowNext() {
@@ -3664,6 +3682,41 @@ if (workflowNextButton) {
       console.error(error);
       statusText.textContent = "Không thể chuyển bước";
     });
+  });
+}
+
+if (mobileNewButton) {
+  mobileNewButton.addEventListener("click", () => {
+    startNewCustomer();
+    showTab("tab-0");
+  });
+}
+
+if (mobileSaveButton) {
+  mobileSaveButton.addEventListener("click", () => {
+    saveCurrentCustomer();
+    showTab("tab-1");
+  });
+}
+
+if (mobileScanButton) {
+  mobileScanButton.addEventListener("click", () => {
+    showTab("tab-3");
+    if (video?.srcObject) {
+      startAutoScanFlow("mobile-action");
+      return;
+    }
+
+    enableCamera().catch((error) => {
+      console.error(error);
+      statusText.textContent = "Không thể bật camera";
+    });
+  });
+}
+
+if (mobileConsultButton) {
+  mobileConsultButton.addEventListener("click", () => {
+    showTab("tab-4");
   });
 }
 

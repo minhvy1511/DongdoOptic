@@ -2,14 +2,18 @@
   color-scheme: light;
   --background: #f3f5f7;
   --surface: #ffffff;
-  --surface-soft: #f7f9fb;
+  --surface-soft: #f8faf9;
   --text: #121722;
   --muted: #66707f;
   --border: #dbe2ea;
   --accent: #0d6b62;
   --accent-strong: #09564f;
   --accent-soft: #e4f2ef;
-  --accent-warm: #b57b34;
+  --accent-warm: #b79a64;
+  --graphite: #18202a;
+  --graphite-soft: #27313d;
+  --champagne: #e6d5b3;
+  --champagne-soft: #f6efe2;
   --landmark: #20c997;
   --oval: #f59f00;
   --shadow-sm: 0 10px 22px rgba(15, 23, 42, 0.05);
@@ -26,7 +30,7 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   font-family: "Segoe UI", "Inter", Arial, Helvetica, sans-serif;
-  background: linear-gradient(180deg, #f7f9fb 0%, #eef2f6 100%);
+  background: linear-gradient(180deg, #f8fafb 0%, #eef2f3 54%, #ece8df 100%);
   color: var(--text);
 }
 
@@ -60,7 +64,7 @@ button {
   padding: 20px;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   background:
-    linear-gradient(180deg, #0e151c 0%, #111922 100%);
+    linear-gradient(180deg, var(--graphite) 0%, #101820 60%, #0d1319 100%);
   color: #edf2f7;
   backdrop-filter: blur(12px);
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.03);
@@ -139,7 +143,7 @@ button {
 
 .tab-button.active {
   border-color: rgba(255, 255, 255, 0.14);
-  background: linear-gradient(135deg, #0f766e, #0a5f58);
+  background: linear-gradient(135deg, #0f766e, #0a5f58 70%, #3f786f);
   color: white;
   box-shadow: 0 16px 28px rgba(15, 118, 110, 0.3);
 }
@@ -161,7 +165,7 @@ button {
   background:
     linear-gradient(160deg, rgba(12, 18, 24, 0.98), rgba(20, 28, 36, 0.9)),
     linear-gradient(135deg, rgba(13, 107, 98, 0.2), transparent 58%),
-    linear-gradient(225deg, rgba(181, 123, 52, 0.12), transparent 50%);
+    linear-gradient(225deg, rgba(230, 213, 179, 0.16), transparent 50%);
   overflow: hidden;
   display: grid;
   align-items: end;
@@ -211,7 +215,9 @@ button {
   padding: 10px 16px;
   border: 1px solid rgba(219, 226, 234, 0.95);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.86);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(251, 248, 240, 0.72)),
+    rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow-md);
 }
@@ -243,7 +249,7 @@ button {
 .content-chips span {
   padding: 5px 10px;
   border-radius: 999px;
-  background: var(--accent-soft);
+  background: linear-gradient(135deg, var(--accent-soft), #f4efe4);
   color: var(--accent-strong);
   border: 1px solid rgba(13, 107, 98, 0.08);
   font-size: 12px;
@@ -261,7 +267,7 @@ button {
   padding: 6px 12px;
   border: 1px solid rgba(219, 226, 234, 0.95);
   border-radius: var(--radius);
-  background: rgba(247, 250, 252, 0.92);
+  background: linear-gradient(135deg, rgba(247, 250, 252, 0.94), rgba(246, 239, 226, 0.48));
   box-shadow: var(--shadow-sm);
 }
 
@@ -320,7 +326,7 @@ button {
   padding: 20px;
   border: 1px solid rgba(219, 226, 234, 0.95);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   box-shadow: var(--shadow-sm);
 }
 
@@ -354,7 +360,7 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 20px;
   background:
-    linear-gradient(180deg, #0e141a, #111a23 55%, #0d1319);
+    linear-gradient(180deg, #101820, #15202a 55%, #0d1319);
   box-shadow: 0 24px 50px rgba(15, 23, 42, 0.16);
 }
 
@@ -856,7 +862,7 @@ h1 {
   padding: 10px;
   border: 1px solid rgba(13, 107, 98, 0.14);
   border-radius: var(--radius);
-  background: rgba(247, 250, 252, 0.82);
+  background: linear-gradient(135deg, rgba(247, 250, 252, 0.92), rgba(246, 239, 226, 0.42));
 }
 
 .capture-quality-gate[hidden] {
@@ -883,7 +889,7 @@ h1 {
 
 .capture-quality-heading span {
   color: var(--accent-strong);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
   text-transform: uppercase;
 }
@@ -904,8 +910,8 @@ h1 {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
-  padding: 6px 8px;
+  min-height: 30px;
+  padding: 7px 8px;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.74);
   color: var(--text);
@@ -943,6 +949,10 @@ h1 {
   font-size: 11px;
   font-style: normal;
   font-weight: 700;
+}
+
+.mobile-action-bar {
+  display: none;
 }
 
 .shape-candidate-stack {
@@ -2233,6 +2243,7 @@ h1 {
 
   body {
     overscroll-behavior-y: contain;
+    padding-bottom: 74px;
   }
 
   button,
@@ -2255,13 +2266,45 @@ h1 {
   }
 
   .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 12;
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 16px;
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .brand-block {
+    padding: 10px;
+  }
+
+  .brand-mark {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  }
+
+  .sidebar-nav {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .tab-button {
+    min-height: 42px;
+    padding: 0 8px;
+    text-align: center;
+    font-size: 13px;
+  }
+
+  .sidebar-logout,
+  .sidebar-art,
+  .sidebar-footer {
+    display: none;
   }
 
   .content {
-    padding: 10px;
+    padding: 8px;
   }
 
   .content-header {
@@ -2270,26 +2313,53 @@ h1 {
   }
 
   .content-chips {
-    justify-content: flex-start;
+    display: none;
   }
 
   .workflow-assistant {
-    align-items: stretch;
-    flex-direction: column;
+    display: none;
     min-height: 0;
-  }
-
-  .workflow-assistant div {
-    display: grid;
-    gap: 3px;
-  }
-
-  .workflow-assistant button {
-    width: 100%;
   }
 
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  .mobile-action-bar {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 50;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    padding: 7px;
+    border: 1px solid rgba(219, 226, 234, 0.95);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(16px);
+  }
+
+  .mobile-action-bar button {
+    min-height: 42px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    font-weight: 850;
+    cursor: pointer;
+  }
+
+  .mobile-action-bar button.is-active {
+    border-color: rgba(13, 107, 98, 0.18);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .mobile-action-bar button:disabled {
+    opacity: 0.42;
   }
 
   .two-column,
