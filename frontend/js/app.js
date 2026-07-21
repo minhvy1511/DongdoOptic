@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-34";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-34";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-34";
+import { startUserCamera } from "./camera.js?v=20260720-35";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-35";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-35";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-34";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-34";
+} from "./recommendations.js?v=20260720-35";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-35";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-34";
+} from "./customer-store.js?v=20260720-35";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -54,6 +54,7 @@ const customerResultCard = document.getElementById("customerResultCard");
 const customerFaceShape = document.getElementById("customerFaceShape");
 const customerResultSummary = document.getElementById("customerResultSummary");
 const faceShapeIcon = document.getElementById("faceShapeIcon");
+const shapeReferenceGrid = document.getElementById("shapeReferenceGrid");
 const customerCodeInput = document.getElementById("customerCode");
 const customerNameInput = document.getElementById("customerName");
 const customerPhoneInput = document.getElementById("customerPhone");
@@ -172,6 +173,44 @@ const FACE_SHAPE_ICONS = {
   heart: "TT",
   diamond: "KC",
   unknown: "?"
+};
+
+const FACE_SHAPE_REFERENCE = {
+  oval: {
+    label: "Trái xoan",
+    note: "Dài hơn rộng, đường nét mềm.",
+    path: "M50 10 C70 10 82 28 82 50 C82 76 68 92 50 92 C32 92 18 76 18 50 C18 28 30 10 50 10 Z"
+  },
+  round: {
+    label: "Tròn",
+    note: "Chiều dài và rộng gần nhau.",
+    path: "M50 14 C72 14 88 30 88 50 C88 72 72 88 50 88 C28 88 12 72 12 50 C12 30 28 14 50 14 Z"
+  },
+  square: {
+    label: "Vuông",
+    note: "Trán và hàm khá cân, hàm rõ.",
+    path: "M28 16 C42 9 58 9 72 16 C82 28 84 72 72 84 C58 91 42 91 28 84 C16 72 18 28 28 16 Z"
+  },
+  long: {
+    label: "Dài",
+    note: "Chiều dài nổi bật hơn chiều rộng.",
+    path: "M50 6 C68 6 78 26 78 50 C78 80 66 96 50 96 C34 96 22 80 22 50 C22 26 32 6 50 6 Z"
+  },
+  heart: {
+    label: "Trái tim",
+    note: "Trán rộng hơn, cằm gọn.",
+    path: "M50 12 C74 12 88 28 82 52 C78 70 62 88 50 94 C38 88 22 70 18 52 C12 28 26 12 50 12 Z"
+  },
+  diamond: {
+    label: "Kim cương",
+    note: "Gò má rộng, trán và hàm hẹp.",
+    path: "M50 8 C66 16 84 34 88 50 C82 70 66 88 50 94 C34 88 18 70 12 50 C16 34 34 16 50 8 Z"
+  },
+  unknown: {
+    label: "Chưa rõ",
+    note: "Cần nhân viên xác nhận.",
+    path: "M50 14 C70 14 84 30 84 50 C84 72 70 88 50 88 C30 88 16 72 16 50 C16 30 30 14 50 14 Z"
+  }
 };
 
 const FEEDBACK_STORAGE_KEY = "dongdo_optic_feedback";
@@ -1067,7 +1106,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-34");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-35");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1542,7 +1581,8 @@ function renderCustomerResult() {
       : "Gợi ý sơ bộ";
 
   customerFaceShape.textContent = resultLabel;
-  faceShapeIcon.textContent = FACE_SHAPE_ICONS[shape || latestAiFaceShape || "unknown"] || "?";
+  renderFaceShapeIcon(faceShapeIcon, shape || latestAiFaceShape || "unknown", true);
+  renderShapeReference(shape || latestAiFaceShape || "");
   customerResultSummary.textContent = shape
     ? (confirmedFaceShapeSource === "manual"
       ? `Nhân viên đã xác nhận thủ công: ${confirmedLabel}. AI gợi ý ban đầu: ${aiLabel}.`
@@ -1553,6 +1593,51 @@ function renderCustomerResult() {
       ? `AI nghiêng về: ${aiLabel}. ${[sampleText, consistencyText, "cần xác nhận thủ công"].filter(Boolean).join(" · ")}.`
       : `AI chưa đủ chắc để chốt. Hãy chụp lại rõ hơn.`;
   customerResultCard?.classList.toggle("has-result", Boolean(shape));
+}
+
+function renderFaceShapeIcon(target, shape, includeText = false) {
+  if (!target) {
+    return;
+  }
+
+  const key = FACE_SHAPE_REFERENCE[shape] ? shape : "unknown";
+  const reference = FACE_SHAPE_REFERENCE[key];
+  const code = FACE_SHAPE_ICONS[key] || "?";
+  target.innerHTML = `
+    <svg viewBox="0 0 100 100" role="img" aria-label="${reference.label}">
+      <path class="shape-line" d="${reference.path}"></path>
+      <path class="shape-axis" d="M50 20 L50 84"></path>
+      <path class="shape-axis" d="M34 48 L66 48"></path>
+      ${includeText ? `<text x="50" y="57" text-anchor="middle" font-size="18" font-weight="800" fill="currentColor">${code}</text>` : ""}
+    </svg>
+  `;
+}
+
+function renderShapeReference(activeShape = "") {
+  if (!shapeReferenceGrid) {
+    return;
+  }
+
+  const shapes = ["oval", "round", "square", "long", "heart", "diamond"];
+  shapeReferenceGrid.innerHTML = shapes
+    .map((shape) => {
+      const reference = FACE_SHAPE_REFERENCE[shape];
+      return `
+        <article class="shape-reference-item ${shape === activeShape ? "is-active" : ""}">
+          <div class="shape-reference-icon">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <path class="shape-line" d="${reference.path}"></path>
+              <path class="shape-axis" d="M50 20 L50 84"></path>
+            </svg>
+          </div>
+          <div>
+            <strong>${reference.label}</strong>
+            <span>${reference.note}</span>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
 }
 
 function clearConfirmedFaceShape() {
