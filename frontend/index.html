@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Eye Dong Do - Tư vấn gọng kính</title>
-    <link rel="stylesheet" href="./css/styles.css?v=20260721-46" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260721-47" />
   </head>
   <body>
     <main class="app-shell">
@@ -65,9 +65,12 @@
         <section id="tab-0" class="tab-panel active compact-tab">
           <div class="two-column compact-layout">
             <section class="panel">
-              <div class="section-heading">
-                <p class="eyebrow">Hồ sơ</p>
-                <h2>Thông tin tối thiểu</h2>
+              <div class="section-heading section-heading-row">
+                <div>
+                  <p class="eyebrow">Hồ sơ</p>
+                  <h2>Thông tin tối thiểu</h2>
+                </div>
+                <button id="newCustomerButton" type="button" class="new-customer-action">Tạo bệnh nhân mới</button>
               </div>
 
               <form id="customerForm" class="customer-form">
@@ -102,10 +105,7 @@
                 <details class="advanced-details compact-details">
                   <summary>Mã, ngày tư vấn và ghi chú</summary>
                   <label>Mã khách hàng
-                  <div class="code-row">
                     <input id="customerCode" name="customer_code" type="text" readonly>
-                    <button id="newCustomerButton" type="button" title="Tạo mã mới">Mới</button>
-                  </div>
                   <span class="code-subline">Phiên tư vấn: <strong id="sessionCodeValue">--</strong></span>
                   </label>
                   <label>Ngày tư vấn
@@ -451,6 +451,6 @@
       </section>
     </main>
 
-    <script type="module" src="./js/app.mobile.js?v=20260721-46"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260721-47"></script>
   </body>
 </html>

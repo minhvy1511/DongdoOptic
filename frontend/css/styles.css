@@ -1123,6 +1123,30 @@ h1 {
   gap: 10px;
 }
 
+.section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.new-customer-action {
+  min-height: 38px;
+  flex: none;
+  padding: 0 14px;
+  border: 1px solid rgba(13, 107, 98, 0.35);
+  border-radius: var(--radius);
+  background: #eef7f5;
+  color: var(--accent-strong);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.new-customer-action:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
 .compact-tab .panel {
   padding: 18px;
 }
