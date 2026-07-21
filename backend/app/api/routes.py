@@ -1,8 +1,9 @@
 from fastapi import APIRouter
 
-from app.api.schemas import AnalyzeRequest, CustomerRecord, LensAdviceRequest
+from app.api.schemas import AnalyzeRequest, CustomerRecord, FeedbackRecord, LensAdviceRequest
 from app.services.customer_store import delete_customer, list_customers, save_customer
 from app.services.face_shape_service import analyze_face_shape
+from app.services.feedback_store import list_feedback, save_feedback
 from app.services.lens_advice_service import recommend_lens_index
 from app.services.recommendation_service import get_frame_recommendations
 
@@ -50,3 +51,13 @@ def remove_customer(customer_code: str):
     if not deleted:
         return {"deleted": False}
     return {"deleted": True}
+
+
+@router.get("/feedback")
+def feedback():
+    return list_feedback()
+
+
+@router.post("/feedback")
+def create_feedback(payload: FeedbackRecord):
+    return save_feedback(payload.model_dump())

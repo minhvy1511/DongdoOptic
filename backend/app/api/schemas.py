@@ -36,3 +36,22 @@ class CustomerRecord(BaseModel):
     lens_recommendations: list[dict] | None = None
     snapshot: dict | None = None
     created_at: str | None = None
+
+
+class FeedbackRecord(BaseModel):
+    id: str | None = None
+    customer_code: str | None = None
+    session_code: str | None = None
+    type: str | None = None
+    notes: str | None = None
+    faceShape_ai: str | None = None
+    faceShape_confirmed: str | None = None
+    confidence: float | None = None
+    confidence_level: str | None = None
+    top_candidates: list[dict] | None = None
+    capture_quality: dict | None = None
+    diagnostics: dict | None = None
+    preferences: dict | None = None
+    customer_status: str | None = None
+    source: str | None = None
+    created_at: str | None = None

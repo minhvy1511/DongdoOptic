@@ -222,6 +222,7 @@ const FACE_SHAPE_REFERENCE = {
 };
 
 const FEEDBACK_STORAGE_KEY = "dongdo_optic_feedback";
+const FEEDBACK_API_URL = "/api/feedback";
 
 function createAutoScanState() {
   return {
@@ -3363,28 +3364,117 @@ function renderConsultationSummary() {
   `;
 }
 
-function saveFeedback() {
-  const feedback = {
+function buildFeedbackRecord() {
+  const confidenceState = latestAnalysis
+    ? getConfidenceState(latestAnalysis)
+    : { level: "low", percent: 0 };
+  const diagnostics = latestAnalysis?.diagnostics || {};
+  const classification = diagnostics.classification || {};
+  const qualityGate = diagnostics.qualityGate || null;
+
+  return {
     id: `FB-${Date.now()}`,
     type: feedbackTypeInput?.value || "other",
     notes: feedbackNotesInput?.value.trim() || "",
     customer_code: customerCodeInput.value || "",
-    faceShape_ai: latestAiFaceShape || "",
-    faceShape_confirmed: confirmedFaceShape || "",
-    status: customerStatusInput.value || "waiting",
+    session_code: currentSessionCode || "",
+    faceShape_ai: latestAiFaceShape || latestAnalysis?.faceShape_ai || latestAnalysis?.shape || "",
+    faceShape_confirmed: confirmedFaceShape || latestAnalysis?.faceShape_confirmed || "",
+    confidence: latestAnalysis?.quality?.confidence ?? null,
+    confidence_level: confidenceState.level || "low",
+    top_candidates: Array.isArray(classification.candidates)
+      ? classification.candidates.slice(0, 3)
+      : [],
+    capture_quality: qualityGate
+      ? {
+          passed: Boolean(qualityGate.passed),
+          score: qualityGate.score ?? null,
+          failed_labels: Array.isArray(qualityGate.failedLabels) ? qualityGate.failedLabels : [],
+          checks: Array.isArray(qualityGate.checks) ? qualityGate.checks : []
+        }
+      : {},
+    diagnostics: {
+      warnings: Array.isArray(diagnostics.warnings) ? diagnostics.warnings.slice(0, 6) : [],
+      confidenceComponents: diagnostics.confidenceComponents || {},
+      confidenceBand: diagnostics.confidenceBand || "",
+      calibrationSource: diagnostics.calibrationSource || classification.calibrationSource || "",
+      centerBurst: diagnostics.centerBurst || null,
+      scanMode: diagnostics.scanMode || ""
+    },
+    preferences: {
+      ...readPreferences(),
+      age_group: ageGroupInput.value || "",
+      frame_width_mm: parseOptionalNumber(frameWidthMmInput.value),
+      has_prescription: Boolean(hasPrescriptionInput.checked),
+      prescription: readPrescriptionData()
+    },
+    customer_status: customerStatusInput.value || "waiting",
+    source: "frontend",
     created_at: new Date().toISOString()
+  };
+}
+
+async function postFeedbackRecord(feedback) {
+  const response = await fetch(FEEDBACK_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(feedback)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Feedback API failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function saveFeedback() {
+  const feedback = {
+    ...buildFeedbackRecord(),
+    sync_status: "pending"
   };
 
   const records = loadFeedbackRecords();
   records.unshift(feedback);
   localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify(records.slice(0, 200)));
 
-  if (feedbackNotesInput) {
-    feedbackNotesInput.value = "";
+  if (saveFeedbackButton) {
+    saveFeedbackButton.disabled = true;
+    saveFeedbackButton.textContent = "Đang lưu...";
   }
 
   if (feedbackStatus) {
-    feedbackStatus.textContent = "Đã lưu góp ý cục bộ cho hồ sơ hiện tại.";
+    feedbackStatus.textContent = "Đang lưu góp ý về bộ dữ liệu hiệu chuẩn...";
+  }
+
+  try {
+    const savedFeedback = await postFeedbackRecord(feedback);
+    const updatedRecords = loadFeedbackRecords().map((record) => (
+      record.id === feedback.id
+        ? { ...record, ...savedFeedback, sync_status: "synced" }
+        : record
+    ));
+    localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify(updatedRecords.slice(0, 200)));
+
+    if (feedbackNotesInput) {
+      feedbackNotesInput.value = "";
+    }
+
+    if (feedbackStatus) {
+      feedbackStatus.textContent = "Đã lưu góp ý vào bộ dữ liệu hiệu chuẩn.";
+    }
+  } catch (error) {
+    console.error(error);
+    if (feedbackStatus) {
+      feedbackStatus.textContent = "Đã lưu cục bộ. Chưa gửi được lên server, vui lòng thử lại khi mạng ổn định.";
+    }
+  } finally {
+    if (saveFeedbackButton) {
+      saveFeedbackButton.disabled = false;
+      saveFeedbackButton.textContent = "Lưu góp ý";
+    }
   }
 }
 
