@@ -1,14 +1,13 @@
-import { startUserCamera } from "./camera.js?v=20260720-38";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-38";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-38";
+import { startUserCamera } from "./camera.js?v=20260720-39";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-39";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-39";
 import {
-  buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-38";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-38";
+} from "./recommendations.js?v=20260720-39";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-39";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +17,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-38";
+} from "./customer-store.js?v=20260720-39";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -1264,7 +1263,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-38");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-39");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1813,7 +1812,7 @@ function getFrameSketchSvg(frameName = "", index = 0) {
         : name.includes("vuông") || name.includes("chữ nhật") || name.includes("rectangle")
         ? "square"
         : "oval";
-  const accent = ["#0d6b62", "#176f7d", "#7657a6"][index % 3];
+  const accent = ["#6f4e37", "#b49a6a", "#4b5563"][index % 3];
   const sketches = {
     oval: {
       lens: `
@@ -1884,6 +1883,36 @@ function getFrameSketchSvg(frameName = "", index = 0) {
       </g>
     </svg>
   `;
+}
+
+function getFramePresentationLabel(frameName = "") {
+  const name = String(frameName || "").toLowerCase();
+  if (name.includes("cat") || name.includes("mắt mèo")) {
+    return "Cat-eye nâng mắt";
+  }
+
+  if (name.includes("rimless") || name.includes("không viền")) {
+    return "Không viền nhẹ mặt";
+  }
+
+  if (name.includes("brow") || name.includes("nửa")) {
+    return "Browline mềm";
+  }
+
+  if (name.includes("vuông") || name.includes("chữ nhật") || name.includes("rectangle")) {
+    return "Vuông cân nét";
+  }
+
+  return "Oval cân bằng";
+}
+
+function getSummaryHighlights(shapeAdvice, topFrames, preferences) {
+  const frameLabels = topFrames.map((frame) => getFramePresentationLabel(frame.name));
+  return [
+    shapeAdvice.principle,
+    frameLabels.length ? `Ưu tiên ${frameLabels.join(", ")}.` : "Ưu tiên gọng làm mềm tỷ lệ khuôn mặt.",
+    `Màu gợi ý: ${getColorGuidance(preferences.frame_preference)}`
+  ];
 }
 
 function clearConfirmedFaceShape() {
@@ -3032,15 +3061,9 @@ function renderConsultationSummary() {
     prescription: customer.prescription || {},
     preference: preferences.frame_preference
   });
-  const consultationScript = buildConsultationScript({
-    customerName: customer.customer_name || "Anh/chị",
-    faceShape: summaryFaceShape,
-    faceShapeLabel: getFaceShapeLabel(summaryFaceShape),
-    purposeLabel: purposeLabel(preferences.purpose),
-    preference: preferences.frame_preference
-  });
   const topFrames = (latestRecommendations.length ? latestRecommendations : getFrameRecommendations(summaryFaceShape))
     .slice(0, 3);
+  const summaryHighlights = getSummaryHighlights(shapeAdvice, topFrames, preferences);
   const lensLine = latestLensRecommendations[0]
     ? `${latestLensRecommendations[0].brand} ${latestLensRecommendations[0].line}`
     : "Chưa cần chốt tròng, bổ sung đơn kính nếu có.";
@@ -3050,13 +3073,16 @@ function renderConsultationSummary() {
       <div>
         <span>${isDraft ? "Kết luận mô phỏng khuôn mặt" : "Kết luận mô phỏng khuôn mặt"}</span>
         <div class="summary-face-visual">
-          <div class="face-icon large">${getFaceShapeSvg(summaryFaceShape, true)}</div>
+          <div class="face-icon large clean">${getFaceShapeSvg(summaryFaceShape, false)}</div>
           <div>
             <strong>${getFaceShapeLabel(summaryFaceShape)}</strong>
             <em>${isDraft ? "Gợi ý sơ bộ, cần xác nhận" : "Dạng mặt dùng để tư vấn"}</em>
           </div>
         </div>
-        <p>${consultationScript}${isDraft ? " Cần xác nhận dạng mặt trước khi chốt." : ""}</p>
+        <ul class="summary-highlights">
+          ${summaryHighlights.map((item) => `<li>${item}</li>`).join("")}
+          ${isDraft ? "<li>Cần xác nhận dạng mặt trước khi chốt.</li>" : ""}
+        </ul>
       </div>
       <div>
         <span>Mô phỏng gọng nên chọn</span>
@@ -3064,7 +3090,8 @@ function renderConsultationSummary() {
           ${topFrames.map((frame, index) => `
             <article>
               ${getFrameSketchSvg(frame.name, index)}
-              <strong>${frame.name}</strong>
+              <strong>${getFramePresentationLabel(frame.name)}</strong>
+              <span>${frame.name}</span>
             </article>
           `).join("")}
         </div>
