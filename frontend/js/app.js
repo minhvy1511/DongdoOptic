@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-26";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-26";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-26";
+import { startUserCamera } from "./camera.js?v=20260720-27";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-27";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getFaceShapeLabel } from "./face-analysis.js?v=20260720-27";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-26";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-26";
+} from "./recommendations.js?v=20260720-27";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-27";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-26";
+} from "./customer-store.js?v=20260720-27";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -162,6 +162,7 @@ function createAutoScanState() {
     stepStartedAt: 0,
     stepTimeoutMs: 0,
     holdStartedAt: 0,
+    holdStepKey: "",
     transitionUntil: 0,
     progress: 0,
     status: "prompt",
@@ -244,22 +245,29 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   autoScanState.lastPose = pose;
   autoScanState.lastAnalysis = analysis;
 
-  const condition = evaluateScanFrame(step, analysis, pose, faceCount);
+  const condition = resolveScanCondition(step, analysis, pose, faceCount);
+  const captureStep = condition.step || step;
   autoScanState.prompt = step.label;
   autoScanState.detail = condition.detail;
   autoScanState.status = condition.status;
 
   if (condition.ready) {
+    if (autoScanState.holdStepKey !== captureStep.key) {
+      autoScanState.holdStartedAt = 0;
+      autoScanState.holdStepKey = captureStep.key;
+    }
+
     if (!autoScanState.holdStartedAt) {
       autoScanState.holdStartedAt = now;
     }
     autoScanState.progress = clamp01((now - autoScanState.holdStartedAt) / SCAN_CONFIG.HOLD_DURATION_MS);
 
     if (autoScanState.progress >= 1) {
-      captureScanStep(step, analysis, pose);
+      captureScanStep(captureStep, analysis, pose, { promptedStep: step });
     }
   } else {
     autoScanState.holdStartedAt = 0;
+    autoScanState.holdStepKey = "";
     autoScanState.progress = condition.near ? 0.32 : 0;
   }
 
@@ -287,6 +295,40 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   }
 
   updateScanHud();
+}
+
+function resolveScanCondition(step, analysis, pose, faceCount) {
+  const primary = {
+    ...evaluateScanFrame(step, analysis, pose, faceCount),
+    step
+  };
+
+  if (step.key === "center" || primary.ready || primary.near) {
+    return primary;
+  }
+
+  const alternate = SCAN_STEPS
+    .filter((candidate) =>
+      candidate.key !== "center"
+      && candidate.key !== step.key
+      && !autoScanState.captures[candidate.key]
+    )
+    .map((candidate) => ({
+      ...evaluateScanFrame(candidate, analysis, pose, faceCount),
+      step: candidate
+    }))
+    .find((candidate) => candidate.ready || candidate.near);
+
+  if (!alternate) {
+    return primary;
+  }
+
+  return {
+    ...alternate,
+    detail: alternate.ready
+      ? `Đang nhận góc ${alternate.step.shortLabel.toLowerCase()} trước, giữ yên để máy tự chụp.`
+      : `Máy đang thấy gần đúng góc ${alternate.step.shortLabel.toLowerCase()}; giữ chậm để ghi nhận góc này trước.`
+  };
 }
 
 function evaluateScanFrame(step, analysis, pose, faceCount) {
@@ -346,7 +388,11 @@ function evaluateScanFrame(step, analysis, pose, faceCount) {
   };
 }
 
-function captureScanStep(step, analysis, pose) {
+function captureScanStep(step, analysis, pose, options = {}) {
+  if (autoScanState.captures[step.key]) {
+    return;
+  }
+
   const capture = {
     key: step.key,
     label: step.shortLabel,
@@ -360,11 +406,14 @@ function captureScanStep(step, analysis, pose) {
   autoScanState.status = "captured";
   autoScanState.progress = 1;
   autoScanState.phase = `CAPTURED_${step.key.toUpperCase()}`;
-  autoScanState.detail = `Đã chụp góc ${step.shortLabel.toLowerCase()}.`;
+  autoScanState.detail = options.promptedStep?.key && options.promptedStep.key !== step.key
+    ? `Đã chụp góc ${step.shortLabel.toLowerCase()} trước.`
+    : `Đã chụp góc ${step.shortLabel.toLowerCase()}.`;
   autoScanState.transitionUntil = performance.now() + 420;
   console.debug(`[VisionID] Captured ${step.key}`, {
     capturedFrames: autoScanState.captureList.length,
-    capturedKeys: autoScanState.captureList.map((item) => item.key)
+    capturedKeys: autoScanState.captureList.map((item) => item.key),
+    promptedStep: options.promptedStep?.key || step.key
   });
   updateScanHud();
 
@@ -379,16 +428,18 @@ function captureScanStep(step, analysis, pose) {
       return;
     }
 
-    if (autoScanState.stepIndex >= SCAN_STEPS.length - 1) {
+    const nextStepIndex = getNextMissingStepIndex();
+    if (nextStepIndex < 0) {
       failIncompleteScan(step, "Luồng quét đã tới bước cuối nhưng chưa đủ 3 khung.");
       return;
     }
 
-    autoScanState.stepIndex += 1;
+    autoScanState.stepIndex = nextStepIndex;
     autoScanState.phase = `PROMPT_${SCAN_STEPS[autoScanState.stepIndex].key.toUpperCase()}`;
     autoScanState.stepStartedAt = performance.now();
     autoScanState.stepTimeoutMs = SCAN_CONFIG.STEP_TIMEOUT_MS;
     autoScanState.holdStartedAt = 0;
+    autoScanState.holdStepKey = "";
     autoScanState.progress = 0;
     autoScanState.transitionUntil = 0;
     autoScanState.status = "prompt";
@@ -396,6 +447,10 @@ function captureScanStep(step, analysis, pose) {
     autoScanState.detail = "Di chuyển chậm, máy sẽ tự bắt đúng góc.";
     updateScanHud();
   }, 420);
+}
+
+function getNextMissingStepIndex() {
+  return SCAN_STEPS.findIndex((step) => !autoScanState.captures[step.key]);
 }
 
 function finalizeMultiAngleScan() {
@@ -745,7 +800,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-26");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-27");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
