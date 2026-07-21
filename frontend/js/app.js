@@ -137,7 +137,7 @@ const SCAN_CONFIG = {
   STEP_TIMEOUT_MS: 5200,
   TIMEOUT_EXTENSION_MS: 5000,
   MIN_FRAME_CONFIDENCE: 0.34,
-  REQUIRED_CAPTURED_FRAMES: 3
+  REQUIRED_CAPTURED_FRAMES: 1
 };
 
 const DISTANCE_CONFIG = {
@@ -165,9 +165,7 @@ const DISTANCE_LANDMARKS = {
 };
 
 const SCAN_STEPS = [
-  { key: "center", label: "Nhìn thẳng vào camera", shortLabel: "Thẳng", targetYaw: 0, tolerance: SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG },
-  { key: "left", label: "Quay nhẹ đầu sang trái", shortLabel: "Trái", targetYaw: SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG },
-  { key: "right", label: "Quay nhẹ đầu sang phải", shortLabel: "Phải", targetYaw: -SCAN_CONFIG.TARGET_YAW_DEG, tolerance: SCAN_CONFIG.YAW_TOLERANCE_DEG }
+  { key: "center", label: "Nhìn thẳng vào camera", shortLabel: "Thẳng", targetYaw: 0, tolerance: SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG }
 ];
 
 const FACE_SHAPE_ICONS = {
@@ -284,7 +282,7 @@ function startAutoScanFlow(reason = "auto") {
     confirmedFaceShapeInput.disabled = true;
   }
   setAnalyzingState(true);
-  renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Đang quét tự động đa góc.");
+  renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Đang lấy ảnh thẳng chất lượng cao.");
   updateScanHud();
   updateWorkflowAssistant();
   console.debug(`[VisionID] Multi-angle scan started: ${reason}`);
@@ -872,7 +870,7 @@ function captureScanStep(step, analysis, pose, options = {}) {
 
     const nextStepIndex = getNextMissingStepIndex();
     if (nextStepIndex < 0) {
-      failIncompleteScan(step, "Luồng quét đã tới bước cuối nhưng chưa đủ 3 khung.");
+      failIncompleteScan(step, "Chưa lấy được ảnh thẳng đủ rõ.");
       return;
     }
 
@@ -898,7 +896,7 @@ function getNextMissingStepIndex() {
 function finalizeMultiAngleScan() {
   const capturedCount = autoScanState.captureList.length;
   if (capturedCount < SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES) {
-    failIncompleteScan(SCAN_STEPS[autoScanState.stepIndex], `Chỉ chụp được ${capturedCount}/3 khung, vui lòng quét lại.`);
+    failIncompleteScan(SCAN_STEPS[autoScanState.stepIndex], "Chưa lấy được ảnh thẳng đủ rõ, vui lòng quét lại.");
     return;
   }
 
@@ -907,7 +905,7 @@ function finalizeMultiAngleScan() {
   autoScanState.progress = 1;
   autoScanState.status = "captured";
   autoScanState.prompt = "Đang tổng hợp kết quả";
-  autoScanState.detail = "Đã đủ 3 góc quét.";
+  autoScanState.detail = "Đã lấy ảnh thẳng chất lượng cao.";
   updateScanHud();
   console.debug("[VisionID] Aggregating scan", {
     capturedFrames: capturedCount,
@@ -962,7 +960,7 @@ function failIncompleteScan(step, message) {
   isAnalyzingFace = false;
   setAnalyzingState(false);
   statusText.textContent = "Cần quét lại từ đầu";
-  faceShapeText.textContent = "Chưa đủ 3 khung";
+  faceShapeText.textContent = "Chưa đủ dữ liệu";
   renderConfidenceNotice(null, { level: "low", percent: 0 }, false, autoScanState.detail);
   renderCustomerResult();
   renderMetricsV2({
@@ -979,7 +977,7 @@ function failIncompleteScan(step, message) {
   if (markMeasuredButton) {
     markMeasuredButton.disabled = true;
   }
-  frameList.innerHTML = `<p class="empty-state">VisionID chưa đủ 3 khung. Hãy quét lại từ đầu để nhận gợi ý gọng.</p>`;
+  frameList.innerHTML = `<p class="empty-state">VisionID chưa lấy được ảnh thẳng đủ rõ. Hãy quét lại để nhận gợi ý gọng.</p>`;
   renderConsultationSummary();
   updateScanHud();
   updateWorkflowAssistant();
@@ -1008,7 +1006,7 @@ function buildMultiAngleAnalysis(captures) {
   });
   const centerCapture = usableCaptures.find((capture) => capture.key === "center");
 
-  if (usableCaptures.length < SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES || !centerCapture) {
+  if (!centerCapture) {
     return null;
   }
 
@@ -1023,7 +1021,7 @@ function buildMultiAngleAnalysis(captures) {
   const poseStability = calculatePoseStability(usableCaptures);
   const landmarkQuality = Number(centerCapture.analysis.quality?.confidence || 0);
   const classificationClarity = Number(centerClassification.clarity || 0);
-  const sideAgreementScore = Number.isFinite(sideAgreement) ? sideAgreement : 0.65;
+  const sideAgreementScore = Number.isFinite(sideAgreement) ? sideAgreement : 0.82;
   const compositeConfidence = clamp01(
     landmarkQuality * 0.42 +
     poseStability * 0.22 +
@@ -1044,8 +1042,8 @@ function buildMultiAngleAnalysis(captures) {
   const diagnostics = {
     ...baseAnalysis.diagnostics,
     confidenceBand: getConfidenceBandLabel(quality.confidence),
-    sampleCount: usableCaptures.length,
-    totalSamples: SCAN_STEPS.length,
+    sampleCount: centerCapture.burst?.sampleCount || usableCaptures.length,
+    totalSamples: centerCapture.burst?.totalSamples || SCAN_CONFIG.CENTER_BURST_FRAMES,
     shapeConsistency: sideAgreementScore,
     sideAgreement: sideAgreementScore,
     sideAnalysis: sideAnalysis.items,
@@ -1053,8 +1051,8 @@ function buildMultiAngleAnalysis(captures) {
     classification: centerClassification,
     advisoryShape: isAdvisoryShape,
     autoConfirmed: resolvedShape !== "unknown" && !isAdvisoryShape && quality.confidence >= CONFIDENCE_THRESHOLDS.high && classificationClarity >= 0.55 && sideAgreementScore >= 0.5,
-    partialScan: usableCaptures.length < SCAN_STEPS.length,
-    scanMode: "center-primary-plus-profile",
+    partialScan: false,
+    scanMode: "center-burst-primary",
     centerBurst: centerCapture.burst || centerCapture.analysis?.diagnostics?.centerBurst || null,
     capturedAngles: usableCaptures.map((capture) => capture.label).join(", "),
     headPose: {
@@ -1103,7 +1101,7 @@ function buildSideFrameSupport(captures, centerShape) {
   const comparable = items.filter((item) => item.shape && item.shape !== "unknown");
   const agreement = usableShape && comparable.length
     ? comparable.filter((item) => item.supportsCenter).length / comparable.length
-    : 0.65;
+    : 0.82;
 
   return { items, agreement };
 }
@@ -1228,15 +1226,12 @@ function updateScanHud() {
   const isIdle = autoScanState.phase === "IDLE";
   const isCheckingDistance = autoScanState.phase === "CHECK_DISTANCE";
   const completeCount = autoScanState.captureList?.length || 0;
-  const displayStep = autoScanState.phase === "RESULT"
-    ? SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES
-    : Math.min(completeCount + 1, SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES);
   scanHud.classList.toggle("is-idle", isIdle);
   scanStepLabel.textContent = isIdle
     ? "VisionID"
     : isCheckingDistance
       ? "Canh khoảng cách"
-      : `Bước ${displayStep}/3 · ${completeCount}/3 đã chụp`;
+      : `Ảnh thẳng · ${completeCount}/${SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES} đã chụp`;
   scanPromptLabel.textContent = autoScanState.prompt || step.label;
   scanSubLabel.textContent = autoScanState.detail || "Hệ thống sẽ tự chụp khi khuôn mặt ổn định.";
   scanProgressFill.style.width = `${Math.round(clamp01(autoScanState.progress) * 100)}%`;
@@ -1618,7 +1613,7 @@ function renderConfidenceNotice(analysis, confidenceState, finalResult, override
   const consistencyText = Number.isFinite(diagnostics.sideAgreement ?? diagnostics.shapeConsistency)
     ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
-  const partialText = diagnostics.partialScan ? "Đã chụp chưa đủ 3 góc, đang chốt tạm." : "";
+  const partialText = diagnostics.scanMode === "center-burst-primary" ? "Ưu tiên ảnh thẳng chất lượng cao." : "";
   const hasDraftShape = diagnostics.partialScan && analysis?.shape && analysis.shape !== "unknown";
   const messages = {
     high: `Độ tin cậy ${confidenceState.percent}% - đây là gợi ý mạnh, vẫn nên rà lại.`,
@@ -1651,7 +1646,7 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
   const consistencyLabel = Number.isFinite(diagnostics.sideAgreement ?? diagnostics.shapeConsistency)
     ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
-  const partialLabel = diagnostics.partialScan ? "Chốt tạm từ dữ liệu hiện có" : "";
+  const partialLabel = diagnostics.scanMode === "center-burst-primary" ? "Ảnh thẳng là nguồn chính" : "";
   const statusTextValue = overrideMessage || (
     confirmedFaceShape
       ? `Đã xác nhận - ${shapeLabel}`
@@ -1700,7 +1695,7 @@ function getConfidenceReasons(analysis) {
   }
 
   if (Number(components.sideAgreement || 0) < 0.5) {
-    reasons.push("Khung nghiêng cho tín hiệu khác khung thẳng, cần nhân viên xác nhận thủ công.");
+    reasons.push("Tín hiệu bổ trợ chưa đủ mạnh, cần nhân viên xác nhận thủ công.");
   }
 
   if (Array.isArray(diagnostics.warnings)) {
@@ -2285,7 +2280,7 @@ function renderMetricsV2(metrics, quality = null, diagnostics = null) {
         ["Landmark", formatPercent(confidenceComponents.landmarkQuality)],
         ["Pose", formatPercent(confidenceComponents.poseStability)],
         ["Phan loai", formatPercent(confidenceComponents.classificationClarity)],
-        ["Goc nghieng", formatPercent(confidenceComponents.sideAgreement)],
+        ["Bổ trợ", formatPercent(confidenceComponents.sideAgreement)],
         ["Center burst", diagnostics?.centerBurst ? `${diagnostics.centerBurst.sampleCount || 0}/${diagnostics.centerBurst.totalSamples || 0}` : "--"],
         ["Nguồn chuẩn", diagnostics?.calibrationSource || diagnostics?.classification?.calibrationSource || "--"]
       ].filter(([, value]) => value !== "--")
@@ -2791,7 +2786,7 @@ function getWorkflowState() {
 
     return {
       step: "Bước 3 · VisionID",
-      next: video?.srcObject ? "Giữ mặt trong khung để quét tự động" : "Bật camera để bắt đầu quét",
+      next: video?.srcObject ? "Giữ mặt thẳng để lấy ảnh chất lượng cao" : "Bật camera để bắt đầu quét",
       action: video?.srcObject ? "Quét lại từ đầu" : "Bật camera",
       tone: video?.srcObject ? "warning" : "neutral"
     };
@@ -3551,7 +3546,7 @@ if (confirmedFaceShapeInput) {
 
 if (customerViewToggle) {
   customerViewToggle.addEventListener("change", () => {
-    document.getElementById("tab-3")?.classList.toggle("guest-view", customerViewToggle.checked);
+    document.getElementById("tab-3")?.classList.toggle("show-debug", customerViewToggle.checked);
   });
 }
 
