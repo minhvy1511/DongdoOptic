@@ -54,6 +54,7 @@ const customerResultCard = document.getElementById("customerResultCard");
 const customerFaceShape = document.getElementById("customerFaceShape");
 const customerResultSummary = document.getElementById("customerResultSummary");
 const faceShapeIcon = document.getElementById("faceShapeIcon");
+const captureQualityGate = document.getElementById("captureQualityGate");
 const shapeCandidateStack = document.getElementById("shapeCandidateStack");
 const shapeReferenceGrid = document.getElementById("shapeReferenceGrid");
 const customerCodeInput = document.getElementById("customerCode");
@@ -781,10 +782,21 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
 
   const metrics = medianMetrics(selectedSamples.map((sample) => sample.analysis.metrics));
   const quality = averageQuality(selectedSamples.map((sample) => sample.analysis.quality));
+  const pose = averagePose(selectedSamples.map((sample) => sample.pose));
+  const qualityGate = buildCaptureQualityGate({
+    selectedSamples,
+    allSamples: samples,
+    quality,
+    pose,
+    fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
+  });
   quality.confidence = Math.max(
     quality.confidence || 0,
     Math.min(0.72, average(selectedSamples.map((sample) => Number(sample.analysis.quality?.confidence || 0))) + 0.08)
   );
+  if (!qualityGate.passed) {
+    quality.confidence = Math.min(quality.confidence, 0.62);
+  }
   const classification = getClassificationDetail(metrics);
   const shape = classification.shape !== "unknown" ? classification.shape : classification.bestShape;
   const analysis = analyzeFaceShapeFromMetrics(shape, metrics, quality);
@@ -796,15 +808,69 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
       totalSamples: samples.length,
       fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
     },
+    qualityGate,
     warnings: analysis.diagnostics.warnings || []
   };
+  if (!qualityGate.passed) {
+    analysis.diagnostics.warnings = [
+      `Ảnh thẳng chưa đạt chuẩn: ${qualityGate.failedLabels.join(", ")}.`,
+      ...analysis.diagnostics.warnings
+    ].slice(0, 4);
+  }
   analysis.warnings = analysis.diagnostics.warnings;
 
   return {
     analysis,
-    pose: averagePose(selectedSamples.map((sample) => sample.pose)),
+    pose,
     sampleCount: selectedSamples.length,
     fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
+  };
+}
+
+function buildCaptureQualityGate({ selectedSamples = [], allSamples = [], quality = {}, pose = {}, fallbackUsed = false } = {}) {
+  const sampleCount = selectedSamples.length;
+  const totalSamples = allSamples.length;
+  const checks = [
+    {
+      key: "samples",
+      label: "Đủ mẫu ổn định",
+      passed: sampleCount >= SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
+      value: `${sampleCount}/${Math.max(totalSamples, SCAN_CONFIG.CENTER_BURST_FRAMES)} frame`
+    },
+    {
+      key: "landmark",
+      label: "Landmark rõ",
+      passed: Number(quality.confidence || 0) >= 0.5 && !fallbackUsed,
+      value: formatPercent(Number(quality.confidence || 0))
+    },
+    {
+      key: "pose",
+      label: "Mặt nhìn thẳng",
+      passed: Math.abs(Number(pose.yawDeg || 0)) <= 8 && Math.abs(Number(pose.rollDeg || 0)) <= 10,
+      value: `${Math.round(Number(pose.yawDeg || 0))}° / ${Math.round(Number(pose.rollDeg || 0))}°`
+    },
+    {
+      key: "center",
+      label: "Nằm giữa khung",
+      passed: Math.abs(Number(quality.centerOffsetX || 0)) <= 0.14 && Math.abs(Number(quality.centerOffsetY || 0)) <= 0.14,
+      value: `${Math.round(Math.abs(Number(quality.centerOffsetX || 0)) * 100)}% ngang`
+    },
+    {
+      key: "distance",
+      label: "Khoảng cách vừa",
+      passed: Number(quality.coverage || 0) >= 0.08 && Number(quality.coverage || 0) <= 0.42,
+      value: getDistanceLabel(Number(quality.coverage || 0))
+    }
+  ];
+  const passedCount = checks.filter((item) => item.passed).length;
+  const score = clamp01(passedCount / checks.length);
+  const failedLabels = checks.filter((item) => !item.passed).map((item) => item.label.toLowerCase());
+
+  return {
+    passed: score >= 0.8 && checks.find((item) => item.key === "pose")?.passed && checks.find((item) => item.key === "landmark")?.passed,
+    score,
+    checks,
+    failedLabels
   };
 }
 
@@ -1022,20 +1088,24 @@ function buildMultiAngleAnalysis(captures) {
   const landmarkQuality = Number(centerCapture.analysis.quality?.confidence || 0);
   const classificationClarity = Number(centerClassification.clarity || 0);
   const sideAgreementScore = Number.isFinite(sideAgreement) ? sideAgreement : 0.82;
+  const qualityGate = centerCapture.analysis?.diagnostics?.qualityGate || null;
+  const gateScore = Number.isFinite(qualityGate?.score) ? qualityGate.score : 1;
   const compositeConfidence = clamp01(
     landmarkQuality * 0.42 +
     poseStability * 0.22 +
     classificationClarity * 0.24 +
-    sideAgreementScore * 0.12
+    sideAgreementScore * 0.08 +
+    gateScore * 0.04
   );
   const quality = {
     ...centerCapture.analysis.quality,
-    confidence: compositeConfidence,
+    confidence: qualityGate && !qualityGate.passed ? Math.min(compositeConfidence, 0.66) : compositeConfidence,
     confidenceComponents: {
       landmarkQuality,
       poseStability,
       classificationClarity,
-      sideAgreement: sideAgreementScore
+      sideAgreement: sideAgreementScore,
+      captureQuality: gateScore
     }
   };
   const baseAnalysis = analyzeFaceShapeFromMetrics(resolvedShape, metrics, quality);
@@ -1050,7 +1120,8 @@ function buildMultiAngleAnalysis(captures) {
     confidenceComponents: quality.confidenceComponents,
     classification: centerClassification,
     advisoryShape: isAdvisoryShape,
-    autoConfirmed: resolvedShape !== "unknown" && !isAdvisoryShape && quality.confidence >= CONFIDENCE_THRESHOLDS.high && classificationClarity >= 0.55 && sideAgreementScore >= 0.5,
+    qualityGate,
+    autoConfirmed: resolvedShape !== "unknown" && !isAdvisoryShape && (!qualityGate || qualityGate.passed) && quality.confidence >= CONFIDENCE_THRESHOLDS.high && classificationClarity >= 0.55 && sideAgreementScore >= 0.5,
     partialScan: false,
     scanMode: "center-burst-primary",
     centerBurst: centerCapture.burst || centerCapture.analysis?.diagnostics?.centerBurst || null,
@@ -1746,8 +1817,40 @@ function renderCustomerResult() {
     : canShowAiShape
       ? `AI nghiêng về: ${aiLabel}. ${[sampleText, consistencyText, "cần xác nhận thủ công"].filter(Boolean).join(" · ")}.`
       : `AI chưa đủ chắc để chốt. Hãy chụp lại rõ hơn.`;
+  renderCaptureQualityGate(latestAnalysis);
   renderShapeCandidateStack(latestAnalysis);
   customerResultCard?.classList.toggle("has-result", Boolean(shape));
+}
+
+function renderCaptureQualityGate(analysis) {
+  if (!captureQualityGate) {
+    return;
+  }
+
+  const gate = analysis?.diagnostics?.qualityGate;
+  if (!gate?.checks?.length) {
+    captureQualityGate.innerHTML = "";
+    captureQualityGate.hidden = true;
+    return;
+  }
+
+  captureQualityGate.hidden = false;
+  captureQualityGate.className = `capture-quality-gate ${gate.passed ? "is-passed" : "is-warning"}`;
+  captureQualityGate.innerHTML = `
+    <div class="capture-quality-heading">
+      <span>${gate.passed ? "Ảnh đạt chuẩn" : "Ảnh cần rà lại"}</span>
+      <strong>${Math.round(gate.score * 100)}%</strong>
+    </div>
+    <div class="capture-quality-list">
+      ${gate.checks.map((check) => `
+        <span class="${check.passed ? "is-ok" : "is-bad"}">
+          <i>${check.passed ? "✓" : "!"}</i>
+          ${check.label}
+          <em>${check.value}</em>
+        </span>
+      `).join("")}
+    </div>
+  `;
 }
 
 function renderShapeCandidateStack(analysis) {
@@ -2281,6 +2384,7 @@ function renderMetricsV2(metrics, quality = null, diagnostics = null) {
         ["Pose", formatPercent(confidenceComponents.poseStability)],
         ["Phan loai", formatPercent(confidenceComponents.classificationClarity)],
         ["Bổ trợ", formatPercent(confidenceComponents.sideAgreement)],
+        ["Chất lượng ảnh", formatPercent(confidenceComponents.captureQuality)],
         ["Center burst", diagnostics?.centerBurst ? `${diagnostics.centerBurst.sampleCount || 0}/${diagnostics.centerBurst.totalSamples || 0}` : "--"],
         ["Nguồn chuẩn", diagnostics?.calibrationSource || diagnostics?.classification?.calibrationSource || "--"]
       ].filter(([, value]) => value !== "--")

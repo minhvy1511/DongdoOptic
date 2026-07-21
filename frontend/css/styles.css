@@ -851,6 +851,100 @@ h1 {
   line-height: 1.45;
 }
 
+.capture-quality-gate {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(13, 107, 98, 0.14);
+  border-radius: var(--radius);
+  background: rgba(247, 250, 252, 0.82);
+}
+
+.capture-quality-gate[hidden] {
+  display: none;
+}
+
+.capture-quality-gate.is-passed {
+  border-color: rgba(47, 158, 68, 0.28);
+  background: rgba(237, 248, 240, 0.86);
+}
+
+.capture-quality-gate.is-warning {
+  border-color: rgba(245, 159, 0, 0.3);
+  background: rgba(255, 247, 230, 0.86);
+}
+
+.capture-quality-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.capture-quality-heading span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.capture-quality-heading strong {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.capture-quality-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.capture-quality-list span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: none;
+}
+
+.capture-quality-list i {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e9ecef;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.capture-quality-list .is-ok i {
+  background: #d3f9d8;
+  color: #2b8a3e;
+}
+
+.capture-quality-list .is-bad i {
+  background: #fff3bf;
+  color: #ad6800;
+}
+
+.capture-quality-list em {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .shape-candidate-stack {
   margin-top: 12px;
   padding-top: 12px;
@@ -2206,6 +2300,7 @@ h1 {
   .summary-grid,
   .aesthetic-advice,
   .material-grid,
+  .capture-quality-list,
   .feedback-form {
     grid-template-columns: 1fr;
   }
