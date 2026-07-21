@@ -1,14 +1,14 @@
-import { startUserCamera } from "./camera.js?v=20260720-28";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-28";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-28";
+import { startUserCamera } from "./camera.js?v=20260720-29";
+import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-29";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260720-29";
 import {
   buildConsultationScript,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations
-} from "./recommendations.js?v=20260720-28";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-28";
+} from "./recommendations.js?v=20260720-29";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-29";
 import {
   createCustomerCode,
   createSessionCode,
@@ -18,7 +18,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-28";
+} from "./customer-store.js?v=20260720-29";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -601,9 +601,7 @@ function buildMultiAngleAnalysis(captures) {
       sideAgreement: sideAgreementScore
     }
   };
-  const shape = shapeFromMetrics;
-  const fallbackShape = shape === "unknown" ? estimateFaceShapeFromRatios(metrics) : "";
-  const resolvedShape = shape !== "unknown" ? shape : fallbackShape;
+  const resolvedShape = shapeFromMetrics;
   const baseAnalysis = analyzeFaceShapeFromMetrics(resolvedShape, metrics, quality);
   const diagnostics = {
     ...baseAnalysis.diagnostics,
@@ -615,9 +613,8 @@ function buildMultiAngleAnalysis(captures) {
     sideAnalysis: sideAnalysis.items,
     confidenceComponents: quality.confidenceComponents,
     classification: centerClassification,
-    autoConfirmed: resolvedShape !== "unknown" && !fallbackShape && quality.confidence >= CONFIDENCE_THRESHOLDS.high && classificationClarity >= 0.55 && sideAgreementScore >= 0.5,
+    autoConfirmed: resolvedShape !== "unknown" && quality.confidence >= CONFIDENCE_THRESHOLDS.high && classificationClarity >= 0.55 && sideAgreementScore >= 0.5,
     partialScan: usableCaptures.length < SCAN_STEPS.length,
-    shapeFallback: Boolean(fallbackShape),
     scanMode: "center-primary-plus-profile",
     capturedAngles: usableCaptures.map((capture) => capture.label).join(", "),
     headPose: {
@@ -639,40 +636,6 @@ function buildMultiAngleAnalysis(captures) {
     faceShape_ai: resolvedShape,
     faceShape_confirmed: diagnostics.autoConfirmed ? resolvedShape : ""
   };
-}
-
-function estimateFaceShapeFromRatios(metrics = {}) {
-  const lengthToWidth = Number(metrics.lengthToWidth || 0);
-  const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
-  const jawToCheek = Number(metrics.jawToCheek || 0);
-  const jawToForehead = Number(metrics.jawToForehead || 0);
-  const cheekToJaw = Number(metrics.cheekToJaw || 0);
-
-  if (!lengthToWidth || !foreheadToCheek || !jawToCheek || !jawToForehead) {
-    return "unknown";
-  }
-
-  if (lengthToWidth >= 1.55) {
-    return "long";
-  }
-
-  if (foreheadToCheek >= 1.0 && jawToForehead <= 0.9) {
-    return "heart";
-  }
-
-  if (cheekToJaw >= 1.16 && foreheadToCheek <= 0.92) {
-    return "diamond";
-  }
-
-  if (lengthToWidth <= 1.2 && jawToCheek >= 0.78) {
-    return "round";
-  }
-
-  if (jawToCheek >= 0.88 && foreheadToCheek >= 0.84) {
-    return "square";
-  }
-
-  return "oval";
 }
 
 function buildSideFrameSupport(captures, centerShape) {
@@ -846,7 +809,7 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-28");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260720-29");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1286,10 +1249,6 @@ function getConfidenceReasons(analysis) {
         reasons.push(warning);
       }
     });
-  }
-
-  if (diagnostics.shapeFallback && !reasons.includes("AI đang dùng gợi ý nháp từ tỉ lệ khuôn mặt, nhân viên cần xác nhận thủ công.")) {
-    reasons.push("AI đang dùng gợi ý nháp từ tỉ lệ khuôn mặt, nhân viên cần xác nhận thủ công.");
   }
 
   return reasons.length ? reasons.slice(0, 3) : ["Khung hình đủ sáng, nhìn thẳng và giữ yên để kết quả ổn định hơn."];
