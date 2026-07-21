@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DongDo Optic - Tư vấn gọng kính</title>
-    <link rel="stylesheet" href="./css/styles.css?v=20260721-41" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260721-42" />
   </head>
   <body>
     <main class="app-shell">
@@ -62,38 +62,21 @@
           </div>
         </header>
 
-        <section id="tab-0" class="tab-panel active">
-          <div class="two-column">
+        <section id="tab-0" class="tab-panel active compact-tab">
+          <div class="two-column compact-layout">
             <section class="panel">
               <div class="section-heading">
                 <p class="eyebrow">Hồ sơ</p>
-                <h2>Nhập thông tin và lưu hồ sơ</h2>
+                <h2>Thông tin tối thiểu</h2>
               </div>
 
               <form id="customerForm" class="customer-form">
-                <label>Mã khách hàng
-                  <div class="code-row">
-                    <input id="customerCode" name="customer_code" type="text" readonly>
-                    <button id="newCustomerButton" type="button" title="Tạo mã mới">Mới</button>
-                  </div>
-                  <span class="code-subline">Phiên tư vấn: <strong id="sessionCodeValue">--</strong></span>
-                </label>
-                <label>Tên khách hàng
-                  <input id="customerName" name="customer_name" type="text" placeholder="Nhập tên khách">
-                </label>
-                <label>Số điện thoại
-                  <input id="customerPhone" name="customer_phone" type="tel" placeholder="Nhập số điện thoại">
-                </label>
-                <label>Trạng thái hồ sơ
-                  <select id="customerStatus" name="customer_status">
-                    <option value="waiting">Đang chờ tư vấn</option>
-                    <option value="measured">Đã đo đơn</option>
-                    <option value="closed">Đã chốt đơn</option>
-                  </select>
-                </label>
-                <div class="form-row">
-                  <label>Ngày tư vấn
-                    <input id="consultDate" name="consult_date" type="date">
+                <div class="quick-profile-grid">
+                  <label>Tên khách hàng
+                    <input id="customerName" name="customer_name" type="text" placeholder="Nhập tên khách">
+                  </label>
+                  <label>Số điện thoại
+                    <input id="customerPhone" name="customer_phone" type="tel" placeholder="Nhập số điện thoại">
                   </label>
                   <label>Nhóm tuổi
                     <select id="ageGroup" name="age_group">
@@ -107,10 +90,32 @@
                       <option value="senior">Người lớn tuổi</option>
                     </select>
                   </label>
+                  <label>Trạng thái
+                    <select id="customerStatus" name="customer_status">
+                      <option value="waiting">Đang chờ tư vấn</option>
+                      <option value="measured">Đã đo đơn</option>
+                      <option value="closed">Đã chốt đơn</option>
+                    </select>
+                  </label>
                 </div>
-                <label>Nhu cầu / ghi chú
-                  <textarea id="customerNotes" name="customer_notes" rows="3" placeholder="VD: đeo máy tính nhiều, thích gọng nhẹ, cần phong cách công sở..."></textarea>
-                </label>
+
+                <details class="advanced-details compact-details">
+                  <summary>Mã, ngày tư vấn và ghi chú</summary>
+                  <label>Mã khách hàng
+                  <div class="code-row">
+                    <input id="customerCode" name="customer_code" type="text" readonly>
+                    <button id="newCustomerButton" type="button" title="Tạo mã mới">Mới</button>
+                  </div>
+                  <span class="code-subline">Phiên tư vấn: <strong id="sessionCodeValue">--</strong></span>
+                  </label>
+                  <label>Ngày tư vấn
+                    <input id="consultDate" name="consult_date" type="date">
+                  </label>
+                  <label>Ghi chú nhanh
+                    <textarea id="customerNotes" name="customer_notes" rows="2" placeholder="VD: cần gọng nhẹ, đeo máy tính nhiều..."></textarea>
+                  </label>
+                </details>
+
                 <label class="rx-toggle">
                   <input id="hasPrescription" type="checkbox" name="has_prescription">
                   <span>Khách hàng đã có đơn kính</span>
@@ -134,7 +139,7 @@
                   <p class="prescription-hint">Nếu SPH/CYL cho thấy độ cao, hệ thống sẽ ưu tiên tròng 1.67 hoặc 1.74.</p>
                 </section>
                 <details class="advanced-details">
-                  <summary>Thông tin nâng cao</summary>
+                  <summary>Rộng gọng dự kiến</summary>
                   <div class="advanced-grid">
                     <label>Rộng gọng dự kiến (mm)
                       <input id="frameWidthMm" name="frame_width_mm" type="number" step="0.1" placeholder="Ví dụ: 52.0">
@@ -147,7 +152,8 @@
               <button id="saveCustomerButton" type="button" class="secondary-action">Lưu hồ sơ khách</button>
             </section>
 
-            <section class="customer-panel">
+            <details class="customer-panel compact-customer-list">
+              <summary>Khách hàng đã lưu</summary>
               <div class="section-heading">
                 <p class="eyebrow">Hồ sơ</p>
                 <h2>Khách hàng đã lưu</h2>
@@ -159,15 +165,15 @@
               <div class="customer-list" id="customerList">
                 <p class="empty-state">Chưa có hồ sơ nào.</p>
               </div>
-            </section>
+            </details>
           </div>
         </section>
 
-        <section id="tab-1" class="tab-panel">
+        <section id="tab-1" class="tab-panel compact-tab">
           <div class="panel">
             <div class="section-heading">
               <p class="eyebrow">Nhu cầu</p>
-              <h2>Sở thích, tài chính và mục đích sử dụng</h2>
+              <h2>4 lựa chọn nhanh</h2>
             </div>
             <form id="preferenceForm" class="preference-form">
               <div class="preference-grid">
@@ -208,13 +214,16 @@
                   </select>
                 </label>
               </div>
-              <fieldset class="brand-fieldset">
-                <legend>Hãng tròng kính đang sử dụng</legend>
-                <label><input type="checkbox" name="brands" value="Fano" checked> Fano</label>
-                <label><input type="checkbox" name="brands" value="Essilor Element" checked> Essilor Element</label>
-                <label><input type="checkbox" name="brands" value="Essilor" checked> Essilor</label>
-                <label><input type="checkbox" name="brands" value="Carl Zeiss" checked> Carl Zeiss</label>
-              </fieldset>
+              <details class="advanced-details compact-details">
+                <summary>Hãng tròng kính</summary>
+                <fieldset class="brand-fieldset">
+                  <legend>Hãng tròng kính đang sử dụng</legend>
+                  <label><input type="checkbox" name="brands" value="Fano" checked> Fano</label>
+                  <label><input type="checkbox" name="brands" value="Essilor Element" checked> Essilor Element</label>
+                  <label><input type="checkbox" name="brands" value="Essilor" checked> Essilor</label>
+                  <label><input type="checkbox" name="brands" value="Carl Zeiss" checked> Carl Zeiss</label>
+                </fieldset>
+              </details>
             </form>
             <section class="lens-preview" aria-live="polite">
               <div class="section-heading">
@@ -226,13 +235,13 @@
                 <p class="empty-state">Nhập đơn ở Hồ sơ để xem gợi ý nhanh.</p>
               </div>
             </section>
-            <div class="catalog-note">
+            <div class="catalog-note compact-note">
               Dữ liệu hiện là catalog nền tảng để tư vấn nội bộ. Khi có file catalog/chính sách giá của cửa hàng, mình sẽ map lại thành bảng giá thật.
             </div>
           </div>
         </section>
 
-        <section id="tab-3" class="tab-panel">
+        <section id="tab-3" class="tab-panel vision-compact">
           <section class="workspace">
             <div class="camera-stage">
               <div class="camera-panel">
@@ -267,7 +276,7 @@
             <aside class="inspector">
               <div class="section-heading">
                 <p class="eyebrow">VisionID</p>
-                <h2>Camera và chỉ số</h2>
+                <h2>Kết quả nhận diện</h2>
               </div>
               <label class="guest-toggle">
                 <input id="customerViewToggle" type="checkbox">
@@ -286,7 +295,7 @@
                   <div id="shapeCandidateStack" class="shape-candidate-stack" aria-label="Các dạng mặt AI đang cân nhắc"></div>
                 </div>
               </div>
-              <details class="shape-reference" id="shapeReference">
+              <details class="shape-reference staff-debug" id="shapeReference">
                 <summary>So sánh các dạng mặt</summary>
                 <div class="shape-reference-grid" id="shapeReferenceGrid"></div>
               </details>
@@ -442,6 +451,6 @@
       </section>
     </main>
 
-    <script type="module" src="./js/app.mobile.js?v=20260721-41"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260721-42"></script>
   </body>
 </html>

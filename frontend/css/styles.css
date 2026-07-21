@@ -1096,6 +1096,21 @@ h1 {
   gap: 10px;
 }
 
+.compact-tab .panel {
+  padding: 18px;
+}
+
+.compact-layout {
+  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+  align-items: start;
+}
+
+.quick-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .customer-form label {
   display: grid;
   gap: 6px;
@@ -1159,6 +1174,31 @@ h1 {
   box-shadow: var(--shadow-sm);
 }
 
+.compact-details {
+  border: 1px solid rgba(13, 107, 98, 0.12);
+  border-radius: var(--radius);
+  background: rgba(247, 250, 252, 0.78);
+}
+
+.compact-details summary {
+  cursor: pointer;
+  padding: 11px 12px;
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
+.compact-details[open] {
+  padding: 0 12px 12px;
+}
+
+.compact-details[open] summary {
+  margin: 0 -12px 10px;
+}
+
+.compact-details label + label {
+  margin-top: 10px;
+}
+
 .brand-fieldset legend {
   color: var(--muted);
   padding: 0 6px;
@@ -1171,6 +1211,12 @@ h1 {
   background: #fff7e8;
   color: #7a4f0d;
   line-height: 1.5;
+}
+
+.catalog-note.compact-note {
+  margin-top: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
 }
 
 .customer-form textarea {
@@ -1216,6 +1262,18 @@ h1 {
   border-radius: var(--radius);
   background: rgba(247, 250, 252, 0.95);
   box-shadow: var(--shadow-sm);
+}
+
+.vision-compact .analysis-panel {
+  margin-top: 12px;
+}
+
+.vision-compact .shape-reference.staff-debug {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.vision-compact .technical-details {
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .prescription-section h3 {
@@ -1867,6 +1925,29 @@ h1 {
   box-shadow: var(--shadow-sm);
 }
 
+.compact-customer-list {
+  align-self: start;
+}
+
+.compact-customer-list > summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.compact-customer-list:not([open]) {
+  padding: 14px 18px;
+}
+
+.compact-customer-list:not([open]) > :not(summary) {
+  display: none;
+}
+
+.compact-customer-list[open] > summary {
+  margin-bottom: 12px;
+}
+
 .customer-list {
   display: grid;
   gap: 10px;
@@ -1965,8 +2046,10 @@ h1 {
   }
 
   .two-column,
+  .compact-layout,
   .advice-grid,
   .preference-grid,
+  .quick-profile-grid,
   .summary-grid,
   .aesthetic-advice,
   .feedback-form {
