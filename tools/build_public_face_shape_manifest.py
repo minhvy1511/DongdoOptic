@@ -70,15 +70,16 @@ def main() -> None:
 
     records = list(iter_kaggle_images(args.kaggle_root))
     selected = balanced_sample(records, args.per_label, args.seed)
+    total = len(selected)
     manifest = {
-        "version": "public-face-shape-1000-v20260722",
+        "version": f"public-face-shape-{total}-v20260722",
         "source": "Kaggle Face Shape Dataset by Niten Lama",
         "source_url": "https://www.kaggle.com/datasets/niten19/face-shape-dataset",
         "note": "Local manifest only. Image files are not committed or deployed.",
         "label_mapping": KAGGLE_LABELS,
         "available_counts": summarize(records),
         "sample_counts": summarize(selected),
-        "total": len(selected),
+        "total": total,
         "records": selected,
     }
 

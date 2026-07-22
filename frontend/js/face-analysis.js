@@ -1,4 +1,4 @@
-import { PUBLIC_FACE_SHAPE_CALIBRATION, getCalibrationSourceLabel } from "./face-calibration.js?v=20260722-56";
+import { PUBLIC_FACE_SHAPE_CALIBRATION, getCalibrationSourceLabel } from "./face-calibration.js?v=20260722-57";
 
 const LANDMARKS = {
   topFace: 10,
@@ -101,8 +101,8 @@ export function getClassificationDetail(metrics) {
   const [bestShape, bestScore] = ordered[0] || ["unknown", 0];
   const [secondShape, secondScore] = ordered[1] || ["unknown", 0];
   const margin = bestScore - secondScore;
-  const confidenceGate = 0.64;
-  const marginGate = bestShape === "diamond" ? 0.18 : 0.08;
+  const confidenceGate = 0.52;
+  const marginGate = bestShape === "diamond" ? 0.18 : 0.04;
   const claritySpan = PUBLIC_FACE_SHAPE_CALIBRATION.scoreGates.claritySpan;
   const clarity = clamp((margin - marginGate) / claritySpan, 0, 1) * clamp(bestScore / 0.84, 0, 1);
   const shape = bestScore < confidenceGate || margin < marginGate ? "unknown" : bestShape;

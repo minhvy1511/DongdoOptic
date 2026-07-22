@@ -1,20 +1,20 @@
 export const PUBLIC_FACE_SHAPE_CALIBRATION = {
-  version: "public-reference-20260722-kaggle1000",
-  label: "Public reference v20260722 · Kaggle 1000",
+  version: "public-reference-20260722-kaggle5000",
+  label: "Public reference v20260722 · Kaggle 5000",
   notes: [
-    "Diem khoi dau duoc hieu chinh theo 1000 anh mau can bang tu Kaggle Face Shape Dataset.",
+    "Diem khoi dau duoc hieu chinh theo 5000 anh mau can bang tu Kaggle Face Shape Dataset.",
     "Bo cong khai nay co 5 lop: Heart, Oblong/Long, Oval, Round, Square; khong co lop Diamond.",
     "Diamond duoc giu de nhan vien xac nhan thu cong va thu thap feedback noi bo."
   ],
   calibrationDataset: {
-    version: "public-face-shape-1000-v20260722",
-    total: 1000,
+    version: "public-face-shape-5000-v20260722",
+    total: 5000,
     counts: {
-      heart: 200,
-      long: 200,
-      oval: 200,
-      round: 200,
-      square: 200
+      heart: 1000,
+      long: 1000,
+      oval: 1000,
+      round: 1000,
+      square: 1000
     },
     autoClassifiedShapes: ["heart", "long", "oval", "round", "square"],
     manualOnlyShapes: ["diamond"]
