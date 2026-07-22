@@ -1,4 +1,4 @@
-import { PUBLIC_FACE_SHAPE_CALIBRATION, getCalibrationSourceLabel } from "./face-calibration.js?v=20260721-40";
+import { PUBLIC_FACE_SHAPE_CALIBRATION, getCalibrationSourceLabel } from "./face-calibration.js?v=20260722-56";
 
 const LANDMARKS = {
   topFace: 10,
@@ -257,7 +257,9 @@ function scoreRuleBasedShapes(metrics = {}) {
   const roundScore = scoreRoundFace(lengthToWidth, jawToCheek, foreheadToCheek);
   const squareScore = scoreSquareFace(lengthToWidth, jawToCheek, foreheadToCheek);
   const heartScore = scoreHeartFace(lengthToWidth, foreheadToCheek, jawToForehead, jawToCheek);
-  const diamondScore = scoreDiamondFace(lengthToWidth, foreheadToCheek, jawToCheek, cheekToJaw);
+  // The public 1000-image calibration set has no Diamond label. Keep Diamond as
+  // a manual override until internal feedback provides enough confirmed samples.
+  const diamondScore = 0;
   const ovalScore = scoreOvalFace(lengthToWidth, foreheadToCheek, jawToCheek);
 
   return {

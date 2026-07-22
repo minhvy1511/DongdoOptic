@@ -1,15 +1,34 @@
 export const PUBLIC_FACE_SHAPE_CALIBRATION = {
-  version: "public-reference-20260721",
-  label: "Public reference v20260721",
+  version: "public-reference-20260722-kaggle1000",
+  label: "Public reference v20260722 · Kaggle 1000",
   notes: [
-    "Diem khoi dau duoc hieu chinh tu cac nhom nhan cong khai; khong nhung anh nguoi that vao app.",
-    "Anh nhin thang la nguon chinh. Khung nghieng chi dung de tang/giam do tin cay."
+    "Diem khoi dau duoc hieu chinh theo 1000 anh mau can bang tu Kaggle Face Shape Dataset.",
+    "Bo cong khai nay co 5 lop: Heart, Oblong/Long, Oval, Round, Square; khong co lop Diamond.",
+    "Diamond duoc giu de nhan vien xac nhan thu cong va thu thap feedback noi bo."
   ],
+  calibrationDataset: {
+    version: "public-face-shape-1000-v20260722",
+    total: 1000,
+    counts: {
+      heart: 200,
+      long: 200,
+      oval: 200,
+      round: 200,
+      square: 200
+    },
+    autoClassifiedShapes: ["heart", "long", "oval", "round", "square"],
+    manualOnlyShapes: ["diamond"]
+  },
   sources: [
     {
       name: "Kaggle Face Shape Dataset",
-      use: "Tham khao nhan oval, round, square, heart/oblong va phan bo hinh anh cong khai CC0.",
+      use: "Nguon chinh de lay 1000 anh can bang: heart, oblong/long, oval, round, square.",
       url: "https://www.kaggle.com/datasets/niten19/face-shape-dataset"
+    },
+    {
+      name: "dsmlr/faceshape",
+      use: "Nguon GitHub tham khao bo nhan 500 anh can bang theo 5 lop, dung de doi chieu taxonomy.",
+      url: "https://github.com/dsmlr/faceshape"
     },
     {
       name: "Roboflow FaceShape",
