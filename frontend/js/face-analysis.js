@@ -163,7 +163,7 @@ function getShapeCandidates(metrics) {
     ])
   );
 
-  return Object.entries(candidates).sort((a, b) => b[1] - a[1]);
+  return Object.entries(applyShapeGuardrails(metrics, candidates)).sort((a, b) => b[1] - a[1]);
 }
 
 function emptyHeadPose() {
@@ -277,6 +277,45 @@ function scoreCalibratedShape(metrics, profile = {}) {
   const baseScore = scoreShapeMatch(metrics, profile.targets || {});
   const evidenceScore = scoreEvidence(metrics, profile.evidence || {});
   return clamp(baseScore * evidenceScore * Number(profile.prior || 1), 0, 1);
+}
+
+function applyShapeGuardrails(metrics, candidates = {}) {
+  const guarded = { ...candidates };
+  const diamondEvidence = getDiamondSpecificEvidence(metrics);
+  const sortedWithoutDiamond = Object.entries(guarded)
+    .filter(([shape]) => shape !== "diamond")
+    .sort((a, b) => b[1] - a[1]);
+  const [, nextBestScore = 0] = sortedWithoutDiamond[0] || [];
+  const diamondScore = Number(guarded.diamond || 0);
+  const diamondMargin = diamondScore - nextBestScore;
+
+  // MediaPipe jaw landmarks often sit inside the real gonion line. Without this
+  // guard, many ordinary oval/round faces look like "wide cheek + narrow jaw".
+  if (diamondScore > 0 && (diamondEvidence < 0.78 || diamondMargin < 0.16)) {
+    guarded.diamond = diamondScore * clamp(0.52 + diamondEvidence * 0.34 + Math.max(diamondMargin, 0) * 0.5, 0.45, 0.82);
+  }
+
+  return guarded;
+}
+
+function getDiamondSpecificEvidence(metrics = {}) {
+  const lengthToWidth = Number(metrics.lengthToWidth || 0);
+  const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
+  const jawToCheek = Number(metrics.jawToCheek || 0);
+  const cheekToJaw = Number(metrics.cheekToJaw || 0);
+  const cheekDominatesForehead = clamp((0.92 - foreheadToCheek) / 0.12, 0, 1);
+  const cheekDominatesJaw = clamp((0.84 - jawToCheek) / 0.14, 0, 1);
+  const cheekToJawStrength = clamp((cheekToJaw - 1.18) / 0.18, 0, 1);
+  const balancedLength = clamp(1 - Math.abs(lengthToWidth - 1.34) / 0.28, 0, 1);
+
+  return clamp(
+    cheekDominatesForehead * 0.34 +
+    cheekDominatesJaw * 0.28 +
+    cheekToJawStrength * 0.24 +
+    balancedLength * 0.14,
+    0,
+    1
+  );
 }
 
 function scoreEvidence(metrics, evidence = {}) {
