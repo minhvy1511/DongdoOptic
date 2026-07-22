@@ -282,6 +282,7 @@ function scoreCalibratedShape(metrics, profile = {}) {
 function applyShapeGuardrails(metrics, candidates = {}) {
   const guarded = { ...candidates };
   const diamondEvidence = getDiamondSpecificEvidence(metrics);
+  const strictDiamond = isStrictDiamondProfile(metrics);
   const sortedWithoutDiamond = Object.entries(guarded)
     .filter(([shape]) => shape !== "diamond")
     .sort((a, b) => b[1] - a[1]);
@@ -291,11 +292,30 @@ function applyShapeGuardrails(metrics, candidates = {}) {
 
   // MediaPipe jaw landmarks often sit inside the real gonion line. Without this
   // guard, many ordinary oval/round faces look like "wide cheek + narrow jaw".
-  if (diamondScore > 0 && (diamondEvidence < 0.78 || diamondMargin < 0.16)) {
-    guarded.diamond = diamondScore * clamp(0.52 + diamondEvidence * 0.34 + Math.max(diamondMargin, 0) * 0.5, 0.45, 0.82);
+  if (diamondScore > 0 && (!strictDiamond || diamondEvidence < 0.72 || diamondMargin < 0.22)) {
+    guarded.diamond = Math.min(
+      diamondScore * 0.42,
+      nextBestScore + 0.025,
+      0.57
+    );
   }
 
   return guarded;
+}
+
+function isStrictDiamondProfile(metrics = {}) {
+  const lengthToWidth = Number(metrics.lengthToWidth || 0);
+  const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
+  const jawToCheek = Number(metrics.jawToCheek || 0);
+  const cheekToJaw = Number(metrics.cheekToJaw || 0);
+
+  return (
+    lengthToWidth >= 1.22 &&
+    lengthToWidth <= 1.55 &&
+    foreheadToCheek <= 0.84 &&
+    jawToCheek <= 0.76 &&
+    cheekToJaw >= 1.3
+  );
 }
 
 function getDiamondSpecificEvidence(metrics = {}) {

@@ -1,6 +1,6 @@
 import { startUserCamera } from "./camera.js?v=20260720-39";
 import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-39";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260722-53";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260722-54";
 import {
   getColorGuidance,
   getFaceShapeAdvice,
@@ -803,7 +803,7 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     quality.confidence = Math.min(quality.confidence, 0.62);
   }
   const classification = getClassificationDetail(metrics);
-  const shape = classification.shape !== "unknown" ? classification.shape : classification.bestShape;
+  const shape = classification.shape;
   const analysis = analyzeFaceShapeFromMetrics(shape, metrics, quality);
   analysis.diagnostics = {
     ...analysis.diagnostics,
@@ -1084,9 +1084,8 @@ function buildMultiAngleAnalysis(captures) {
   const metrics = { ...centerCapture.analysis.metrics };
   const centerClassification = getClassificationDetail(metrics);
   const shapeFromMetrics = centerClassification.shape;
-  const advisoryShape = shapeFromMetrics === "unknown" ? centerClassification.bestShape : "";
-  const resolvedShape = shapeFromMetrics !== "unknown" ? shapeFromMetrics : (advisoryShape || "unknown");
-  const isAdvisoryShape = shapeFromMetrics === "unknown" && resolvedShape !== "unknown";
+  const resolvedShape = shapeFromMetrics;
+  const isAdvisoryShape = false;
   const sideAnalysis = buildSideFrameSupport(usableCaptures, resolvedShape);
   const sideAgreement = sideAnalysis.agreement;
   const poseStability = calculatePoseStability(usableCaptures);
