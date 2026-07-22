@@ -1148,7 +1148,7 @@ h1 {
 
 .camera-actions {
   display: grid;
-  grid-template-columns: 1.15fr 0.92fr 1fr;
+  grid-template-columns: 1.1fr 0.9fr 1fr 1fr;
   gap: 10px;
   padding: 10px;
   border: 1px solid rgba(219, 226, 234, 0.95);
