@@ -6,8 +6,10 @@ import {
   getFaceShapeAdvice,
   getFitGuidance,
   getFrameRecommendations,
-  getMaterialRecommendations
-} from "./recommendations.js?v=20260721-43";
+  getMaterialRecommendations,
+  getPublicAdviceEvidence,
+  getPublicAdviceSourceLabel
+} from "./recommendations.js?v=20260722-64";
 import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260720-39";
 import {
   createCustomerCode,
@@ -3431,6 +3433,7 @@ function renderConsultationSummary() {
   const preferences = readPreferences();
   const shapeAdvice = getFaceShapeAdvice(summaryFaceShape);
   const directAdvice = getDirectFrameAdvice(latestAnalysis?.metrics || {}, summaryFaceShape);
+  const publicEvidence = getPublicAdviceEvidence(latestAnalysis?.metrics || {});
   const fitNotes = getFitGuidance({
     faceShape: summaryFaceShape,
     metrics: latestAnalysis?.metrics || {},
@@ -3506,6 +3509,10 @@ function renderConsultationSummary() {
       <div>
         <span>Màu gọng</span>
         <strong>${getColorGuidance(preferences.frame_preference)}</strong>
+      </div>
+      <div>
+        <span>Căn cứ tư vấn</span>
+        <strong>${publicEvidence[0] || getPublicAdviceSourceLabel()}</strong>
       </div>
     </div>
     <div class="material-advice">

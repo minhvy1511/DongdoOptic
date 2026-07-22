@@ -249,6 +249,15 @@ const MATERIAL_CATALOG = [
   }
 ];
 
+const PUBLIC_ADVICE_EVIDENCE = {
+  definition: "Nguồn public đồng thuận: nét mềm/compact nên thử gọng có đường thẳng hoặc góc bo nhẹ để tạo định hình.",
+  soften: "Nguồn public đồng thuận: đường hàm rõ nên thử oval, tròn bản vừa, rimless hoặc viền mảnh để làm mềm.",
+  height: "Nguồn public đồng thuận: tỷ lệ mặt dài nên tránh gọng quá dẹt và ưu tiên tròng có chiều cao.",
+  cheek: "Nguồn public đồng thuận: gò má nổi bật nên tránh gọng bó ngang gò má, ưu tiên bề ngang nhỉnh nhẹ và viền dưới mềm.",
+  upper: "Nguồn public đồng thuận: phần trên nổi bật nên tránh gọng quá nặng ở đường chân mày.",
+  fit: "Nguồn public và kinh nghiệm fitting đều nhấn mạnh: độ rộng gọng, vị trí đồng tử, bridge và chân mày quan trọng hơn nhãn dạng mặt."
+};
+
 export function getFaceShapeAdvice(faceShape) {
   return FACE_SHAPE_ADVICE[faceShape] || FACE_SHAPE_ADVICE.oval;
 }
@@ -325,6 +334,39 @@ export function getFitGuidance({ faceShape, metrics = {}, frameWidthMm = 0, pres
   }
 
   return notes.slice(0, 5);
+}
+
+export function getPublicAdviceEvidence(metrics = {}) {
+  const lengthToWidth = Number(metrics.lengthToWidth || 0);
+  const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
+  const jawToCheek = Number(metrics.jawToCheek || 0);
+  const cheekToJaw = Number(metrics.cheekToJaw || 0);
+  const evidence = [];
+
+  if (lengthToWidth >= 1.5) {
+    evidence.push(PUBLIC_ADVICE_EVIDENCE.height);
+  } else if (lengthToWidth <= 1.28) {
+    evidence.push(PUBLIC_ADVICE_EVIDENCE.definition);
+  }
+
+  if (jawToCheek >= 0.9) {
+    evidence.push(PUBLIC_ADVICE_EVIDENCE.soften);
+  }
+
+  if (cheekToJaw >= 1.14) {
+    evidence.push(PUBLIC_ADVICE_EVIDENCE.cheek);
+  }
+
+  if (foreheadToCheek >= 0.96 && jawToCheek <= 0.88) {
+    evidence.push(PUBLIC_ADVICE_EVIDENCE.upper);
+  }
+
+  evidence.push(PUBLIC_ADVICE_EVIDENCE.fit);
+  return [...new Set(evidence)].slice(0, 3);
+}
+
+export function getPublicAdviceSourceLabel() {
+  return "Tham chiếu public: ZEISS, Warby Parker, FramesDirect, LensCrafters/Ray-Ban, Clearly, Eyebuydirect";
 }
 
 function scoreMaterial(material, context) {
