@@ -1,3 +1,5 @@
+import { getBrandEvidenceLine, getBrandKnowledge } from "./brand-knowledge.js?v=20260722-67";
+
 export const LENS_CATALOG = [
   {
     brand: "Fano",
@@ -172,7 +174,15 @@ export function getLensRecommendations(options = {}) {
     if (lens.index === lensAdvice.recommendedIndex) score += 10;
     if (lensAdvice.fallbackIndexes.includes(lens.index)) score += 1;
     if (lensAdvice.totalPower >= 4 && currentRank < recommendedRank) score -= 6;
-    return { ...lens, score };
+    const brandProfile = getBrandKnowledge(lens.brand);
+    return {
+      ...lens,
+      score,
+      brandEvidence: getBrandEvidenceLine(lens.brand),
+      brandSegment: brandProfile?.segment || "",
+      brandStrengths: brandProfile?.strengths?.slice(0, 4) || [],
+      brandSource: brandProfile?.sourceLabel || ""
+    };
   })
     .sort((a, b) => b.score - a.score)
     .slice(0, 4);

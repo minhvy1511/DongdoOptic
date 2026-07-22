@@ -1939,6 +1939,12 @@ h1 {
   line-height: 1.35;
 }
 
+.brand-evidence-strip span {
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .summary-grid div {
   display: grid;
   gap: 6px;
@@ -2210,6 +2216,20 @@ h1 {
 .lens-card p {
   margin: 0;
   color: var(--muted);
+  line-height: 1.45;
+}
+
+.lens-card .lens-evidence,
+.lens-preview-item small {
+  display: block;
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid rgba(13, 107, 98, 0.8);
+  border-radius: 8px;
+  background: rgba(229, 245, 241, 0.72);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1.45;
 }
 
