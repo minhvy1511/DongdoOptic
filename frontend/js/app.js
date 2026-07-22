@@ -3538,8 +3538,8 @@ function renderConsultationSummary() {
     </div>
     <div class="summary-grid">
       <div><span>Hướng gọng</span><strong>${directAdvice.choose.slice(0, 2).join(" · ")}</strong></div>
-      <div><span>Cần tránh</span><strong>${directAdvice.avoid.slice(0, 2).join(" · ")}</strong></div>
       <div><span>Tròng kính</span><strong>${lensLine}</strong></div>
+      <div><span>Kiểm tra fit</span><strong>${directAdvice.fit.slice(0, 1).join(" · ")}</strong></div>
       <div><span>Trạng thái</span><strong>${statusLabel(customer.customer_status)}</strong></div>
     </div>
     <div class="aesthetic-advice visual-advice">
@@ -3550,10 +3550,6 @@ function renderConsultationSummary() {
       <div>
         <span>Nên chọn</span>
         <strong>${directAdvice.choose.join(" · ")}</strong>
-      </div>
-      <div>
-        <span>Nên tránh</span>
-        <strong>${directAdvice.avoid.join(" · ")}</strong>
       </div>
       <div>
         <span>Màu gọng</span>
