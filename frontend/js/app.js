@@ -802,7 +802,10 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
   if (!qualityGate.passed) {
     quality.confidence = Math.min(quality.confidence, 0.62);
   }
-  const classification = getClassificationDetail(metrics);
+  const frameClassifications = selectedSamples
+    .map((sample) => sample?.analysis?.metrics ? getClassificationDetail(sample.analysis.metrics) : null)
+    .filter(Boolean);
+  const classification = aggregateTemporalClassification(frameClassifications, metrics);
   const shape = classification.shape;
   const analysis = analyzeFaceShapeFromMetrics(shape, metrics, quality);
   analysis.diagnostics = {
@@ -811,7 +814,9 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     centerBurst: {
       sampleCount: selectedSamples.length,
       totalSamples: samples.length,
-      fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
+      fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
+      temporalStability: classification.temporalStability ?? null,
+      frameVotes: classification.frameVotes || {}
     },
     qualityGate,
     warnings: analysis.diagnostics.warnings || []
@@ -829,6 +834,63 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     pose,
     sampleCount: selectedSamples.length,
     fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
+  };
+}
+
+function aggregateTemporalClassification(classifications, fallbackMetrics) {
+  if (!classifications.length) {
+    return getClassificationDetail(fallbackMetrics);
+  }
+
+  const scoreTotals = new Map();
+  const frameVotes = {};
+  classifications.forEach((classification) => {
+    const frameShape = classification.shape !== "unknown"
+      ? classification.shape
+      : classification.bestShape;
+    if (frameShape && frameShape !== "unknown") {
+      frameVotes[frameShape] = (frameVotes[frameShape] || 0) + 1;
+    }
+
+    (classification.candidates || []).forEach((candidate) => {
+      if (!candidate?.name || candidate.name === "unknown") {
+        return;
+      }
+      scoreTotals.set(candidate.name, (scoreTotals.get(candidate.name) || 0) + Number(candidate.score || 0));
+    });
+  });
+
+  const averaged = [...scoreTotals.entries()]
+    .map(([name, total]) => [name, total / classifications.length])
+    .sort((a, b) => b[1] - a[1]);
+  const [bestShape, bestScore] = averaged[0] || ["unknown", 0];
+  const [secondShape, secondScore] = averaged[1] || ["unknown", 0];
+  const topVoteCount = Math.max(...Object.values(frameVotes), 0);
+  const temporalStability = classifications.length ? topVoteCount / classifications.length : 0;
+  const margin = bestScore - secondScore;
+  const marginGate = bestShape === "diamond" ? 0.1 : 0.04;
+  const confidenceGate = 0.52;
+  const stabilityGate = bestShape === "diamond" ? 0.42 : 0.36;
+  const clarity = clamp01(
+    ((margin - marginGate) / 0.22) * 0.72 +
+    ((temporalStability - stabilityGate) / 0.44) * 0.28
+  ) * clamp01(bestScore / 0.84);
+  const shape = bestScore < confidenceGate || margin < marginGate || temporalStability < stabilityGate
+    ? "unknown"
+    : bestShape;
+
+  return {
+    shape,
+    bestShape,
+    secondShape,
+    bestScore,
+    secondScore,
+    margin,
+    clarity,
+    temporalStability,
+    frameVotes,
+    calibrationSource: getClassificationDetail(fallbackMetrics).calibrationSource,
+    candidates: averaged.map(([name, score]) => ({ name, score }))
   };
 }
 
@@ -1091,6 +1153,7 @@ function buildMultiAngleAnalysis(captures) {
   const poseStability = calculatePoseStability(usableCaptures);
   const landmarkQuality = Number(centerCapture.analysis.quality?.confidence || 0);
   const classificationClarity = Number(centerClassification.clarity || 0);
+  const temporalStability = Number(centerClassification.temporalStability ?? centerCapture.analysis?.diagnostics?.centerBurst?.temporalStability ?? 0.82);
   const sideAgreementScore = Number.isFinite(sideAgreement) ? sideAgreement : 0.82;
   const qualityGate = centerCapture.analysis?.diagnostics?.qualityGate || null;
   const gateScore = Number.isFinite(qualityGate?.score) ? qualityGate.score : 1;
@@ -1108,6 +1171,7 @@ function buildMultiAngleAnalysis(captures) {
       landmarkQuality,
       poseStability,
       classificationClarity,
+      temporalStability,
       sideAgreement: sideAgreementScore,
       captureQuality: gateScore
     }
@@ -1118,7 +1182,7 @@ function buildMultiAngleAnalysis(captures) {
     confidenceBand: getConfidenceBandLabel(quality.confidence),
     sampleCount: centerCapture.burst?.sampleCount || usableCaptures.length,
     totalSamples: centerCapture.burst?.totalSamples || SCAN_CONFIG.CENTER_BURST_FRAMES,
-    shapeConsistency: sideAgreementScore,
+    shapeConsistency: temporalStability,
     sideAgreement: sideAgreementScore,
     sideAnalysis: sideAnalysis.items,
     confidenceComponents: quality.confidenceComponents,
@@ -1765,6 +1829,10 @@ function getConfidenceReasons(analysis) {
     reasons.push(`Ranh giới dạng mặt mập mờ giữa ${getFaceShapeLabel(classification.bestShape)} và ${getFaceShapeLabel(classification.secondShape)}.`);
   }
 
+  if (Number(components.temporalStability ?? diagnostics.centerBurst?.temporalStability ?? 1) < 0.55) {
+    reasons.push("Các frame trong chuỗi quét chưa đồng thuận cao, nên giữ mặt ổn định hơn hoặc xác nhận thủ công.");
+  }
+
   if (Number(components.poseStability || 0) < 0.55) {
     reasons.push("Góc quay khi chụp chưa ổn định, nên giữ đúng hướng được nhắc.");
   }
@@ -2387,6 +2455,7 @@ function renderMetricsV2(metrics, quality = null, diagnostics = null) {
         ["Landmark", formatPercent(confidenceComponents.landmarkQuality)],
         ["Pose", formatPercent(confidenceComponents.poseStability)],
         ["Phan loai", formatPercent(confidenceComponents.classificationClarity)],
+        ["On dinh chuoi", formatPercent(confidenceComponents.temporalStability ?? diagnostics?.centerBurst?.temporalStability)],
         ["Bổ trợ", formatPercent(confidenceComponents.sideAgreement)],
         ["Chất lượng ảnh", formatPercent(confidenceComponents.captureQuality)],
         ["Center burst", diagnostics?.centerBurst ? `${diagnostics.centerBurst.sampleCount || 0}/${diagnostics.centerBurst.totalSamples || 0}` : "--"],
