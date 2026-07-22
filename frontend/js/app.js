@@ -2269,6 +2269,35 @@ function getSummaryHighlights(shapeAdvice, topFrames, preferences) {
   ];
 }
 
+function buildFrameTrialPlan(directAdvice = {}, topFrames = [], publicEvidence = []) {
+  const firstFrame = topFrames[0]?.name || directAdvice.choose?.[0] || "Form cân bằng";
+  const secondFrame = topFrames[1]?.name || directAdvice.choose?.[1] || "Form thay thế";
+  const avoid = directAdvice.avoid?.[0] || "Gọng lệch tỷ lệ khuôn mặt";
+  const fit = directAdvice.fit?.[0] || "Kiểm tra độ rộng gọng và vị trí đồng tử trong tròng.";
+  const evidence = publicEvidence.length ? publicEvidence : [getPublicAdviceSourceLabel()];
+
+  return {
+    steps: [
+      {
+        label: "Thử trước",
+        title: firstFrame,
+        note: `Dùng làm mốc chính vì khớp hướng: ${directAdvice.headline || "cân bằng tổng thể"}.`
+      },
+      {
+        label: "So sánh",
+        title: secondFrame,
+        note: "Cho khách đeo cạnh form đầu tiên để so độ sáng vùng mắt, độ rộng hai bên và cảm giác tự nhiên."
+      },
+      {
+        label: "Loại nhanh",
+        title: avoid,
+        note: `${fit} Nếu gọng làm gò má/hàm bị nặng hơn, chuyển sang form mềm hoặc rộng hơn.`
+      }
+    ],
+    evidence: evidence.slice(0, 3)
+  };
+}
+
 function clearConfirmedFaceShape() {
   confirmedFaceShape = "";
   confirmedFaceShapeSource = "";
@@ -3443,6 +3472,7 @@ function renderConsultationSummary() {
   });
   const topFrames = (latestRecommendations.length ? latestRecommendations : getFrameRecommendations(summaryFaceShape))
     .slice(0, 3);
+  const trialPlan = buildFrameTrialPlan(directAdvice, topFrames, publicEvidence);
   const materialRecommendations = getMaterialRecommendations({
     faceShape: summaryFaceShape,
     preferences,
@@ -3487,6 +3517,25 @@ function renderConsultationSummary() {
         </div>
       </div>
     </div>
+    <div class="trial-plan">
+      <div class="trial-plan-heading">
+        <span>Lộ trình thử gọng</span>
+        <strong>Chọn nhanh 3 bước tại quầy</strong>
+      </div>
+      <div class="trial-plan-grid">
+        ${trialPlan.steps.map((step, index) => `
+          <article>
+            <i>${index + 1}</i>
+            <span>${step.label}</span>
+            <strong>${step.title}</strong>
+            <p>${step.note}</p>
+          </article>
+        `).join("")}
+      </div>
+      <div class="evidence-strip">
+        ${trialPlan.evidence.map((item) => `<span>${item}</span>`).join("")}
+      </div>
+    </div>
     <div class="summary-grid">
       <div><span>Hướng gọng</span><strong>${directAdvice.choose.slice(0, 2).join(" · ")}</strong></div>
       <div><span>Cần tránh</span><strong>${directAdvice.avoid.slice(0, 2).join(" · ")}</strong></div>
@@ -3512,7 +3561,7 @@ function renderConsultationSummary() {
       </div>
       <div>
         <span>Căn cứ tư vấn</span>
-        <strong>${publicEvidence[0] || getPublicAdviceSourceLabel()}</strong>
+        <strong>${getPublicAdviceSourceLabel()}</strong>
       </div>
     </div>
     <div class="material-advice">

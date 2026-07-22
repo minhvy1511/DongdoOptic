@@ -1846,6 +1846,99 @@ h1 {
   gap: 10px;
 }
 
+.trial-plan {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(13, 107, 98, 0.18);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 251, 250, 0.92));
+  box-shadow: var(--shadow-sm);
+}
+
+.trial-plan-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trial-plan-heading span,
+.trial-plan-grid span,
+.evidence-strip span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.trial-plan-heading strong {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.trial-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trial-plan-grid article {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  min-height: 126px;
+  padding: 14px 14px 14px 52px;
+  border: 1px solid rgba(13, 107, 98, 0.14);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.trial-plan-grid i {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.trial-plan-grid strong {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.trial-plan-grid p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.evidence-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evidence-strip span {
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(13, 107, 98, 0.12);
+  border-radius: var(--radius);
+  background: #eef7f5;
+  color: #36534f;
+  text-transform: none;
+  line-height: 1.35;
+}
+
 .summary-grid div {
   display: grid;
   gap: 6px;
@@ -2369,10 +2462,20 @@ h1 {
   .quick-profile-grid,
   .summary-grid,
   .aesthetic-advice,
+  .trial-plan-grid,
   .material-grid,
   .capture-quality-list,
   .feedback-form {
     grid-template-columns: 1fr;
+  }
+
+  .trial-plan-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .trial-plan-grid article {
+    min-height: 0;
   }
 
   .analysis-panel {
