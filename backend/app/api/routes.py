@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.schemas import AnalyzeRequest, CustomerRecord, FeedbackRecord, LensAdviceRequest
+from app.api.security import require_admin_api_key
 from app.services.customer_store import delete_customer, list_customers, save_customer
 from app.services.face_shape_service import analyze_face_shape
 from app.services.feedback_store import list_feedback, save_feedback
@@ -35,17 +36,17 @@ def lens_advice(payload: LensAdviceRequest):
     )
 
 
-@router.get("/customers")
+@router.get("/customers", dependencies=[Depends(require_admin_api_key)])
 def customers():
     return list_customers()
 
 
-@router.post("/customers")
+@router.post("/customers", dependencies=[Depends(require_admin_api_key)])
 def upsert_customer(payload: CustomerRecord):
     return save_customer(payload.model_dump())
 
 
-@router.delete("/customers/{customer_code}")
+@router.delete("/customers/{customer_code}", dependencies=[Depends(require_admin_api_key)])
 def remove_customer(customer_code: str):
     deleted = delete_customer(customer_code)
     if not deleted:
@@ -53,7 +54,7 @@ def remove_customer(customer_code: str):
     return {"deleted": True}
 
 
-@router.get("/feedback")
+@router.get("/feedback", dependencies=[Depends(require_admin_api_key)])
 def feedback():
     return list_feedback()
 
