@@ -21,7 +21,6 @@ import {
   saveCustomer,
   todayInputValue
 } from "./customer-store.js?v=20260720-39";
-import { getBrandEvidenceLine, getBrandKnowledge } from "./brand-knowledge.js?v=20260722-67";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
@@ -3445,21 +3444,6 @@ function hasActionableLensData(preferences, lensAdvice) {
   return hasPrescriptionData || hasSpecificPurpose || hasExplicitLevel || preferences.budget === "premium";
 }
 
-function getSelectedBrandEvidence(preferences = {}) {
-  const selectedBrands = Array.isArray(preferences.brands) ? preferences.brands : [];
-  return selectedBrands
-    .map((brand) => {
-      const profile = getBrandKnowledge(brand);
-      if (!profile) {
-        return "";
-      }
-
-      return `${brand}: ${getBrandEvidenceLine(brand)}`;
-    })
-    .filter(Boolean)
-    .slice(0, 5);
-}
-
 function renderConsultationSummary() {
   if (!consultationSummary) {
     return;
@@ -3497,7 +3481,6 @@ function renderConsultationSummary() {
     prescription: customer.prescription || {},
     ageGroup: customer.age_group
   });
-  const brandEvidence = getSelectedBrandEvidence(preferences);
   const summaryHighlights = uniqueList([
     directAdvice.principle,
     ...directAdvice.fit,
@@ -3554,11 +3537,6 @@ function renderConsultationSummary() {
       <div class="evidence-strip">
         ${trialPlan.evidence.map((item) => `<span>${item}</span>`).join("")}
       </div>
-      ${brandEvidence.length ? `
-        <div class="evidence-strip brand-evidence-strip">
-          ${brandEvidence.map((item) => `<span>${item}</span>`).join("")}
-        </div>
-      ` : ""}
     </div>
     <div class="summary-grid">
       <div><span>Hướng gọng</span><strong>${directAdvice.choose.slice(0, 2).join(" · ")}</strong></div>
