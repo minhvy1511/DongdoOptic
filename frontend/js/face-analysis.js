@@ -272,11 +272,15 @@ function scoreRuleBasedShapes(metrics = {}) {
 
 function scoreLongFace(lengthToWidth, jawToCheek, foreheadToCheek) {
   const lengthScore = ramp(lengthToWidth, 1.42, 1.64);
+  const angularJaw = ramp(jawToCheek, 0.86, 0.97);
+  const foreheadBalanced = closeness(foreheadToCheek, 0.9, 0.14);
+  const perspectiveRisk = angularJaw * foreheadBalanced * ramp(lengthToWidth, 1.42, 1.7);
   const notTooAngular = 1 - Math.max(
-    ramp(jawToCheek, 0.92, 1.02) * 0.35,
+    angularJaw * 0.58,
     ramp(0.84 - foreheadToCheek, 0, 0.12) * 0.24
   );
-  return clamp(lengthScore * 0.86 + notTooAngular * 0.14, 0, 1);
+  const rawScore = lengthScore * 0.78 + notTooAngular * 0.22;
+  return clamp(rawScore * (1 - perspectiveRisk * 0.36), 0, 1);
 }
 
 function scoreRoundFace(lengthToWidth, jawToCheek, foreheadToCheek) {
@@ -291,9 +295,9 @@ function scoreRoundFace(lengthToWidth, jawToCheek, foreheadToCheek) {
 
 function scoreSquareFace(lengthToWidth, jawToCheek, foreheadToCheek) {
   const jawScore = ramp(jawToCheek, 0.84, 0.96);
-  const compactScore = 1 - ramp(lengthToWidth, 1.42, 1.58);
+  const compactScore = 1 - ramp(lengthToWidth, 1.48, 1.74);
   const foreheadBalance = closeness(foreheadToCheek, 0.9, 0.16);
-  return clamp(jawScore * 0.52 + compactScore * 0.3 + foreheadBalance * 0.18, 0, 1);
+  return clamp(jawScore * 0.6 + compactScore * 0.15 + foreheadBalance * 0.25, 0, 1);
 }
 
 function scoreHeartFace(lengthToWidth, foreheadToCheek, jawToForehead, jawToCheek) {
@@ -384,6 +388,10 @@ function buildDiagnostics({ metrics, quality, shape, classification = null }) {
     warnings.push(`Ranh giới dạng mặt còn mập mờ giữa ${getFaceShapeLabel(classificationDetail.bestShape)} và ${getFaceShapeLabel(classificationDetail.secondShape)}.`);
   }
 
+  if (hasPerspectiveSensitiveLength(metrics, classificationDetail)) {
+    warnings.push("Ty le dai/rong co the bi anh huong boi goc camera; nen kiem lai cung mot camera hoac xac nhan thu cong.");
+  }
+
   const readinessScore = clamp(
     confidence * 0.48 +
     balance * 0.24 +
@@ -444,6 +452,14 @@ function getDistanceLabel(coverage = 0) {
   }
 
   return "Quá gần";
+}
+
+function hasPerspectiveSensitiveLength(metrics = {}, classification = {}) {
+  const lengthToWidth = Number(metrics.lengthToWidth || 0);
+  const jawToCheek = Number(metrics.jawToCheek || 0);
+  const topShapes = [classification.bestShape, classification.secondShape];
+  const hasLongSquareConflict = topShapes.includes("long") && topShapes.includes("square");
+  return hasLongSquareConflict && lengthToWidth >= 1.48 && jawToCheek >= 0.88;
 }
 
 function getConfidenceBand(confidence = 0) {
