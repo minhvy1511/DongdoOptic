@@ -20,7 +20,15 @@ The local manifest samples 5000 public-labelled images:
 
 ## Important Limitation
 
-This public dataset does not contain a Diamond class. For that reason, VisionID does not auto-classify Diamond from this calibration set. Diamond remains available as a manual staff confirmation and should be calibrated later from internal feedback records where `faceShape_ai` and `faceShape_confirmed` differ.
+This public dataset does not contain a Diamond class. VisionID therefore treats Diamond as a rule-based branch: it can be suggested by AI, but it must be interpreted through the top-candidate confidence and confirmed by staff feedback over time.
+
+Candidate public sources for expanding beyond 10,000 images:
+
+- Roboflow `faceshape-vxygg/faceshape-atkte`: around 6.5k images.
+- Roboflow `yes-ripdh/face-shape-d4mv0`: around 4.8k images.
+- Roboflow projects with Diamond/Rectangle/Triangle labels.
+
+These sources need a valid Roboflow export/API key or a downloaded dataset zip before they can be included in the local manifest. Do not count them as integrated until the files are downloaded and inspected locally.
 
 ## Regenerate Manifest
 

@@ -1,10 +1,10 @@
 export const PUBLIC_FACE_SHAPE_CALIBRATION = {
-  version: "public-reference-20260722-kaggle5000",
-  label: "Public reference v20260722 · Kaggle 5000",
+  version: "public-reference-20260722-kaggle5000-open-diamond",
+  label: "Public reference v20260722 · Kaggle 5000 + Diamond rule",
   notes: [
     "Diem khoi dau duoc hieu chinh theo 5000 anh mau can bang tu Kaggle Face Shape Dataset.",
     "Bo cong khai nay co 5 lop: Heart, Oblong/Long, Oval, Round, Square; khong co lop Diamond.",
-    "Diamond duoc giu de nhan vien xac nhan thu cong va thu thap feedback noi bo."
+    "Diamond duoc mo lai bang rule rieng dua tren go ma vuot tran/ham va se tiep tuc hieu chinh bang feedback noi bo."
   ],
   calibrationDataset: {
     version: "public-face-shape-5000-v20260722",
@@ -16,8 +16,8 @@ export const PUBLIC_FACE_SHAPE_CALIBRATION = {
       round: 1000,
       square: 1000
     },
-    autoClassifiedShapes: ["heart", "long", "oval", "round", "square"],
-    manualOnlyShapes: ["diamond"]
+    autoClassifiedShapes: ["heart", "long", "oval", "round", "square", "diamond"],
+    ruleBasedShapesWithoutPublicLabel: ["diamond"]
   },
   sources: [
     {
@@ -34,6 +34,11 @@ export const PUBLIC_FACE_SHAPE_CALIBRATION = {
       name: "Roboflow FaceShape",
       use: "Tham khao bo nhan 5 lop va moc baseline accuracy cong khai.",
       url: "https://universe.roboflow.com/faceshape-vxygg/faceshape-atkte"
+    },
+    {
+      name: "Roboflow face shape datasets with Diamond labels",
+      use: "Nguon ung vien de mo rong Diamond/Rectangle/Triangle khi co API export hoac file zip hop le.",
+      url: "https://universe.roboflow.com/search?q=face%20shape%20diamond"
     },
     {
       name: "WFLW",
