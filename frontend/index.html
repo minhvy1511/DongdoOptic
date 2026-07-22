@@ -289,11 +289,11 @@
               <div class="customer-result-card" id="customerResultCard" aria-live="polite">
                 <div class="face-icon" id="faceShapeIcon">?</div>
                 <div>
-                  <span>Dạng mặt tư vấn</span>
-                  <strong id="customerFaceShape">Chưa có kết quả</strong>
-                  <p id="customerResultSummary">Bật camera để VisionID lấy ảnh thẳng chất lượng cao, sau đó xác nhận dạng mặt trước khi tư vấn gọng.</p>
+                  <span>Hướng tư vấn gọng</span>
+                  <strong id="customerFaceShape">Chưa có gợi ý</strong>
+                  <p id="customerResultSummary">Bật camera để VisionID lấy ảnh thẳng chất lượng cao, sau đó xem trực tiếp kiểu gọng nên thử.</p>
                   <div id="captureQualityGate" class="capture-quality-gate" aria-label="Kiểm định chất lượng ảnh thẳng"></div>
-                  <div id="shapeCandidateStack" class="shape-candidate-stack" aria-label="Các dạng mặt AI đang cân nhắc"></div>
+                  <div id="shapeCandidateStack" class="shape-candidate-stack" aria-label="Các tín hiệu tư vấn gọng"></div>
                 </div>
               </div>
               <details class="shape-reference staff-debug" id="shapeReference">
@@ -303,8 +303,8 @@
               <div id="confidenceNotice" class="confidence-notice neutral" aria-live="polite">
                 Chưa có dữ liệu phân tích.
               </div>
-              <label class="confirm-shape-control">
-                <span>Xác nhận dạng mặt</span>
+              <label class="confirm-shape-control staff-debug">
+                <span>Ghi chú nội bộ về dạng mặt</span>
                 <select id="confirmedFaceShape" disabled>
                   <option value="">Chưa xác nhận</option>
                   <option value="oval">Oval / Trái xoan</option>
@@ -360,7 +360,7 @@
                     <strong id="faceCount">0</strong>
                   </div>
                   <div>
-                    <span>Dạng mặt</span>
+                    <span>Nhãn nội bộ</span>
                     <strong id="faceShape">Đang chờ</strong>
                   </div>
                 </div>
@@ -403,7 +403,7 @@
               <h2>Tóm tắt tư vấn cho khách</h2>
             </div>
             <div id="consultationSummary" class="consultation-summary">
-              <p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để tạo kết luận tư vấn.</p>
+              <p class="empty-state">Hoàn tất VisionID để tạo kết luận tư vấn gọng.</p>
             </div>
           </section>
           <div class="advice-grid">
@@ -413,7 +413,7 @@
                 <h2>Kiểu gọng nên thử</h2>
               </div>
               <div class="frame-list" id="frameList">
-                <p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để nhận gợi ý.</p>
+                <p class="empty-state">Hoàn tất VisionID để nhận gợi ý kiểu gọng nên thử.</p>
               </div>
             </section>
 
@@ -458,6 +458,6 @@
       <button id="mobileConsultButton" type="button">Tư vấn</button>
     </nav>
 
-    <script type="module" src="./js/app.mobile.js?v=20260722-62"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260722-63"></script>
   </body>
 </html>

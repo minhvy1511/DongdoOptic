@@ -1859,39 +1859,93 @@ function renderCustomerResult() {
 
   const diagnostics = latestAnalysis?.diagnostics || {};
   const shape = confirmedFaceShape || "";
+  const directAdvice = getDirectFrameAdvice(latestAnalysis?.metrics || {}, confirmedFaceShape || latestAiFaceShape);
   const confidenceState = latestAnalysis ? getConfidenceState(latestAnalysis) : { level: "low" };
   const canShowAiShape = Boolean(latestAiFaceShape && latestAiFaceShape !== "unknown");
-  const aiLabel = canShowAiShape ? getFaceShapeLabel(latestAiFaceShape) : "Chưa đủ dữ liệu";
-  const confirmedLabel = shape ? getFaceShapeLabel(shape) : "Chưa xác nhận";
   const sampleText = diagnostics.sampleCount ? `${diagnostics.sampleCount}/${diagnostics.totalSamples || diagnostics.sampleCount} khung` : "";
   const consistencyText = Number.isFinite(diagnostics.sideAgreement ?? diagnostics.shapeConsistency)
     ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
   const resultLabel = shape
-    ? (confirmedFaceShapeSource === "manual"
-      ? `Đã xác nhận · ${confirmedLabel}`
-      : confirmedFaceShapeSource === "suggested"
-        ? `Gợi ý sơ bộ · ${confirmedLabel}`
-        : confirmedLabel)
+    ? directAdvice.headline
     : confidenceState.level === "low"
       ? "Chưa đủ dữ liệu"
-      : "Gợi ý sơ bộ";
+      : directAdvice.headline;
 
   customerFaceShape.textContent = resultLabel;
-  renderFaceShapeIcon(faceShapeIcon, shape || latestAiFaceShape || "unknown", true);
+  faceShapeIcon.innerHTML = getFrameSketchSvg(directAdvice.choose[0] || "", 0);
   renderShapeReference(shape || latestAiFaceShape || "");
   customerResultSummary.textContent = shape
-    ? (confirmedFaceShapeSource === "manual"
-      ? `Nhân viên đã xác nhận thủ công: ${confirmedLabel}. AI gợi ý ban đầu: ${aiLabel}.`
-      : confirmedFaceShapeSource === "suggested"
-        ? `Đang dùng gợi ý sơ bộ: ${confirmedLabel}. Nhân viên có thể đổi trong dropdown trước khi tư vấn.`
-        : `AI gợi ý: ${aiLabel}. Nhân viên đã xác nhận: ${confirmedLabel}.`)
+    ? directAdvice.summary
     : canShowAiShape
-      ? `AI nghiêng về: ${aiLabel}. ${[sampleText, consistencyText, "cần xác nhận thủ công"].filter(Boolean).join(" · ")}.`
-      : `AI chưa đủ chắc để chốt. Hãy chụp lại rõ hơn.`;
+      ? `${directAdvice.summary} ${[sampleText, consistencyText].filter(Boolean).join(" · ")}.`
+      : `AI chưa đủ dữ liệu để tư vấn gọng. Hãy chụp lại rõ hơn.`;
   renderCaptureQualityGate(latestAnalysis);
   renderShapeCandidateStack(latestAnalysis);
   customerResultCard?.classList.toggle("has-result", Boolean(shape));
+}
+
+function getDirectFrameAdvice(metrics = {}, fallbackShape = "") {
+  const lengthToWidth = Number(metrics.lengthToWidth || 0);
+  const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
+  const jawToCheek = Number(metrics.jawToCheek || 0);
+  const cheekToJaw = Number(metrics.cheekToJaw || 0);
+  const shapeAdvice = fallbackShape && fallbackShape !== "unknown" ? getFaceShapeAdvice(fallbackShape) : getFaceShapeAdvice("oval");
+  const advice = {
+    headline: "Ưu tiên gọng cân bằng tự nhiên",
+    principle: shapeAdvice.principle,
+    choose: [...shapeAdvice.choose],
+    avoid: [...shapeAdvice.avoid],
+    fit: [...shapeAdvice.fit],
+    summary: "Tỷ lệ khuôn mặt khá cân bằng, nên bắt đầu bằng các form dễ đeo rồi tinh chỉnh theo độ rộng gò má và chân mày."
+  };
+
+  if (lengthToWidth >= 1.5) {
+    advice.headline = "Ưu tiên gọng có chiều cao tròng";
+    advice.summary = "Khuôn mặt có xu hướng dài theo chiều dọc, nên thử gọng có tròng cao vừa để cân lại tỷ lệ.";
+    advice.choose = ["Wellington cao vừa", "Oval cao", "Browline mềm", "Gọng có điểm nhấn phía trên"];
+    advice.avoid = ["Gọng quá dẹt", "Gọng quá mảnh theo chiều ngang", "Tròng quá thấp"];
+  } else if (lengthToWidth <= 1.28) {
+    advice.headline = "Ưu tiên gọng tạo nét gọn";
+    advice.summary = "Chiều dài và chiều rộng khá gần nhau, nên thử gọng có đường thẳng hoặc góc bo nhẹ để khuôn mặt gọn hơn.";
+    advice.choose = ["Chữ nhật bo nhẹ", "Vuông mềm", "Browline", "Cat-eye nhẹ"];
+    advice.avoid = ["Gọng tròn quá mềm", "Gọng quá nhỏ", "Tròng quá thấp"];
+  }
+
+  if (jawToCheek >= 0.9) {
+    advice.headline = lengthToWidth >= 1.5 ? advice.headline : "Ưu tiên gọng bo mềm đường hàm";
+    advice.summary += " Đường hàm tương đối rõ, nên tránh form quá sắc hoặc quá dày ở góc ngoài.";
+    advice.choose = uniqueList(["Oval", "Tròn bản vừa", "Rimless", ...advice.choose]);
+    advice.avoid = uniqueList(["Gọng vuông sắc", ...advice.avoid]);
+  }
+
+  if (cheekToJaw >= 1.14) {
+    advice.headline = "Ưu tiên gọng không bó gò má";
+    advice.summary += " Gò má là vùng nổi bật, cần chọn bề ngang gọng nhỉnh nhẹ và viền dưới mềm.";
+    advice.choose = uniqueList(["Oval bản vừa", "Cat-eye nhẹ", "Rimless", "Browline mềm", ...advice.choose]);
+    advice.avoid = uniqueList(["Gọng hẹp bó sát gò má", "Gọng quá nhỏ", ...advice.avoid]);
+  }
+
+  if (foreheadToCheek >= 0.96 && jawToCheek <= 0.88) {
+    advice.headline = "Ưu tiên gọng nhẹ phần trên";
+    advice.summary += " Phần trên khuôn mặt nổi bật hơn phần dưới, nên tránh gọng quá nặng ở đường chân mày.";
+    advice.choose = uniqueList(["Oval", "Cat-eye nhẹ", "Gọng đáy nhẹ", ...advice.choose]);
+    advice.avoid = uniqueList(["Oversized nặng phần trên", ...advice.avoid]);
+  }
+
+  advice.choose = advice.choose.slice(0, 4);
+  advice.avoid = advice.avoid.slice(0, 3);
+  advice.fit = uniqueList([
+    "Bề ngang gọng nên xấp xỉ hoặc nhỉnh nhẹ hơn điểm rộng nhất khuôn mặt.",
+    "Đường trên gọng nên đi theo chân mày, không che biểu cảm mắt.",
+    ...advice.fit
+  ]).slice(0, 4);
+
+  return advice;
+}
+
+function uniqueList(items) {
+  return [...new Set(items.filter(Boolean))];
 }
 
 function renderCaptureQualityGate(analysis) {
@@ -1930,50 +1984,85 @@ function renderShapeCandidateStack(analysis) {
     return;
   }
 
-  const candidates = analysis?.diagnostics?.classification?.candidates || [];
-  const visibleCandidates = candidates
-    .filter((candidate) => candidate?.name && candidate.name !== "unknown")
-    .slice(0, 3);
+  const signals = getFrameAdviceSignals(analysis?.metrics || {});
 
-  if (!visibleCandidates.length) {
+  if (!signals.length) {
     shapeCandidateStack.innerHTML = "";
     shapeCandidateStack.hidden = true;
     return;
   }
 
-  const bestScore = Math.max(...visibleCandidates.map((candidate) => Number(candidate.score || 0)), 0.0001);
-  const metrics = analysis?.metrics || {};
-  const source = analysis?.diagnostics?.calibrationSource || analysis?.diagnostics?.classification?.calibrationSource || "";
-
   shapeCandidateStack.hidden = false;
   shapeCandidateStack.innerHTML = `
     <div class="shape-candidate-heading">
-      <span>AI đang cân nhắc</span>
-      ${source ? `<em>${source}</em>` : ""}
+      <span>Tín hiệu tư vấn</span>
+      <em>Không hiển thị nhãn dạng mặt cho khách</em>
     </div>
     <div class="shape-candidate-list">
-      ${visibleCandidates.map((candidate, index) => renderShapeCandidate(candidate, index, bestScore, metrics)).join("")}
+      ${signals.map((signal, index) => renderFrameAdviceSignal(signal, index)).join("")}
     </div>
   `;
 }
 
-function renderShapeCandidate(candidate, index, bestScore, metrics) {
-  const shape = candidate.name;
-  const score = Number(candidate.score || 0);
-  const relativeScore = clamp01(score / bestScore);
+function renderFrameAdviceSignal(signal, index) {
+  const relativeScore = clamp01(signal.score);
   const isPrimary = index === 0;
   return `
     <article class="shape-candidate ${isPrimary ? "is-primary" : ""}">
       <div class="shape-candidate-topline">
-        <strong>${getFaceShapeLabel(shape)}</strong>
+        <strong>${signal.title}</strong>
         <span>${formatPercent(relativeScore)}</span>
       </div>
       <div class="shape-candidate-bar" aria-hidden="true">
         <i style="width: ${Math.max(8, Math.round(relativeScore * 100))}%"></i>
       </div>
-      <p>${getShapeEvidenceText(shape, metrics)}</p>
+      <p>${signal.note}</p>
     </article>
   `;
+}
+
+function getFrameAdviceSignals(metrics = {}) {
+  const lengthToWidth = Number(metrics.lengthToWidth || 0);
+  const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
+  const jawToCheek = Number(metrics.jawToCheek || 0);
+  const cheekToJaw = Number(metrics.cheekToJaw || 0);
+  const signals = [];
+
+  signals.push({
+    title: lengthToWidth >= 1.5 ? "Cần tròng cao hơn" : lengthToWidth <= 1.28 ? "Cần tạo nét gọn" : "Tỷ lệ dễ cân bằng",
+    score: lengthToWidth >= 1.5 ? clamp01((lengthToWidth - 1.32) / 0.42) : lengthToWidth <= 1.28 ? clamp01((1.42 - lengthToWidth) / 0.32) : 0.72,
+    note: lengthToWidth >= 1.5
+      ? "Nên thử Wellington/oval cao vừa, tránh gọng quá dẹt."
+      : lengthToWidth <= 1.28
+        ? "Nên thử chữ nhật bo nhẹ, vuông mềm hoặc browline."
+        : "Có thể bắt đầu bằng oval, Wellington hoặc chữ nhật mềm."
+  });
+
+  signals.push({
+    title: cheekToJaw >= 1.14 ? "Không bó ngang gò má" : "Kiểm tra bề ngang gọng",
+    score: cheekToJaw >= 1.14 ? clamp01((cheekToJaw - 1.02) / 0.32) : 0.62,
+    note: cheekToJaw >= 1.14
+      ? "Bề ngang gọng nên nhỉnh nhẹ hơn vùng gò má, viền dưới nên mềm."
+      : "Bề ngang gọng nên xấp xỉ điểm rộng nhất khuôn mặt."
+  });
+
+  signals.push({
+    title: jawToCheek >= 0.9 ? "Làm mềm đường hàm" : "Giữ nét nhẹ tự nhiên",
+    score: jawToCheek >= 0.9 ? clamp01((jawToCheek - 0.78) / 0.24) : 0.56,
+    note: jawToCheek >= 0.9
+      ? "Nên thử oval/tròn bản vừa/rimless, tránh góc vuông quá sắc."
+      : "Ưu tiên gọng không quá nặng ở viền dưới."
+  });
+
+  if (foreheadToCheek >= 0.96) {
+    signals.push({
+      title: "Giảm nặng phần trên",
+      score: clamp01((foreheadToCheek - 0.88) / 0.22),
+      note: "Tránh browline quá dày hoặc oversized nặng phần chân mày."
+    });
+  }
+
+  return signals.sort((a, b) => b.score - a.score).slice(0, 3);
 }
 
 function getShapeEvidenceText(shape, metrics = {}) {
@@ -2511,7 +2600,7 @@ function renderRecommendations(frames, isDraft = false) {
     ? `<p class="draft-advice-note">Gợi ý nháp từ AI. Hãy xác nhận dạng mặt ở VisionID trước khi đánh dấu đã đo hoặc chốt tư vấn.</p>`
     : "";
   const adviceFaceShape = confirmedFaceShape || getDraftFaceShapeForAdvice();
-  const shapeAdvice = adviceFaceShape ? getFaceShapeAdvice(adviceFaceShape) : null;
+  const directAdvice = getDirectFrameAdvice(latestAnalysis?.metrics || {}, adviceFaceShape);
 
   frameList.innerHTML = draftNotice + frames
     .map(
@@ -2524,8 +2613,8 @@ function renderRecommendations(frames, isDraft = false) {
           </div>
           <p>${frame.reason}</p>
           <div class="frame-details">
-            <span>Nên tránh: ${frame.avoidNote || shapeAdvice?.avoid?.[0] || "Gọng lệch tỷ lệ khuôn mặt"}</span>
-            <span>Fit: ${frame.fitNote || shapeAdvice?.fit?.[0] || "Kiểm tra chân mày, độ rộng và vị trí mắt trong tròng"}</span>
+            <span>Nên tránh: ${frame.avoidNote || directAdvice.avoid?.[0] || "Gọng lệch tỷ lệ khuôn mặt"}</span>
+            <span>Fit: ${frame.fitNote || directAdvice.fit?.[0] || "Kiểm tra chân mày, độ rộng và vị trí mắt trong tròng"}</span>
           </div>
         </article>
       `
@@ -3233,18 +3322,18 @@ function updateAdvice() {
   renderCurrentCustomerSummary(readCustomerSnapshot());
 
   const draftFaceShape = getDraftFaceShapeForAdvice();
-  const adviceFaceShape = confirmedFaceShape || draftFaceShape;
+  const adviceFaceShape = confirmedFaceShape || draftFaceShape || (latestAnalysis?.metrics ? "oval" : "");
 
   if (!adviceFaceShape) {
     latestRecommendations = [];
-    frameList.innerHTML = `<p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để lấy gợi ý gọng.</p>`;
+    frameList.innerHTML = `<p class="empty-state">Hoàn tất VisionID để lấy gợi ý kiểu gọng nên thử.</p>`;
     renderConsultationSummary();
     updateWorkflowAssistant();
     return;
   }
 
   latestRecommendations = getFrameRecommendations(adviceFaceShape);
-  renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences), !confirmedFaceShape);
+  renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences), !latestAnalysis);
   renderConsultationSummary();
   updateWorkflowAssistant();
 }
@@ -3328,12 +3417,12 @@ function renderConsultationSummary() {
   }
 
   const draftFaceShape = getDraftFaceShapeForAdvice();
-  const summaryFaceShape = confirmedFaceShape || draftFaceShape;
+  const summaryFaceShape = confirmedFaceShape || draftFaceShape || (latestAnalysis?.metrics ? "oval" : "");
   const isDraft = !confirmedFaceShape && Boolean(draftFaceShape);
 
   if (!summaryFaceShape) {
     consultationSummary.innerHTML = `
-      <p class="empty-state">Hoàn tất VisionID và xác nhận dạng mặt để tạo kết luận tư vấn.</p>
+      <p class="empty-state">Hoàn tất VisionID để tạo kết luận tư vấn gọng.</p>
     `;
     return;
   }
@@ -3341,6 +3430,7 @@ function renderConsultationSummary() {
   const customer = readCustomerSnapshot();
   const preferences = readPreferences();
   const shapeAdvice = getFaceShapeAdvice(summaryFaceShape);
+  const directAdvice = getDirectFrameAdvice(latestAnalysis?.metrics || {}, summaryFaceShape);
   const fitNotes = getFitGuidance({
     faceShape: summaryFaceShape,
     metrics: latestAnalysis?.metrics || {},
@@ -3356,7 +3446,11 @@ function renderConsultationSummary() {
     prescription: customer.prescription || {},
     ageGroup: customer.age_group
   });
-  const summaryHighlights = getSummaryHighlights(shapeAdvice, topFrames, preferences);
+  const summaryHighlights = uniqueList([
+    directAdvice.principle,
+    ...directAdvice.fit,
+    ...getSummaryHighlights(shapeAdvice, topFrames, preferences)
+  ]).slice(0, 5);
   const lensLine = latestLensRecommendations[0]
     ? `${latestLensRecommendations[0].brand} ${latestLensRecommendations[0].line}`
     : "Chưa cần chốt tròng, bổ sung đơn kính nếu có.";
@@ -3364,17 +3458,17 @@ function renderConsultationSummary() {
   consultationSummary.innerHTML = `
     <div class="summary-showcase">
       <div>
-        <span>${isDraft ? "Kết luận mô phỏng khuôn mặt" : "Kết luận mô phỏng khuôn mặt"}</span>
+        <span>Kết luận tư vấn gọng</span>
         <div class="summary-face-visual">
-          <div class="face-icon large clean">${getFaceShapeSvg(summaryFaceShape, false)}</div>
+          <div class="face-icon large clean">${getFrameSketchSvg(topFrames[0]?.name || directAdvice.choose[0] || "", 0)}</div>
           <div>
-            <strong>${getFaceShapeLabel(summaryFaceShape)}</strong>
-            <em>${isDraft ? "Gợi ý sơ bộ, cần xác nhận" : "Dạng mặt dùng để tư vấn"}</em>
+            <strong>${directAdvice.headline}</strong>
+            <em>${isDraft ? "Gợi ý từ VisionID, nhân viên kiểm tra fit khi thử gọng" : "Dùng trực tiếp để chọn gọng thử"}</em>
           </div>
         </div>
         <ul class="summary-highlights">
           ${summaryHighlights.map((item) => `<li>${item}</li>`).join("")}
-          ${isDraft ? "<li>Cần xác nhận dạng mặt trước khi chốt.</li>" : ""}
+          ${isDraft ? "<li>Không chốt theo nhãn dạng mặt; ưu tiên thử gọng thật và ghi nhận phản hồi.</li>" : ""}
         </ul>
       </div>
       <div>
@@ -3391,23 +3485,23 @@ function renderConsultationSummary() {
       </div>
     </div>
     <div class="summary-grid">
-      <div><span>Dạng mặt AI</span><strong>${latestAiFaceShape ? getFaceShapeLabel(latestAiFaceShape) : "Chưa có"}</strong></div>
-      <div><span>Nhân viên xác nhận</span><strong>${confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : "Chưa xác nhận"}</strong></div>
+      <div><span>Hướng gọng</span><strong>${directAdvice.choose.slice(0, 2).join(" · ")}</strong></div>
+      <div><span>Cần tránh</span><strong>${directAdvice.avoid.slice(0, 2).join(" · ")}</strong></div>
       <div><span>Tròng kính</span><strong>${lensLine}</strong></div>
       <div><span>Trạng thái</span><strong>${statusLabel(customer.customer_status)}</strong></div>
     </div>
     <div class="aesthetic-advice visual-advice">
       <div>
         <span>Nguyên tắc</span>
-        <strong>${shapeAdvice.principle}</strong>
+        <strong>${directAdvice.summary}</strong>
       </div>
       <div>
         <span>Nên chọn</span>
-        <strong>${shapeAdvice.choose.join(" · ")}</strong>
+        <strong>${directAdvice.choose.join(" · ")}</strong>
       </div>
       <div>
         <span>Nên tránh</span>
-        <strong>${shapeAdvice.avoid.join(" · ")}</strong>
+        <strong>${directAdvice.avoid.join(" · ")}</strong>
       </div>
       <div>
         <span>Màu gọng</span>
@@ -3618,8 +3712,8 @@ function resetAdviceState() {
 }
 
 function markCustomerAsMeasured() {
-  if (!confirmedFaceShape) {
-    statusText.textContent = "Cần xác nhận dạng mặt trước";
+  if (!latestAnalysis?.metrics) {
+    statusText.textContent = "Cần hoàn tất VisionID trước";
     return;
   }
 
