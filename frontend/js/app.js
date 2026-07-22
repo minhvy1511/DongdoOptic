@@ -1,6 +1,6 @@
 import { startUserCamera } from "./camera.js?v=20260720-39";
 import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-39";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260722-60";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260722-61";
 import {
   getColorGuidance,
   getFaceShapeAdvice,
@@ -750,7 +750,7 @@ async function captureCenterBurstSamples(targetFrames, durationMs) {
     const faces = results.faceLandmarks ?? [];
     if (faces.length === 1) {
       const landmarks = faces[0];
-      const analysis = analyzeFaceShape(landmarks);
+      const analysis = analyzeFaceShape(landmarks, getVideoFrameSize());
       const pose = estimateHeadPose(landmarks);
       samples.push({ analysis, pose, landmarks });
     }
@@ -1502,7 +1502,7 @@ function drawResults(results) {
     return;
   }
 
-  const analysis = analyzeFaceShape(faces[0]);
+  const analysis = analyzeFaceShape(faces[0], getVideoFrameSize());
   const headPose = estimateHeadPose(faces[0]);
   analysis.diagnostics = {
     ...analysis.diagnostics,
@@ -1576,7 +1576,7 @@ async function captureAnalysisSamples(targetFrames, durationMs) {
     const results = faceLandmarker.detectForVideo(video, performance.now());
     const faces = results.faceLandmarks ?? [];
     if (faces.length === 1) {
-      const analysis = analyzeFaceShape(faces[0]);
+      const analysis = analyzeFaceShape(faces[0], getVideoFrameSize());
       samples.push(analysis);
     }
 
@@ -2565,6 +2565,13 @@ function formatMetric(value) {
 
 function formatPercent(value) {
   return Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : "--";
+}
+
+function getVideoFrameSize() {
+  return {
+    width: video?.videoWidth || canvas?.width || video?.clientWidth || 0,
+    height: video?.videoHeight || canvas?.height || video?.clientHeight || 0
+  };
 }
 
 function getDefaultCameraMode() {

@@ -29,19 +29,26 @@ const FACE_SHAPE_LABELS = {
   unknown: "Chưa rõ"
 };
 
-export function analyzeFaceShape(landmarks) {
+export function analyzeFaceShape(landmarks, frameSize = null) {
   if (!landmarks?.length) {
     return emptyAnalysis();
   }
 
   const faceBox = getFaceBox(landmarks);
   const browCenter = midpoint(landmarks[LANDMARKS.leftBrowOuter], landmarks[LANDMARKS.rightBrowOuter]);
-  const browToChin = distance(browCenter, landmarks[LANDMARKS.chin]);
-  const faceHeight = browToChin * 1.42;
-  const cheekWidth = distance(landmarks[LANDMARKS.leftCheek], landmarks[LANDMARKS.rightCheek]);
-  const foreheadWidth = distance(landmarks[LANDMARKS.leftBrowOuter], landmarks[LANDMARKS.rightBrowOuter])
-    || distance(landmarks[LANDMARKS.leftTemple], landmarks[LANDMARKS.rightTemple]);
-  const jawWidth = distance(landmarks[LANDMARKS.leftJaw], landmarks[LANDMARKS.rightJaw]);
+  const browToChin = metricDistance(browCenter, landmarks[LANDMARKS.chin], frameSize);
+  const contourHeight = metricDistance(landmarks[LANDMARKS.topFace], landmarks[LANDMARKS.chin], frameSize);
+  const browBasedHeight = browToChin * 1.28;
+  const boxBasedHeight = faceBox.height * 0.96;
+  const faceHeight = medianNumber([
+    browBasedHeight,
+    contourHeight ? contourHeight * 1.03 : 0,
+    boxBasedHeight
+  ]);
+  const cheekWidth = metricDistance(landmarks[LANDMARKS.leftCheek], landmarks[LANDMARKS.rightCheek], frameSize);
+  const foreheadWidth = metricDistance(landmarks[LANDMARKS.leftBrowOuter], landmarks[LANDMARKS.rightBrowOuter], frameSize)
+    || metricDistance(landmarks[LANDMARKS.leftTemple], landmarks[LANDMARKS.rightTemple], frameSize);
+  const jawWidth = metricDistance(landmarks[LANDMARKS.leftJaw], landmarks[LANDMARKS.rightJaw], frameSize);
 
   if (!browToChin || !faceHeight || !cheekWidth || !foreheadWidth || !jawWidth) {
     return emptyAnalysis();
@@ -57,7 +64,14 @@ export function analyzeFaceShape(landmarks) {
     centerOffsetY: Math.abs(faceBox.centerY - 0.5),
     coverage: faceBox.width * faceBox.height,
     symmetryScore: calculateSymmetryScore(landmarks),
-    measurementSource: "brow_to_chin_estimate",
+    measurementSource: "aspect_corrected_landmarks",
+    frameAspect: getFrameAspect(frameSize),
+    heightEstimate: {
+      browBasedHeight,
+      contourHeight,
+      boxBasedHeight,
+      selectedHeight: faceHeight
+    },
     faceBox: faceBox
   };
   quality.confidence = calculateConfidence(quality);
@@ -177,6 +191,42 @@ function distance(pointA, pointB) {
   }
 
   return Math.hypot(pointA.x - pointB.x, pointA.y - pointB.y);
+}
+
+function metricDistance(pointA, pointB, frameSize = null) {
+  if (!pointA || !pointB) {
+    return 0;
+  }
+
+  const aspect = getFrameAspect(frameSize);
+  return Math.hypot((pointA.x - pointB.x) * aspect, pointA.y - pointB.y);
+}
+
+function getFrameAspect(frameSize = null) {
+  const width = Number(frameSize?.width || 0);
+  const height = Number(frameSize?.height || 0);
+
+  if (!width || !height) {
+    return 1;
+  }
+
+  return clamp(width / height, 0.45, 2.4);
+}
+
+function medianNumber(values) {
+  const numericValues = values
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+
+  if (!numericValues.length) {
+    return 0;
+  }
+
+  const middle = Math.floor(numericValues.length / 2);
+  return numericValues.length % 2
+    ? numericValues[middle]
+    : (numericValues[middle - 1] + numericValues[middle]) / 2;
 }
 
 function midpoint(pointA, pointB) {
@@ -409,7 +459,7 @@ function buildDiagnostics({ metrics, quality, shape, classification = null }) {
     readinessScore,
     classification: classificationDetail,
     calibrationSource: getCalibrationSourceLabel(),
-    measurementSource: "center_browline_estimated_height",
+    measurementSource: "aspect_corrected_robust_height",
     warnings: warnings.slice(0, 3),
     summary: warnings[0] || (shape === "unknown" ? "Cần thêm tín hiệu khuôn mặt." : "Khung đo đã sẵn sàng.")
   };
