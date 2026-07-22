@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Eye Dong Do - Tư vấn gọng kính</title>
-    <link rel="stylesheet" href="./css/styles.css?v=20260722-69" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260722-70" />
   </head>
   <body>
     <main class="app-shell">
@@ -20,10 +20,22 @@
         </div>
 
         <nav class="sidebar-nav" aria-label="Quy trình tư vấn">
-          <button class="tab-button active" type="button" data-tab-target="tab-0">Hồ sơ</button>
-          <button class="tab-button" type="button" data-tab-target="tab-1">Nhu cầu</button>
-          <button class="tab-button" type="button" data-tab-target="tab-3">VisionID</button>
-          <button class="tab-button" type="button" data-tab-target="tab-4">Tư vấn</button>
+          <button class="tab-button active" type="button" data-tab-target="tab-0" data-step="01" data-status-label="Cần nhập">
+            <span>Hồ sơ</span>
+            <em>Khách hàng</em>
+          </button>
+          <button class="tab-button" type="button" data-tab-target="tab-1" data-step="02" data-status-label="Chờ">
+            <span>Nhu cầu</span>
+            <em>Mục đích & tròng</em>
+          </button>
+          <button class="tab-button" type="button" data-tab-target="tab-3" data-step="03" data-status-label="Chờ">
+            <span>VisionID</span>
+            <em>Quét hoặc thủ công</em>
+          </button>
+          <button class="tab-button" type="button" data-tab-target="tab-4" data-step="04" data-status-label="Chờ">
+            <span>Tư vấn</span>
+            <em>Kết luận</em>
+          </button>
         </nav>
 
         <button class="sidebar-logout" type="button">Đăng xuất</button>
@@ -460,6 +472,6 @@
       <button id="mobileConsultButton" type="button">Tư vấn</button>
     </nav>
 
-    <script type="module" src="./js/app.mobile.js?v=20260722-69"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260722-70"></script>
   </body>
 </html>
