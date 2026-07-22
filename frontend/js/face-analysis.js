@@ -101,8 +101,8 @@ export function getClassificationDetail(metrics) {
   const [bestShape, bestScore] = ordered[0] || ["unknown", 0];
   const [secondShape, secondScore] = ordered[1] || ["unknown", 0];
   const margin = bestScore - secondScore;
-  const confidenceGate = PUBLIC_FACE_SHAPE_CALIBRATION.scoreGates.confidence;
-  const marginGate = PUBLIC_FACE_SHAPE_CALIBRATION.scoreGates.margin;
+  const confidenceGate = 0.64;
+  const marginGate = bestShape === "diamond" ? 0.18 : 0.08;
   const claritySpan = PUBLIC_FACE_SHAPE_CALIBRATION.scoreGates.claritySpan;
   const clarity = clamp((margin - marginGate) / claritySpan, 0, 1) * clamp(bestScore / 0.84, 0, 1);
   const shape = bestScore < confidenceGate || margin < marginGate ? "unknown" : bestShape;
@@ -156,14 +156,7 @@ function classifyShape(metrics) {
 }
 
 function getShapeCandidates(metrics) {
-  const candidates = Object.fromEntries(
-    Object.entries(PUBLIC_FACE_SHAPE_CALIBRATION.shapeTargets).map(([shape, profile]) => [
-      shape,
-      scoreCalibratedShape(metrics, profile)
-    ])
-  );
-
-  return Object.entries(applyShapeGuardrails(metrics, candidates)).sort((a, b) => b[1] - a[1]);
+  return Object.entries(scoreRuleBasedShapes(metrics)).sort((a, b) => b[1] - a[1]);
 }
 
 function emptyHeadPose() {
@@ -253,141 +246,104 @@ function pairBalance(pointA, pointB) {
   return Math.min(1, Math.hypot(Math.abs(pointA.x - pointB.x), Math.abs(pointA.y - pointB.y)));
 }
 
-function scoreShapeMatch(metrics, targets) {
-  const scores = Object.entries(targets).map(([name, [target, tolerance, weight = 1]]) => {
-    const value = Number(metrics?.[name] || 0);
-    if (!value) {
-      return 0.55 * weight;
-    }
-
-    return clamp(1 - Math.abs(value - target) / tolerance, 0, 1) * weight;
-  });
-
-  if (!scores.length) {
-    return 0;
-  }
-
-  const totalWeight = Object.values(targets).reduce((sum, [, , weight = 1]) => sum + weight, 0);
-  const averageScore = scores.reduce((sum, value) => sum + value, 0) / Math.max(totalWeight, 0.0001);
-  const weakestScore = Math.min(...scores);
-  return clamp(averageScore * 0.82 + weakestScore * 0.18, 0, 1);
-}
-
-function scoreCalibratedShape(metrics, profile = {}) {
-  const baseScore = scoreShapeMatch(metrics, profile.targets || {});
-  const evidenceScore = scoreEvidence(metrics, profile.evidence || {});
-  return clamp(baseScore * evidenceScore * Number(profile.prior || 1), 0, 1);
-}
-
-function applyShapeGuardrails(metrics, candidates = {}) {
-  const guarded = { ...candidates };
-  const diamondEvidence = getDiamondSpecificEvidence(metrics);
-  const strictDiamond = isStrictDiamondProfile(metrics);
-  const sortedWithoutDiamond = Object.entries(guarded)
-    .filter(([shape]) => shape !== "diamond")
-    .sort((a, b) => b[1] - a[1]);
-  const [, nextBestScore = 0] = sortedWithoutDiamond[0] || [];
-  const diamondScore = Number(guarded.diamond || 0);
-  const diamondMargin = diamondScore - nextBestScore;
-
-  // MediaPipe jaw landmarks often sit inside the real gonion line. Without this
-  // guard, many ordinary oval/round faces look like "wide cheek + narrow jaw".
-  if (diamondScore > 0 && (!strictDiamond || diamondEvidence < 0.72 || diamondMargin < 0.22)) {
-    guarded.diamond = Math.min(
-      diamondScore * 0.42,
-      nextBestScore + 0.025,
-      0.57
-    );
-  }
-
-  return guarded;
-}
-
-function isStrictDiamondProfile(metrics = {}) {
+function scoreRuleBasedShapes(metrics = {}) {
   const lengthToWidth = Number(metrics.lengthToWidth || 0);
   const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
   const jawToCheek = Number(metrics.jawToCheek || 0);
+  const jawToForehead = Number(metrics.jawToForehead || 0);
   const cheekToJaw = Number(metrics.cheekToJaw || 0);
 
-  return (
-    lengthToWidth >= 1.22 &&
-    lengthToWidth <= 1.55 &&
-    foreheadToCheek <= 0.84 &&
-    jawToCheek <= 0.76 &&
-    cheekToJaw >= 1.3
+  const longScore = scoreLongFace(lengthToWidth, jawToCheek, foreheadToCheek);
+  const roundScore = scoreRoundFace(lengthToWidth, jawToCheek, foreheadToCheek);
+  const squareScore = scoreSquareFace(lengthToWidth, jawToCheek, foreheadToCheek);
+  const heartScore = scoreHeartFace(lengthToWidth, foreheadToCheek, jawToForehead, jawToCheek);
+  const diamondScore = scoreDiamondFace(lengthToWidth, foreheadToCheek, jawToCheek, cheekToJaw);
+  const ovalScore = scoreOvalFace(lengthToWidth, foreheadToCheek, jawToCheek);
+
+  return {
+    oval: ovalScore,
+    round: roundScore,
+    square: squareScore,
+    long: longScore,
+    heart: heartScore,
+    diamond: diamondScore
+  };
+}
+
+function scoreLongFace(lengthToWidth, jawToCheek, foreheadToCheek) {
+  const lengthScore = ramp(lengthToWidth, 1.42, 1.64);
+  const notTooAngular = 1 - Math.max(
+    ramp(jawToCheek, 0.92, 1.02) * 0.35,
+    ramp(0.84 - foreheadToCheek, 0, 0.12) * 0.24
   );
+  return clamp(lengthScore * 0.86 + notTooAngular * 0.14, 0, 1);
 }
 
-function getDiamondSpecificEvidence(metrics = {}) {
-  const lengthToWidth = Number(metrics.lengthToWidth || 0);
-  const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
-  const jawToCheek = Number(metrics.jawToCheek || 0);
-  const cheekToJaw = Number(metrics.cheekToJaw || 0);
-  const cheekDominatesForehead = clamp((0.92 - foreheadToCheek) / 0.12, 0, 1);
-  const cheekDominatesJaw = clamp((0.84 - jawToCheek) / 0.14, 0, 1);
-  const cheekToJawStrength = clamp((cheekToJaw - 1.18) / 0.18, 0, 1);
-  const balancedLength = clamp(1 - Math.abs(lengthToWidth - 1.34) / 0.28, 0, 1);
-
+function scoreRoundFace(lengthToWidth, jawToCheek, foreheadToCheek) {
   return clamp(
-    cheekDominatesForehead * 0.34 +
-    cheekDominatesJaw * 0.28 +
-    cheekToJawStrength * 0.24 +
-    balancedLength * 0.14,
+    closeness(lengthToWidth, 1.13, 0.2) * 0.58 +
+    clamp((jawToCheek - 0.74) / 0.2, 0, 1) * 0.24 +
+    closeness(foreheadToCheek, 0.88, 0.16) * 0.18,
     0,
     1
   );
 }
 
-function scoreEvidence(metrics, evidence = {}) {
-  const checks = [];
-
-  if (Number.isFinite(evidence.minLengthToWidth)) {
-    checks.push(edgeScore(metrics.lengthToWidth, evidence.minLengthToWidth, "min", 0.1));
-  }
-
-  if (Number.isFinite(evidence.maxLengthToWidth)) {
-    checks.push(edgeScore(metrics.lengthToWidth, evidence.maxLengthToWidth, "max", 0.1));
-  }
-
-  if (Number.isFinite(evidence.minJawToCheek)) {
-    checks.push(edgeScore(metrics.jawToCheek, evidence.minJawToCheek, "min", 0.08));
-  }
-
-  if (Number.isFinite(evidence.maxJawToCheek)) {
-    checks.push(edgeScore(metrics.jawToCheek, evidence.maxJawToCheek, "max", 0.08));
-  }
-
-  if (Number.isFinite(evidence.minForeheadToCheek)) {
-    checks.push(edgeScore(metrics.foreheadToCheek, evidence.minForeheadToCheek, "min", 0.08));
-  }
-
-  if (Number.isFinite(evidence.maxForeheadToCheek)) {
-    checks.push(edgeScore(metrics.foreheadToCheek, evidence.maxForeheadToCheek, "max", 0.08));
-  }
-
-  if (Number.isFinite(evidence.maxJawToForehead)) {
-    checks.push(edgeScore(metrics.jawToForehead, evidence.maxJawToForehead, "max", 0.08));
-  }
-
-  if (Number.isFinite(evidence.minCheekToJaw)) {
-    checks.push(edgeScore(metrics.cheekToJaw, evidence.minCheekToJaw, "min", 0.12));
-  }
-
-  if (!checks.length) {
-    return 1;
-  }
-
-  return clamp(checks.reduce((sum, value) => sum + value, 0) / checks.length, 0.45, 1);
+function scoreSquareFace(lengthToWidth, jawToCheek, foreheadToCheek) {
+  const jawScore = ramp(jawToCheek, 0.84, 0.96);
+  const compactScore = 1 - ramp(lengthToWidth, 1.42, 1.58);
+  const foreheadBalance = closeness(foreheadToCheek, 0.9, 0.16);
+  return clamp(jawScore * 0.52 + compactScore * 0.3 + foreheadBalance * 0.18, 0, 1);
 }
 
-function edgeScore(value, edge, direction, softness) {
-  const metricValue = Number(value || 0);
-  if (!metricValue) {
-    return 0.7;
+function scoreHeartFace(lengthToWidth, foreheadToCheek, jawToForehead, jawToCheek) {
+  const foreheadWide = ramp(foreheadToCheek, 0.95, 1.04);
+  const chinNarrow = ramp(0.92 - jawToForehead, 0, 0.16);
+  const notRound = ramp(lengthToWidth, 1.22, 1.38);
+  const notSquare = 1 - ramp(jawToCheek, 0.9, 1);
+  return clamp(foreheadWide * 0.38 + chinNarrow * 0.32 + notRound * 0.18 + notSquare * 0.12, 0, 1);
+}
+
+function scoreDiamondFace(lengthToWidth, foreheadToCheek, jawToCheek, cheekToJaw) {
+  const cheekBeatsForehead = ramp(0.86 - foreheadToCheek, 0, 0.1);
+  const cheekBeatsJaw = ramp(0.76 - jawToCheek, 0, 0.12);
+  const cheekDominance = ramp(cheekToJaw, 1.28, 1.42);
+  const midLength = closeness(lengthToWidth, 1.34, 0.24);
+
+  if (cheekBeatsForehead < 0.5 || cheekBeatsJaw < 0.5 || cheekDominance < 0.5) {
+    return 0.12 * midLength;
   }
 
-  const delta = direction === "min" ? metricValue - edge : edge - metricValue;
-  return clamp(0.7 + delta / softness * 0.3, 0.55, 1);
+  return clamp(
+    cheekBeatsForehead * 0.3 +
+    cheekBeatsJaw * 0.3 +
+    cheekDominance * 0.24 +
+    midLength * 0.16,
+    0,
+    0.92
+  );
+}
+
+function scoreOvalFace(lengthToWidth, foreheadToCheek, jawToCheek) {
+  const lengthScore = closeness(lengthToWidth, 1.38, 0.24);
+  const foreheadBalance = closeness(foreheadToCheek, 0.93, 0.16);
+  const jawSoftness = closeness(jawToCheek, 0.84, 0.16);
+  const notRound = ramp(lengthToWidth, 1.22, 1.34);
+  const heartLikePenalty = ramp(foreheadToCheek, 0.98, 1.06) * ramp(0.88 - jawToCheek, 0, 0.12);
+  return clamp(
+    (lengthScore * 0.4 + foreheadBalance * 0.24 + jawSoftness * 0.22 + notRound * 0.14) *
+      (1 - heartLikePenalty * 0.34),
+    0,
+    1
+  );
+}
+
+function ramp(value, start, end) {
+  return clamp((Number(value || 0) - start) / Math.max(end - start, 0.0001), 0, 1);
+}
+
+function closeness(value, target, tolerance) {
+  return clamp(1 - Math.abs(Number(value || 0) - target) / tolerance, 0, 1);
 }
 
 function clamp(value, min, max) {
