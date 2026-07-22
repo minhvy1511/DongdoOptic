@@ -19,6 +19,9 @@ const HEAD_POSE_LANDMARKS = {
   noseTip: 1
 };
 
+const CAMERA_ASPECT_CORRECTION_STRENGTH = 0.42;
+const BROW_TO_CHIN_HEIGHT_FACTOR = 1.34;
+
 const FACE_SHAPE_LABELS = {
   oval: "Trái xoan",
   round: "Tròn",
@@ -38,11 +41,11 @@ export function analyzeFaceShape(landmarks, frameSize = null) {
   const browCenter = midpoint(landmarks[LANDMARKS.leftBrowOuter], landmarks[LANDMARKS.rightBrowOuter]);
   const browToChin = metricDistance(browCenter, landmarks[LANDMARKS.chin], frameSize);
   const contourHeight = metricDistance(landmarks[LANDMARKS.topFace], landmarks[LANDMARKS.chin], frameSize);
-  const browBasedHeight = browToChin * 1.28;
-  const boxBasedHeight = faceBox.height * 0.96;
+  const browBasedHeight = browToChin * BROW_TO_CHIN_HEIGHT_FACTOR;
+  const boxBasedHeight = faceBox.height * 1.03;
   const faceHeight = medianNumber([
     browBasedHeight,
-    contourHeight ? contourHeight * 1.03 : 0,
+    contourHeight ? contourHeight * 1.08 : 0,
     boxBasedHeight
   ]);
   const cheekWidth = metricDistance(landmarks[LANDMARKS.leftCheek], landmarks[LANDMARKS.rightCheek], frameSize);
@@ -65,7 +68,8 @@ export function analyzeFaceShape(landmarks, frameSize = null) {
     coverage: faceBox.width * faceBox.height,
     symmetryScore: calculateSymmetryScore(landmarks),
     measurementSource: "aspect_corrected_landmarks",
-    frameAspect: getFrameAspect(frameSize),
+    frameAspect: getRawFrameAspect(frameSize),
+    metricAspect: getFrameAspect(frameSize),
     heightEstimate: {
       browBasedHeight,
       contourHeight,
@@ -203,6 +207,11 @@ function metricDistance(pointA, pointB, frameSize = null) {
 }
 
 function getFrameAspect(frameSize = null) {
+  const rawAspect = getRawFrameAspect(frameSize);
+  return clamp(1 + (rawAspect - 1) * CAMERA_ASPECT_CORRECTION_STRENGTH, 0.75, 1.58);
+}
+
+function getRawFrameAspect(frameSize = null) {
   const width = Number(frameSize?.width || 0);
   const height = Number(frameSize?.height || 0);
 
