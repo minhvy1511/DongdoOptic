@@ -1,4 +1,4 @@
-import { getBrandEvidenceLine, getBrandKnowledge } from "./brand-knowledge.js?v=20260722-67";
+import { getBrandEvidenceLine, getBrandKnowledge } from "./brand-knowledge.js?v=20260723-71";
 
 export const LENS_CATALOG = [
   {
@@ -109,8 +109,13 @@ export function analyzeLensNeeds(input = {}) {
   const sph = Math.abs(toNumber(prescription.sph));
   const cyl = Math.abs(toNumber(prescription.cyl));
   const frameWidthMm = toNumber(input.frameWidthMm ?? input.frame_width_mm);
+  const lensWidthMm = toNumber(input.lensWidthMm ?? input.lens_width_mm);
+  const bridgeWidthMm = toNumber(input.bridgeWidthMm ?? input.bridge_width_mm);
   const totalPower = sph + cyl;
   const isComputerHeavy = /máy tính|may tinh|màn hình|man hinh|screen|office|văn phòng|van phong/.test(notes);
+  const decentration = pd && lensWidthMm && bridgeWidthMm
+    ? Math.max(0, (lensWidthMm + bridgeWidthMm - pd) / 2)
+    : 0;
 
   let recommendedIndex = "1.60";
   if (totalPower >= 4) {
@@ -122,12 +127,29 @@ export function analyzeLensNeeds(input = {}) {
   }
 
   const warnings = [];
-  if (pd && frameWidthMm && frameWidthMm - pd >= 18 && totalPower >= 2) {
-    warnings.push("PD nhỏ hơn nhiều so với gọng dự kiến. Nên cân nhắc gọng nhỏ hơn hoặc chiết suất cao hơn để giảm dày viền.");
+  if (pd) {
+    warnings.push(getPdFrameSizeHint(pd));
+  }
+
+  if (decentration > 5) {
+    warnings.push(`Độ lệch tâm ước tính ${formatMm(decentration)}mm/tròng, không nên chốt nếu chưa đo fitting thật hoặc đổi gọng nhỏ hơn.`);
+    if (totalPower >= 2) {
+      recommendedIndex = recommendedIndex === "1.74" ? "1.74" : "1.67";
+    }
+  } else if (decentration > 3) {
+    warnings.push(`Độ lệch tâm ước tính ${formatMm(decentration)}mm/tròng, chỉ ở mức vừa đủ. Nên ưu tiên gọng nhỏ hơn hoặc chiết suất cao hơn nếu đơn từ 2D.`);
+  } else if (decentration > 0) {
+    warnings.push(`Độ lệch tâm ước tính ${formatMm(decentration)}mm/tròng, vùng fitting đang thuận lợi.`);
+  } else if (pd && frameWidthMm && frameWidthMm - pd >= 18 && totalPower >= 2) {
+    warnings.push("PD nhỏ hơn nhiều so với gọng dự kiến. Nên nhập thêm lens width + bridge hoặc cân nhắc gọng nhỏ hơn để giảm dày viền.");
   }
 
   if (isComputerHeavy) {
     warnings.push("Khách làm việc máy tính nhiều. Nên ưu tiên lớp phủ chống ánh sáng xanh hoặc dòng tối ưu cho màn hình.");
+  }
+
+  if (totalPower >= 4 && (frameWidthMm >= 54 || lensWidthMm >= 52)) {
+    warnings.push("Độ đơn cao gặp gọng/tròng lớn sẽ làm rìa kính dày hơn. Nên thử full-rim gọn, lens height vừa phải và chiết suất cao.");
   }
 
   const fallbackIndexes = recommendedIndex === "1.56"
@@ -148,7 +170,15 @@ export function analyzeLensNeeds(input = {}) {
     fallbackIndexes,
     warnings,
     summary,
-    isComputerHeavy
+    isComputerHeavy,
+    fit: {
+      pd,
+      frameWidthMm,
+      lensWidthMm,
+      bridgeWidthMm,
+      decentration,
+      decentrationLabel: decentration ? getDecentrationLabel(decentration) : ""
+    }
   };
 }
 
@@ -203,4 +233,25 @@ function indexRank(index) {
   };
 
   return ranks[index] || 0;
+}
+
+function getPdFrameSizeHint(pd) {
+  if (pd <= 60) {
+    return "PD nhỏ: tham chiếu eye size 45-50mm, ưu tiên gọng tổng gọn để giảm lệch tâm và dày rìa.";
+  }
+  if (pd <= 63) {
+    return "PD trung bình: tham chiếu eye size 51-52mm, kiểm tra thêm bridge trước khi chốt.";
+  }
+  return "PD rộng: có thể thử eye size 52-56mm, nhưng vẫn tránh gọng vượt rõ quá gò má.";
+}
+
+function getDecentrationLabel(value) {
+  if (value <= 1) return "Rất phù hợp";
+  if (value <= 3) return "Phù hợp";
+  if (value <= 5) return "Cần kiểm tra kỹ";
+  return "Không nên chốt vội";
+}
+
+function formatMm(value) {
+  return Number(value || 0).toFixed(1).replace(".0", "");
 }

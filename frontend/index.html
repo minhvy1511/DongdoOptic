@@ -156,8 +156,14 @@
                     <label>Rộng gọng dự kiến (mm)
                       <input id="frameWidthMm" name="frame_width_mm" type="number" step="0.1" placeholder="Ví dụ: 52.0">
                     </label>
+                    <label>Lens width (mm)
+                      <input id="lensWidthMm" name="lens_width_mm" type="number" step="0.1" placeholder="Ví dụ: 51">
+                    </label>
+                    <label>Bridge (mm)
+                      <input id="bridgeWidthMm" name="bridge_width_mm" type="number" step="0.1" placeholder="Ví dụ: 19">
+                    </label>
                   </div>
-                  <p class="prescription-hint">Chỉ điền khi đã có gọng cũ hoặc muốn cảnh báo PD chính xác hơn.</p>
+                  <p class="prescription-hint">Nếu trên càng ghi 51□19-142, nhập lens 51 và bridge 19 để cảnh báo lệch tâm chính xác hơn.</p>
                 </details>
               </form>
 
@@ -472,6 +478,6 @@
       <button id="mobileConsultButton" type="button">Tư vấn</button>
     </nav>
 
-    <script type="module" src="./js/app.mobile.js?v=20260722-70"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260723-71"></script>
   </body>
 </html>

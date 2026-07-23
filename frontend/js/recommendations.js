@@ -1,43 +1,43 @@
 const FACE_SHAPE_ADVICE = {
   oval: {
     principle: "Khuôn mặt cân đối, ưu tiên giữ tỷ lệ tự nhiên thay vì tạo tương phản quá mạnh.",
-    choose: ["Gọng chữ nhật mềm", "Wellington", "Oval bản vừa", "Cat-eye nhẹ"],
+    choose: ["Browline mềm", "Gọng chữ nhật mềm", "Rounded-square", "Oval bản vừa"],
     avoid: ["Gọng quá nhỏ", "Gọng quá rộng hoặc quá nổi làm phá tỷ lệ mặt"],
     fit: ["Bề ngang gọng nên xấp xỉ điểm rộng nhất của mặt", "Đỉnh gọng nên đi dưới hoặc theo đường chân mày"]
   },
   round: {
     principle: "Mặt mềm và ít góc, nên dùng đường thẳng hoặc góc cạnh để tạo cảm giác thon gọn.",
-    choose: ["Chữ nhật", "Vuông bo nhẹ", "Browline", "Cat-eye nhẹ"],
+    choose: ["Chữ nhật", "Rounded-square", "Browline", "Geometric nhẹ"],
     avoid: ["Gọng tròn/oval quá mềm", "Gọng nhỏ làm mặt trông to hơn"],
     fit: ["Nên chọn cầu kính chắc và tròng hơi ngang", "Tránh tròng quá thấp làm mặt tròn thêm"]
   },
   square: {
     principle: "Mặt có hàm rõ và nhiều góc, nên làm mềm bằng đường cong.",
-    choose: ["Tròn", "Oval", "Rimless", "Browline cong nhẹ"],
+    choose: ["Tròn", "Oval", "Aviator mảnh", "Cat-eye mềm"],
     avoid: ["Gọng vuông sắc", "Gọng chữ nhật dày làm hàm cứng hơn"],
     fit: ["Ưu tiên viền mảnh hoặc bo góc", "Không để gọng ép sát hai bên thái dương"]
   },
   long: {
     principle: "Mặt dài cần gọng có chiều cao tròng tốt để cân lại chiều dọc.",
-    choose: ["Wellington", "Tròn bản vừa", "Oval cao", "Gọng có điểm nhấn phía trên"],
+    choose: ["Wellington cao vừa", "Aviator mảnh", "Tròn bản vừa", "Oversized-square vừa phải"],
     avoid: ["Gọng dẹt/mỏng theo chiều ngang", "Half-rim dưới làm mặt dài hơn"],
     fit: ["Chiều cao tròng nên đủ sâu", "Tránh gọng quá hẹp so với gò má"]
   },
   heart: {
     principle: "Trán rộng và cằm hẹp, nên giảm cảm giác nặng ở phần trên và cân phần dưới.",
-    choose: ["Cat-eye nhẹ", "Oval", "Gọng đáy nhẹ", "Tròn nhỏ vừa"],
+    choose: ["Classic rectangle mềm", "Oval", "Aviator mảnh", "Cat-eye nhẹ"],
     avoid: ["Oversized nặng phần trên", "Gọng quá nổi ở đỉnh"],
     fit: ["Đường trên gọng không nên che chân mày", "Ưu tiên màu/viền không quá nặng ở phía trên"]
   },
   diamond: {
     principle: "Gò má là điểm rộng nhất, nên làm mềm gò má và tôn vùng mắt.",
-    choose: ["Oval", "Cat-eye", "Rimless", "Browline mềm"],
+    choose: ["Oval", "Cat-eye", "Browline mềm", "Rounded-square"],
     avoid: ["Gọng hẹp bó sát gò má", "Gọng quá nhỏ"],
     fit: ["Bề ngang gọng nên nhỉnh nhẹ hơn gò má", "Viền dưới nên mềm để không nhấn thêm gò má"]
   },
   triangle: {
     principle: "Hàm rộng hơn trán, nên kéo điểm nhìn lên phần trên khuôn mặt.",
-    choose: ["Browline", "Cat-eye", "Gọng có màu/chi tiết phía trên"],
+    choose: ["Browline", "Cat-eye", "Aviator mảnh", "Half-rim nhấn chân mày"],
     avoid: ["Gọng đáy nặng", "Viền dưới tối và dày"],
     fit: ["Ưu tiên phần trên rõ nét", "Không chọn form kéo nặng xuống cằm"]
   }
@@ -99,6 +99,38 @@ const FRAME_CATALOG = [
     style: "Hiện đại",
     reason: "Chiều cao tròng tốt giúp cân lại tỷ lệ mặt, nhất là mặt dài hoặc cần vẻ trưởng thành.",
     fitNote: "Chiều cao tròng nên gần 1/3 khoảng chân mày đến cằm."
+  },
+  {
+    id: "DDO-008",
+    name: "Gọng rounded-square",
+    faceShapes: ["round", "oval", "diamond", "triangle"],
+    style: "Dễ đeo",
+    reason: "Có đường cạnh đủ rõ để tạo nét nhưng bo góc để không làm mặt bị cứng.",
+    fitNote: "Rất hợp làm form thử đầu tiên khi chưa chắc nên đi vuông hay oval."
+  },
+  {
+    id: "DDO-009",
+    name: "Gọng aviator mảnh",
+    faceShapes: ["long", "square", "heart", "triangle"],
+    style: "Cá tính nhẹ",
+    reason: "Chiều cao tròng tốt và đường cong mềm giúp cân khuôn mặt dài hoặc hàm rõ.",
+    fitNote: "Kiểm tra sống mũi và vị trí đồng tử kỹ, tránh form quá lớn với đơn cao."
+  },
+  {
+    id: "DDO-010",
+    name: "Gọng geometric nhẹ",
+    faceShapes: ["round", "oval", "triangle"],
+    style: "Hiện đại",
+    reason: "Góc cạnh vừa phải giúp khuôn mặt mềm có thêm cấu trúc mà không quá nặng.",
+    fitNote: "Nên chọn bản mảnh hoặc bo nhẹ để giữ cảm giác sang và dễ đeo."
+  },
+  {
+    id: "DDO-011",
+    name: "Gọng half-rim nhấn chân mày",
+    faceShapes: ["triangle", "round", "oval"],
+    style: "Gọn mặt",
+    reason: "Điểm nhấn phía trên kéo sự chú ý lên vùng mắt, hữu ích khi phần hàm nặng hơn.",
+    fitNote: "Tránh dùng nếu đường chân mày đã quá nặng hoặc khách muốn vẻ tối giản tuyệt đối."
   }
 ];
 
@@ -296,12 +328,14 @@ export function getMaterialRecommendations({ faceShape = "", preferences = {}, p
     .slice(0, 3);
 }
 
-export function getFitGuidance({ faceShape, metrics = {}, frameWidthMm = 0, prescription = {}, preference = "balanced" } = {}) {
+export function getFitGuidance({ faceShape, metrics = {}, frameWidthMm = 0, lensWidthMm = 0, bridgeWidthMm = 0, prescription = {}, preference = "balanced" } = {}) {
   const advice = getFaceShapeAdvice(faceShape);
   const notes = [...advice.fit];
   const lengthToWidth = Number(metrics.lengthToWidth || 0);
   const cheekToJaw = Number(metrics.cheekToJaw || 0);
   const width = Number(frameWidthMm || 0);
+  const lensWidth = Number(lensWidthMm || 0);
+  const bridgeWidth = Number(bridgeWidthMm || 0);
   const pd = Number(prescription.pd || 0);
 
   if (width) {
@@ -315,10 +349,22 @@ export function getFitGuidance({ faceShape, metrics = {}, frameWidthMm = 0, pres
   }
 
   if (pd && width) {
-    const pdGap = Math.abs(width - pd / 2);
-    if (pdGap > 6) {
-      notes.push("PD và rộng gọng có thể lệch, cần kiểm tra vị trí đồng tử trong tròng trước khi chốt.");
+    notes.push(getPdBandGuidance(pd));
+  }
+
+  if (pd && lensWidth && bridgeWidth) {
+    const decentration = calculateDecentration(lensWidth, bridgeWidth, pd);
+    if (decentration <= 1) {
+      notes.push(`Độ lệch tâm khoảng ${formatMm(decentration)}mm, vùng rất đẹp nếu fitting thực tế khớp.`);
+    } else if (decentration <= 3) {
+      notes.push(`Độ lệch tâm khoảng ${formatMm(decentration)}mm, vẫn phù hợp; kiểm tra đồng tử nằm gọn trong tròng.`);
+    } else if (decentration <= 5) {
+      notes.push(`Độ lệch tâm khoảng ${formatMm(decentration)}mm, chỉ nên chốt sau khi đo fitting thật và cân nhắc gọng nhỏ hơn.`);
+    } else {
+      notes.push(`Độ lệch tâm khoảng ${formatMm(decentration)}mm, không nên chốt nếu chưa đo fitting/PD lại.`);
     }
+  } else if (pd && width) {
+    notes.push("Có PD và rộng gọng tổng, nhưng nên nhập thêm lens width + bridge để kiểm tra lệch tâm chính xác.");
   }
 
   if (lengthToWidth >= 1.55) {
@@ -334,6 +380,24 @@ export function getFitGuidance({ faceShape, metrics = {}, frameWidthMm = 0, pres
   }
 
   return notes.slice(0, 5);
+}
+
+function calculateDecentration(lensWidthMm, bridgeWidthMm, pdMm) {
+  return Math.max(0, (Number(lensWidthMm) + Number(bridgeWidthMm) - Number(pdMm)) / 2);
+}
+
+function getPdBandGuidance(pd) {
+  if (pd <= 60) {
+    return "PD nhỏ: ưu tiên eye size khoảng 45-50mm hoặc gọng tổng gọn để giảm dày rìa.";
+  }
+  if (pd <= 63) {
+    return "PD trung bình: eye size khoảng 51-52mm thường dễ thử, vẫn cần so với bridge.";
+  }
+  return "PD rộng: có thể thử eye size 52-56mm, nhưng vẫn tránh form vượt rõ quá gò má.";
+}
+
+function formatMm(value) {
+  return Number(value || 0).toFixed(1).replace(".0", "");
 }
 
 export function getPublicAdviceEvidence(metrics = {}) {
