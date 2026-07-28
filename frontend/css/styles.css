@@ -1989,6 +1989,73 @@ h1 {
   min-height: 88px;
 }
 
+.frame-real-reference,
+.frame-reference-thumb {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.frame-real-reference {
+  align-content: space-between;
+  min-height: 170px;
+}
+
+.frame-real-reference img,
+.frame-reference-thumb img {
+  width: 100%;
+  object-fit: contain;
+  display: block;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #fff, #f6f8f7);
+}
+
+.frame-real-reference img {
+  height: 112px;
+  padding: 10px;
+}
+
+.frame-reference-thumb img {
+  height: 72px;
+  padding: 6px;
+}
+
+.frame-real-reference figcaption {
+  display: grid;
+  gap: 2px;
+}
+
+.frame-real-reference figcaption span,
+.frame-real-reference figcaption em,
+.frame-reference-thumb figcaption {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.frame-real-reference figcaption strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.frame-reference-fallback {
+  display: none;
+}
+
+.frame-real-reference.is-fallback img,
+.frame-real-reference.is-fallback figcaption,
+.frame-reference-thumb.is-fallback img,
+.frame-reference-thumb.is-fallback figcaption {
+  display: none;
+}
+
+.frame-real-reference.is-fallback .frame-reference-fallback,
+.frame-reference-thumb.is-fallback .frame-reference-fallback {
+  display: block;
+}
+
 .summary-frame-visuals strong {
   color: var(--accent-strong);
   font-size: 14px;
@@ -2429,6 +2496,22 @@ h1 {
   background: linear-gradient(135deg, #eef5f3, #dfeae7);
   color: var(--accent-strong);
   font-weight: 700;
+}
+
+.frame-visual.is-reference {
+  height: auto;
+  min-height: 96px;
+  padding: 6px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(242, 247, 245, 0.92));
+}
+
+.frame-visual.is-reference .frame-sketch {
+  min-height: 72px;
+}
+
+.frame-reference-thumb figcaption {
+  text-align: center;
+  font-weight: 800;
 }
 
 .frame-card h3 {
