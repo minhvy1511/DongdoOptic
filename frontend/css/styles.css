@@ -1521,6 +1521,20 @@ h1 {
   font-size: 14px;
 }
 
+.preference-form select:disabled {
+  color: var(--accent-strong);
+  border-color: rgba(15, 92, 86, 0.2);
+  background: linear-gradient(135deg, rgba(234, 243, 238, 0.98), rgba(255, 255, 255, 0.9));
+  opacity: 1;
+  cursor: default;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .brand-fieldset {
   display: flex;
   flex-wrap: wrap;

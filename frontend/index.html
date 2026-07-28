@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Eye Dong Do - Tư vấn gọng kính</title>
-    <link rel="stylesheet" href="./css/styles.css?v=20260728-73" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260728-74" />
   </head>
   <body>
     <main class="app-shell">
@@ -215,12 +215,13 @@
                   </select>
                 </label>
                 <label>Độ đơn kính
-                  <select id="prescriptionLevel" name="prescription_level">
+                  <select id="prescriptionLevel" name="prescription_level" disabled aria-describedby="prescriptionLevelHint">
                     <option value="unknown">Chưa nhập đơn</option>
                     <option value="low">Nhẹ</option>
                     <option value="medium">Trung bình</option>
                     <option value="high">Cao</option>
                   </select>
+                  <span id="prescriptionLevelHint" class="field-hint">Tự suy luận từ SPH/CYL ở Hồ sơ.</span>
                 </label>
                 <label>Sở thích gọng
                   <select id="framePreference" name="frame_preference">
@@ -478,6 +479,6 @@
       <button id="mobileConsultButton" type="button">Tư vấn</button>
     </nav>
 
-    <script type="module" src="./js/app.mobile.js?v=20260728-73"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260728-74"></script>
   </body>
 </html>
