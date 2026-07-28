@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildConsentScopedVisionFeedback,
   isExplicitConsentGranted,
   purgeStoredVisionAnalysis
 } from "../../frontend/js/vision/privacy-policy.js";
@@ -122,4 +123,59 @@ test("purge handles nested analysis and profiles without prior consent flag", ()
   assert.equal("analysis" in purged, false);
   assert.equal(purged.faceShape_ai, "diamond");
   assert.equal(purged.faceShape_confirmed, "oval");
+});
+
+test("feedback payload omits VisionID analysis fields without consent", () => {
+  const payload = buildConsentScopedVisionFeedback({
+    includeVisionAnalysis: false,
+    latestAnalysis: { quality: { confidence: 0.81 } },
+    diagnostics: { warnings: ["keep only with consent"] },
+    classification: { candidates: [{ shape: "oval" }] },
+    qualityGate: { passed: true }
+  });
+
+  assert.equal("confidence" in payload, false);
+  assert.equal("confidence_level" in payload, false);
+  assert.equal("top_candidates" in payload, false);
+  assert.equal("capture_quality" in payload, false);
+  assert.equal("diagnostics" in payload, false);
+});
+
+test("feedback payload includes only allowed summarized VisionID fields with consent", () => {
+  const payload = buildConsentScopedVisionFeedback({
+    includeVisionAnalysis: true,
+    latestAnalysis: { quality: { confidence: 0.81 } },
+    confidenceState: { level: "high" },
+    diagnostics: {
+      warnings: ["one", "two", "three", "four", "five", "six", "seven"],
+      confidenceComponents: { landmarkQuality: 0.8 },
+      confidenceBand: "Cao",
+      centerBurst: { sampleCount: 12, totalSamples: 24 },
+      scanMode: "center-burst-primary"
+    },
+    classification: {
+      calibrationSource: "rule-based",
+      candidates: [
+        { shape: "oval", score: 0.8 },
+        { shape: "long", score: 0.6 },
+        { shape: "round", score: 0.4 },
+        { shape: "diamond", score: 0.2 }
+      ]
+    },
+    qualityGate: {
+      passed: true,
+      score: 0.9,
+      failedLabels: [],
+      checks: [{ key: "pose", passed: true }]
+    }
+  });
+
+  assert.equal(payload.confidence, 0.81);
+  assert.equal(payload.confidence_level, "high");
+  assert.equal(payload.top_candidates.length, 3);
+  assert.equal(payload.capture_quality.passed, true);
+  assert.equal(payload.capture_quality.checks.length, 1);
+  assert.equal(payload.diagnostics.warnings.length, 6);
+  assert.equal(payload.diagnostics.confidenceBand, "Cao");
+  assert.deepEqual(payload.diagnostics.centerBurst, { sampleCount: 12, totalSamples: 24 });
 });

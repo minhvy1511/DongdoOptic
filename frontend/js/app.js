@@ -12,7 +12,7 @@ import {
 } from "./recommendations.js?v=20260723-71";
 import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260728-75";
 import { detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js";
-import { collectFrameBurst, selectBurstSamples } from "./vision/frame-collector.js";
+import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js";
 import { DISTANCE_LANDMARKS as VISION_DISTANCE_LANDMARKS } from "./vision/landmark-map.js";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
@@ -20,7 +20,7 @@ import {
   evaluateScanFrameQuality,
   getVisionLimitations
 } from "./vision/quality-gate.js";
-import { isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js";
+import { buildConsentScopedVisionFeedback, isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js";
 import {
   createCustomerCode,
   createSessionCode,
@@ -725,18 +725,20 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
   }
 
   console.debug("[VisionID] Center burst captured", {
-    totalSamples: samples.length,
+    totalSamples: samples.captureStats?.attemptedFrames ?? samples.length,
     usableSamples: stableCapture.sampleCount,
     fallbackUsed: stableCapture.fallbackUsed,
     confidence: Math.round((stableCapture.analysis.quality?.confidence || 0) * 100)
   });
   updateVisionDebugPanel({
     acceptedFrames: stableCapture.sampleCount,
-    rejectedFrames: Math.max(0, samples.length - stableCapture.sampleCount),
+    rejectedFrames: samples.captureStats?.rejectedFrames ?? Math.max(0, samples.length - stableCapture.sampleCount),
     usableSamples: stableCapture.sampleCount,
     fallbackUsed: stableCapture.fallbackUsed,
     confidence: stableCapture.analysis.quality?.confidence,
-    reasonCode: stableCapture.analysis.diagnostics?.qualityGate?.reasonCodes?.join(", ") || "OK"
+    reasonCode: stableCapture.analysis.diagnostics?.qualityGate?.reasonCodes?.join(", ")
+      || Object.keys(samples.captureStats?.rejectionReasons || {}).join(", ")
+      || "OK"
   });
 
   captureScanStep(step, stableCapture.analysis, stableCapture.pose, {
@@ -744,8 +746,10 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
     fromCenterBurst: true,
     burst: {
       sampleCount: stableCapture.sampleCount,
-      totalSamples: samples.length,
-      fallbackUsed: stableCapture.fallbackUsed
+      totalSamples: samples.captureStats?.attemptedFrames ?? samples.length,
+      fallbackUsed: stableCapture.fallbackUsed,
+      rejectedFrames: samples.captureStats?.rejectedFrames ?? Math.max(0, samples.length - stableCapture.sampleCount),
+      rejectionReasons: samples.captureStats?.rejectionReasons || {}
     }
   });
 }
@@ -772,10 +776,16 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     config: SCAN_QUALITY_CONFIG
   });
 
-  if (!selectedSamples.length && initialAnalysis) {
+  const initialFallbackSample = createInitialFallbackSample({
+    analysis: initialAnalysis,
+    pose: initialPose,
+    config: SCAN_QUALITY_CONFIG
+  });
+
+  if (!selectedSamples.length && initialFallbackSample) {
     return {
-      analysis: cloneAnalysis(initialAnalysis),
-      pose: { ...(initialPose || emptyPose()) },
+      analysis: cloneAnalysis(initialFallbackSample.analysis),
+      pose: { ...(initialFallbackSample.pose || emptyPose()) },
       sampleCount: 1,
       fallbackUsed: true
     };
@@ -816,8 +826,10 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     classification,
     centerBurst: {
       sampleCount: selectedSamples.length,
-      totalSamples: samples.length,
+      totalSamples: samples.captureStats?.attemptedFrames ?? samples.length,
       fallbackUsed,
+      rejectedFrames: samples.captureStats?.rejectedFrames ?? Math.max(0, samples.length - selectedSamples.length),
+      rejectionReasons: samples.captureStats?.rejectionReasons || {},
       temporalStability: classification.temporalStability ?? null,
       frameVotes: classification.frameVotes || {}
     },
@@ -3919,27 +3931,14 @@ function buildFeedbackRecord() {
     faceShape_ai: latestAiFaceShape || latestAnalysis?.faceShape_ai || latestAnalysis?.shape || "",
     faceShape_confirmed: confirmedFaceShape || latestAnalysis?.faceShape_confirmed || "",
     consultation_mode: manualConsultationMode ? "manual" : "visionid",
-    confidence: includeVisionAnalysis ? latestAnalysis?.quality?.confidence ?? null : null,
-    confidence_level: includeVisionAnalysis ? confidenceState.level || "low" : "",
-    top_candidates: includeVisionAnalysis && Array.isArray(classification.candidates)
-      ? classification.candidates.slice(0, 3)
-      : [],
-    capture_quality: includeVisionAnalysis && qualityGate
-      ? {
-          passed: Boolean(qualityGate.passed),
-          score: qualityGate.score ?? null,
-          failed_labels: Array.isArray(qualityGate.failedLabels) ? qualityGate.failedLabels : [],
-          checks: Array.isArray(qualityGate.checks) ? qualityGate.checks : []
-        }
-      : {},
-    diagnostics: includeVisionAnalysis ? {
-      warnings: Array.isArray(diagnostics.warnings) ? diagnostics.warnings.slice(0, 6) : [],
-      confidenceComponents: diagnostics.confidenceComponents || {},
-      confidenceBand: diagnostics.confidenceBand || "",
-      calibrationSource: diagnostics.calibrationSource || classification.calibrationSource || "",
-      centerBurst: diagnostics.centerBurst || null,
-      scanMode: diagnostics.scanMode || ""
-    } : {},
+    ...buildConsentScopedVisionFeedback({
+      includeVisionAnalysis,
+      latestAnalysis,
+      confidenceState,
+      diagnostics,
+      classification,
+      qualityGate
+    }),
     preferences: {
       ...readPreferences(),
       age_group: ageGroupInput.value || "",

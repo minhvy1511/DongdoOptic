@@ -27,3 +27,40 @@ export function purgeStoredVisionAnalysis(customer = {}) {
 
   return cleaned;
 }
+
+export function buildConsentScopedVisionFeedback({
+  includeVisionAnalysis = false,
+  latestAnalysis = null,
+  confidenceState = {},
+  diagnostics = {},
+  classification = {},
+  qualityGate = null
+} = {}) {
+  if (!includeVisionAnalysis) {
+    return {};
+  }
+
+  return {
+    confidence: latestAnalysis?.quality?.confidence ?? null,
+    confidence_level: confidenceState.level || "low",
+    top_candidates: Array.isArray(classification.candidates)
+      ? classification.candidates.slice(0, 3)
+      : [],
+    capture_quality: qualityGate
+      ? {
+          passed: Boolean(qualityGate.passed),
+          score: qualityGate.score ?? null,
+          failed_labels: Array.isArray(qualityGate.failedLabels) ? qualityGate.failedLabels : [],
+          checks: Array.isArray(qualityGate.checks) ? qualityGate.checks : []
+        }
+      : {},
+    diagnostics: {
+      warnings: Array.isArray(diagnostics.warnings) ? diagnostics.warnings.slice(0, 6) : [],
+      confidenceComponents: diagnostics.confidenceComponents || {},
+      confidenceBand: diagnostics.confidenceBand || "",
+      calibrationSource: diagnostics.calibrationSource || classification.calibrationSource || "",
+      centerBurst: diagnostics.centerBurst || null,
+      scanMode: diagnostics.scanMode || ""
+    }
+  };
+}

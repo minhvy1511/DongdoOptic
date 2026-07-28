@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { collectFrameBurst, selectBurstSamples } from "../../frontend/js/vision/frame-collector.js";
+import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "../../frontend/js/vision/frame-collector.js";
 import { createMockFaceTrackingSequence } from "../fixtures/vision/mock-face-tracking.js";
 
 function sample(confidence, overrides = {}) {
@@ -45,6 +45,11 @@ test("collects only single-face frames", async () => {
   assert.equal(collected.length, 2);
   assert.equal(collected[0].timestamp, 1);
   assert.equal(collected[1].timestamp, 1);
+  assert.equal(collected.captureStats.attemptedFrames, 4);
+  assert.equal(collected.captureStats.acceptedFrames, 2);
+  assert.equal(collected.captureStats.rejectedFrames, 2);
+  assert.equal(collected.captureStats.rejectionReasons.NO_FACE, 1);
+  assert.equal(collected.captureStats.rejectionReasons.MULTIPLE_FACES, 1);
 });
 
 test("selects usable burst samples and removes pose outliers", () => {
@@ -95,4 +100,23 @@ test("never falls back to hard-reject pose or distance frames", () => {
   assert.equal(result.fallbackUsed, true);
   assert.equal(result.selectedSamples.length, 1);
   assert.equal(result.selectedSamples[0].analysis.quality.confidence, 0.4);
+});
+
+test("initial fallback sample is blocked for hard rejects", () => {
+  const badYawFallback = createInitialFallbackSample({
+    analysis: sample(0.95).analysis,
+    pose: sample(0.95, { pose: { yawDeg: 30 } }).pose
+  });
+  const tooCloseFallback = createInitialFallbackSample({
+    analysis: sample(0.95, { quality: { coverage: 0.9 } }).analysis,
+    pose: sample(0.95).pose
+  });
+  const softFallback = createInitialFallbackSample({
+    analysis: sample(0.2).analysis,
+    pose: sample(0.2).pose
+  });
+
+  assert.equal(badYawFallback, null);
+  assert.equal(tooCloseFallback, null);
+  assert.ok(softFallback);
 });

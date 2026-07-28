@@ -33,17 +33,22 @@ def save_feedback(record: dict) -> dict:
         "notes": record.get("notes") or "",
         "faceShape_ai": record.get("faceShape_ai") or "",
         "faceShape_confirmed": record.get("faceShape_confirmed") or "",
-        "confidence": record.get("confidence"),
-        "confidence_level": record.get("confidence_level") or "",
-        "top_candidates": record.get("top_candidates") or [],
-        "capture_quality": record.get("capture_quality") or {},
-        "diagnostics": record.get("diagnostics") or {},
         "preferences": record.get("preferences") or {},
         "customer_status": record.get("customer_status") or "waiting",
         "source": record.get("source") or "frontend",
         "created_at": record.get("created_at") or now,
         "stored_at": now,
     }
+    if "confidence" in record:
+        normalized["confidence"] = record.get("confidence")
+    if "confidence_level" in record:
+        normalized["confidence_level"] = record.get("confidence_level") or ""
+    if "top_candidates" in record:
+        normalized["top_candidates"] = record.get("top_candidates") or []
+    if "capture_quality" in record:
+        normalized["capture_quality"] = record.get("capture_quality") or {}
+    if "diagnostics" in record:
+        normalized["diagnostics"] = record.get("diagnostics") or {}
 
     with _storage_lock():
         records = _read_feedback()
