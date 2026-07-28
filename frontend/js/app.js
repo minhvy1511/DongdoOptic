@@ -11,6 +11,16 @@ import {
   getPublicAdviceSourceLabel
 } from "./recommendations.js?v=20260723-71";
 import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260728-75";
+import { detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js";
+import { collectFrameBurst, selectBurstSamples } from "./vision/frame-collector.js";
+import { DISTANCE_LANDMARKS as VISION_DISTANCE_LANDMARKS } from "./vision/landmark-map.js";
+import {
+  DEFAULT_SCAN_QUALITY_CONFIG,
+  buildCaptureQualityGate,
+  evaluateScanFrameQuality,
+  getVisionLimitations
+} from "./vision/quality-gate.js";
+import { isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js";
 import {
   createCustomerCode,
   createSessionCode,
@@ -165,14 +175,16 @@ const DISTANCE_CONFIG = {
 };
 
 const DISTANCE_LANDMARKS = {
-  topFace: 10,
-  chin: 152,
-  leftCheek: 234,
-  rightCheek: 454,
-  leftTemple: 127,
-  rightTemple: 356,
-  leftBrowOuter: 70,
-  rightBrowOuter: 300
+  ...VISION_DISTANCE_LANDMARKS
+};
+
+const SCAN_QUALITY_CONFIG = {
+  ...DEFAULT_SCAN_QUALITY_CONFIG,
+  centerYawToleranceDeg: SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG,
+  rollToleranceDeg: SCAN_CONFIG.ROLL_TOLERANCE_DEG,
+  minFrameConfidence: SCAN_CONFIG.MIN_FRAME_CONFIDENCE,
+  burstMinSamples: SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
+  burstMinConfidence: SCAN_CONFIG.CENTER_BURST_MIN_CONFIDENCE
 };
 
 const SCAN_STEPS = [
@@ -229,6 +241,8 @@ const FACE_SHAPE_REFERENCE = {
 
 const FEEDBACK_STORAGE_KEY = "dongdo_optic_feedback";
 const FEEDBACK_API_URL = "/api/feedback";
+const VISION_DEBUG_ENABLED = new URLSearchParams(window.location.search).get("visionDebug") === "1";
+let visionDebugPanel = null;
 
 function createAutoScanState() {
   return {
@@ -386,10 +400,20 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
       autoScanState.prompt = step.label;
       autoScanState.detail = "Khoảng cách đã ổn. Giữ mặt giữa khung để máy tự chụp.";
       updateScanHud();
+      updateVisionDebugPanel({
+        faceCount,
+        reasonCode: autoScanState.distance.reason,
+        limitation: "distance advisory"
+      });
       return;
     }
 
     updateScanHud();
+    updateVisionDebugPanel({
+      faceCount,
+      reasonCode: autoScanState.distance?.reason,
+      limitation: "distance gate"
+    });
     return;
   }
 
@@ -398,6 +422,14 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   autoScanState.prompt = step.label;
   autoScanState.detail = condition.detail;
   autoScanState.status = condition.status;
+  updateVisionDebugPanel({
+    faceCount,
+    reasonCode: condition.reasonCode,
+    confidence: analysis?.quality?.confidence,
+    limitation: Array.isArray(analysis?.diagnostics?.limitations)
+      ? analysis.diagnostics.limitations.join(" | ")
+      : ""
+  });
 
   if (condition.ready) {
     if (autoScanState.holdStepKey !== captureStep.key) {
@@ -480,60 +512,22 @@ function resolveScanCondition(step, analysis, pose, faceCount) {
 }
 
 function evaluateScanFrame(step, analysis, pose, faceCount) {
-  if (faceCount !== 1 || !analysis || !pose) {
+  const result = evaluateScanFrameQuality({
+    step,
+    analysis,
+    pose,
+    faceCount,
+    config: SCAN_QUALITY_CONFIG
+  });
+
+  if (result.reasonCode === "BAD_YAW" && !result.ready && !result.near && pose) {
     return {
-      ready: false,
-      near: false,
-      status: "prompt",
-      detail: faceCount > 1 ? "Chỉ giữ một khuôn mặt trong khung." : "Đưa mặt vào giữa khung camera.",
-      timeoutDetail: "Không nhận diện được rõ một khuôn mặt."
+      ...result,
+      detail: getYawGuidance(step, pose.yawDeg)
     };
   }
 
-  const quality = analysis.quality || {};
-  const confidence = Number(quality.confidence || 0);
-  const coverage = Number(quality.coverage || 0);
-  const centerOk = Math.abs(Number(quality.centerOffsetX || 0)) <= 0.16
-    && Math.abs(Number(quality.centerOffsetY || 0)) <= 0.16;
-  const distanceOk = coverage >= 0.035 && coverage <= 0.62;
-  const rollOk = Math.abs(Number(pose.rollDeg || 0)) <= SCAN_CONFIG.ROLL_TOLERANCE_DEG;
-  const confidenceOk = confidence >= SCAN_CONFIG.MIN_FRAME_CONFIDENCE;
-  const yawDiff = Math.abs(Number(pose.yawDeg || 0) - step.targetYaw);
-  const yawOk = yawDiff <= step.tolerance;
-  const yawNear = yawDiff <= step.tolerance + 7;
-  const frameOk = centerOk && distanceOk && rollOk && confidenceOk;
-
-  if (frameOk && yawOk) {
-    return { ready: true, near: true, status: "hold", detail: "Giữ nguyên một chút để máy tự chụp." };
-  }
-
-  if (frameOk && yawNear) {
-    return { ready: false, near: true, status: "near", detail: "Gần đúng rồi, quay chậm thêm một chút." };
-  }
-
-  if (!confidenceOk) {
-    return { ready: false, near: false, status: "prompt", detail: "Giữ đủ sáng, nhìn rõ mắt và mũi.", timeoutDetail: "Tín hiệu khuôn mặt còn yếu." };
-  }
-
-  if (!centerOk) {
-    return { ready: false, near: false, status: "prompt", detail: "Đưa mặt vào giữa khung trước khi quét.", timeoutDetail: "Khuôn mặt chưa nằm giữa khung." };
-  }
-
-  if (!distanceOk) {
-    return { ready: false, near: false, status: "prompt", detail: coverage < 0.08 ? "Đưa mặt gần camera hơn." : "Lùi mặt ra xa camera hơn.", timeoutDetail: "Khoảng cách khuôn mặt chưa phù hợp." };
-  }
-
-  if (!rollOk) {
-    return { ready: false, near: false, status: "prompt", detail: "Giữ đầu thẳng, không nghiêng vai.", timeoutDetail: "Đầu đang nghiêng quá nhiều." };
-  }
-
-  return {
-    ready: false,
-    near: false,
-    status: "prompt",
-    detail: getYawGuidance(step, pose.yawDeg),
-    timeoutDetail: "Chưa đạt đúng hướng mặt cần quét."
-  };
+  return result;
 }
 
 function evaluateDistanceGuide(landmarks, faceCount) {
@@ -736,6 +730,14 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
     fallbackUsed: stableCapture.fallbackUsed,
     confidence: Math.round((stableCapture.analysis.quality?.confidence || 0) * 100)
   });
+  updateVisionDebugPanel({
+    acceptedFrames: stableCapture.sampleCount,
+    rejectedFrames: Math.max(0, samples.length - stableCapture.sampleCount),
+    usableSamples: stableCapture.sampleCount,
+    fallbackUsed: stableCapture.fallbackUsed,
+    confidence: stableCapture.analysis.quality?.confidence,
+    reasonCode: stableCapture.analysis.diagnostics?.qualityGate?.reasonCodes?.join(", ") || "OK"
+  });
 
   captureScanStep(step, stableCapture.analysis, stableCapture.pose, {
     ...options,
@@ -749,35 +751,26 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
 }
 
 async function captureCenterBurstSamples(targetFrames, durationMs) {
-  const samples = [];
-  const delayMs = Math.max(60, Math.round(durationMs / targetFrames));
-
-  for (let index = 0; index < targetFrames; index += 1) {
-    const results = faceLandmarker.detectForVideo(video, performance.now());
-    const faces = results.faceLandmarks ?? [];
-    if (faces.length === 1) {
-      const landmarks = faces[0];
-      const analysis = analyzeFaceShape(landmarks, getVideoFrameSize());
-      const pose = estimateHeadPose(landmarks);
-      samples.push({ analysis, pose, landmarks });
-    }
-
-    if (index < targetFrames - 1) {
-      await delay(delayMs);
-    }
-  }
-
-  return samples;
+  return collectFrameBurst({
+    targetFrames,
+    durationMs,
+    detectFrame: () => detectFaceLandmarksForVideo(faceLandmarker, video, performance.now()),
+    analyzeLandmarks: (landmarks) => analyzeFaceShape(landmarks, getVideoFrameSize()),
+    estimatePose: (landmarks) => estimateHeadPose(landmarks),
+    delayFn: delay
+  });
 }
 
 function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
-  const usableSamples = samples.filter(isUsableCenterBurstSample);
-  const fallbackSamples = samples
-    .filter((sample) => sample?.analysis?.metrics)
-    .sort((a, b) => Number(b.analysis?.quality?.confidence || 0) - Number(a.analysis?.quality?.confidence || 0));
-  const selectedSamples = usableSamples.length >= SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
-    ? usableSamples
-    : fallbackSamples.slice(0, Math.max(1, Math.min(fallbackSamples.length, SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES)));
+  const {
+    usableSamples,
+    selectedSamples,
+    fallbackUsed
+  } = selectBurstSamples({
+    samples,
+    minSamples: SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
+    config: SCAN_QUALITY_CONFIG
+  });
 
   if (!selectedSamples.length && initialAnalysis) {
     return {
@@ -800,7 +793,10 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     allSamples: samples,
     quality,
     pose,
-    fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
+    fallbackUsed,
+    config: SCAN_QUALITY_CONFIG,
+    formatPercent,
+    getDistanceLabel
   });
   quality.confidence = Math.max(
     quality.confidence || 0,
@@ -821,7 +817,7 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     centerBurst: {
       sampleCount: selectedSamples.length,
       totalSamples: samples.length,
-      fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
+      fallbackUsed,
       temporalStability: classification.temporalStability ?? null,
       frameVotes: classification.frameVotes || {}
     },
@@ -840,7 +836,7 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     analysis,
     pose,
     sampleCount: selectedSamples.length,
-    fallbackUsed: usableSamples.length < SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES
+    fallbackUsed
   };
 }
 
@@ -899,67 +895,6 @@ function aggregateTemporalClassification(classifications, fallbackMetrics) {
     calibrationSource: getClassificationDetail(fallbackMetrics).calibrationSource,
     candidates: averaged.map(([name, score]) => ({ name, score }))
   };
-}
-
-function buildCaptureQualityGate({ selectedSamples = [], allSamples = [], quality = {}, pose = {}, fallbackUsed = false } = {}) {
-  const sampleCount = selectedSamples.length;
-  const totalSamples = allSamples.length;
-  const checks = [
-    {
-      key: "samples",
-      label: "Ổn định",
-      passed: sampleCount >= SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
-      value: `${sampleCount}/${Math.max(totalSamples, SCAN_CONFIG.CENTER_BURST_FRAMES)} frame`
-    },
-    {
-      key: "landmark",
-      label: "Nét mặt rõ",
-      passed: Number(quality.confidence || 0) >= 0.5 && !fallbackUsed,
-      value: formatPercent(Number(quality.confidence || 0))
-    },
-    {
-      key: "pose",
-      label: "Nhìn thẳng",
-      passed: Math.abs(Number(pose.yawDeg || 0)) <= 8 && Math.abs(Number(pose.rollDeg || 0)) <= 10,
-      value: `${Math.round(Number(pose.yawDeg || 0))}° / ${Math.round(Number(pose.rollDeg || 0))}°`
-    },
-    {
-      key: "center",
-      label: "Giữa khung",
-      passed: Math.abs(Number(quality.centerOffsetX || 0)) <= 0.14 && Math.abs(Number(quality.centerOffsetY || 0)) <= 0.14,
-      value: `${Math.round(Math.abs(Number(quality.centerOffsetX || 0)) * 100)}% ngang`
-    },
-    {
-      key: "distance",
-      label: "Khoảng cách",
-      passed: Number(quality.coverage || 0) >= 0.08 && Number(quality.coverage || 0) <= 0.42,
-      value: getDistanceLabel(Number(quality.coverage || 0))
-    }
-  ];
-  const passedCount = checks.filter((item) => item.passed).length;
-  const score = clamp01(passedCount / checks.length);
-  const failedLabels = checks.filter((item) => !item.passed).map((item) => item.label.toLowerCase());
-
-  return {
-    passed: score >= 0.8 && checks.find((item) => item.key === "pose")?.passed && checks.find((item) => item.key === "landmark")?.passed,
-    score,
-    checks,
-    failedLabels
-  };
-}
-
-function isUsableCenterBurstSample(sample) {
-  const quality = sample?.analysis?.quality || {};
-  const pose = sample?.pose || {};
-  const confidence = Number(quality.confidence || 0);
-  return Boolean(sample?.analysis?.metrics)
-    && confidence >= SCAN_CONFIG.CENTER_BURST_MIN_CONFIDENCE
-    && Math.abs(Number(pose.yawDeg || 0)) <= SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG + 5
-    && Math.abs(Number(pose.rollDeg || 0)) <= SCAN_CONFIG.ROLL_TOLERANCE_DEG + 4
-    && Math.abs(Number(quality.centerOffsetX || 0)) <= 0.22
-    && Math.abs(Number(quality.centerOffsetY || 0)) <= 0.22
-    && Number(quality.coverage || 0) >= 0.03
-    && Number(quality.coverage || 0) <= 0.66;
 }
 
 function captureScanStep(step, analysis, pose, options = {}) {
@@ -1193,6 +1128,7 @@ function buildMultiAngleAnalysis(captures) {
     sideAgreement: sideAgreementScore,
     sideAnalysis: sideAnalysis.items,
     confidenceComponents: quality.confidenceComponents,
+    limitations: getVisionLimitations({ hasPhysicalCalibration: false }),
     classification: centerClassification,
     advisoryShape: isAdvisoryShape,
     qualityGate,
@@ -1484,7 +1420,7 @@ function detectFrame(sessionToken) {
 
   if (video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
-    const results = faceLandmarker.detectForVideo(video, performance.now());
+    const results = detectFaceLandmarksForVideo(faceLandmarker, video, performance.now());
     drawResults(results);
   }
 
@@ -1492,10 +1428,24 @@ function detectFrame(sessionToken) {
 }
 
 function drawResults(results) {
-  const faces = results.faceLandmarks ?? [];
+  const faces = results.faces ?? results.faceLandmarks ?? [];
   clearCanvas(canvas);
   faceCountText.textContent = String(faces.length);
   landmarkCountText.textContent = faces[0] ? String(faces[0].length) : "0";
+
+  if (results.error) {
+    updateAutoScanFlow(null, null, 0);
+    drawCalibrationGuide(canvas, null, getScanGuideState(), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL);
+    faceShapeText.textContent = "Không đủ dữ liệu";
+    renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "MediaPipe chưa xử lý được khung hình này.");
+    updateCameraStatus(0, null);
+    updateVisionDebugPanel({
+      faceCount: 0,
+      reasonCode: results.reasonCode,
+      mediaPipeError: results.error?.message || "unknown"
+    });
+    return;
+  }
 
   if (!faces.length) {
     updateAutoScanFlow(null, null, 0);
@@ -1506,6 +1456,10 @@ function drawResults(results) {
     faceShapeText.textContent = "Không thấy mặt";
     renderConfidenceNotice(null, { level: "low", percent: 0 }, false);
     updateCameraStatus(0, null);
+    updateVisionDebugPanel({
+      faceCount: 0,
+      reasonCode: "NO_FACE"
+    });
     return;
   }
 
@@ -1580,8 +1534,8 @@ async function captureAnalysisSamples(targetFrames, durationMs) {
   const delayMs = Math.max(80, Math.round(durationMs / targetFrames));
 
   for (let index = 0; index < targetFrames; index += 1) {
-    const results = faceLandmarker.detectForVideo(video, performance.now());
-    const faces = results.faceLandmarks ?? [];
+    const results = detectFaceLandmarksForVideo(faceLandmarker, video, performance.now());
+    const faces = results.faces ?? [];
     if (faces.length === 1) {
       const analysis = analyzeFaceShape(faces[0], getVideoFrameSize());
       samples.push(analysis);
@@ -1647,6 +1601,7 @@ function analyzeFaceShapeFromMetrics(shape, metrics, quality) {
     centerLabel: getCenterLabelV2(quality),
     ready: quality.confidence >= CONFIDENCE_THRESHOLDS.medium,
     readinessScore: quality.confidence || 0,
+    limitations: getVisionLimitations({ hasPhysicalCalibration: false }),
     warnings: [],
     summary: "Đã tổng hợp nhiều khung hình."
   };
@@ -1760,6 +1715,7 @@ function renderConfidenceNotice(analysis, confidenceState, finalResult, override
     ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
   const partialText = diagnostics.scanMode === "center-burst-primary" ? "Nguồn chính: ảnh thẳng đạt chuẩn tư vấn." : "";
+  const limitationText = Array.isArray(diagnostics.limitations) ? diagnostics.limitations[1] || diagnostics.limitations[0] : "";
   const hasDraftShape = diagnostics.partialScan && analysis?.shape && analysis.shape !== "unknown";
   const messages = {
     high: `Độ tin cậy ${confidenceState.percent}% - đây là gợi ý mạnh, vẫn nên rà lại.`,
@@ -1773,7 +1729,7 @@ function renderConfidenceNotice(analysis, confidenceState, finalResult, override
   confidenceNotice.innerHTML = `
     <strong>${overrideMessage || messages[confidenceState.level]}</strong>
     <span>${reasons.join(" ")}</span>
-    <em>${[sampleText, consistencyText, partialText, finalResult ? "Đã đủ để chốt." : "Chỉ là gợi ý sơ bộ."].filter(Boolean).join(" · ")}</em>
+    <em>${[sampleText, consistencyText, partialText, limitationText, finalResult ? "Đã đủ để chốt." : "Chỉ là gợi ý sơ bộ."].filter(Boolean).join(" · ")}</em>
   `;
   renderCameraConfidenceOverlay(analysis, confidenceState, overrideMessage);
 }
@@ -1793,6 +1749,7 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
     ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
     : "";
   const partialLabel = diagnostics.scanMode === "center-burst-primary" ? "Ảnh tư vấn là nguồn chính" : "";
+  const limitationLabel = Array.isArray(diagnostics.limitations) ? "Chưa đo mm" : "";
   const statusTextValue = overrideMessage || (
     confirmedFaceShape
       ? `Đã xác nhận - ${shapeLabel}`
@@ -1807,7 +1764,7 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
   cameraConfidenceOverlay.innerHTML = `
     <span>Độ tin cậy</span>
     <strong>${percentLabel}</strong>
-    <em>${[statusTextValue, sampleLabel, consistencyLabel, partialLabel].filter(Boolean).join(" · ")}</em>
+    <em>${[statusTextValue, sampleLabel, consistencyLabel, partialLabel, limitationLabel].filter(Boolean).join(" · ")}</em>
   `;
 }
 
@@ -2551,6 +2508,62 @@ function updateCameraStatus(faceCount, analysis) {
   }
 }
 
+function updateVisionDebugPanel(payload = {}) {
+  if (!VISION_DEBUG_ENABLED) {
+    return;
+  }
+
+  if (!visionDebugPanel) {
+    visionDebugPanel = document.createElement("pre");
+    visionDebugPanel.setAttribute("aria-label", "VisionID QA debug");
+    visionDebugPanel.style.cssText = [
+      "position:fixed",
+      "right:12px",
+      "bottom:12px",
+      "z-index:9999",
+      "max-width:360px",
+      "max-height:45vh",
+      "overflow:auto",
+      "margin:0",
+      "padding:10px 12px",
+      "border-radius:8px",
+      "background:rgba(7,20,26,0.92)",
+      "color:#d8fff4",
+      "font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace",
+      "box-shadow:0 12px 40px rgba(0,0,0,0.28)",
+      "white-space:pre-wrap",
+      "pointer-events:none"
+    ].join(";");
+    document.body.appendChild(visionDebugPanel);
+  }
+
+  const diagnostics = latestAnalysis?.diagnostics || {};
+  const qualityGate = diagnostics.qualityGate || {};
+  const debugData = {
+    phase: autoScanState.phase,
+    step: SCAN_STEPS[autoScanState.stepIndex]?.key || "-",
+    faceCount: payload.faceCount ?? Number(faceCountText?.textContent || 0),
+    reasonCode: payload.reasonCode || qualityGate.reasonCodes?.join(", ") || "-",
+    acceptedFrames: payload.acceptedFrames ?? diagnostics.centerBurst?.sampleCount ?? "-",
+    rejectedFrames: payload.rejectedFrames ?? (
+      diagnostics.centerBurst
+        ? Math.max(0, Number(diagnostics.centerBurst.totalSamples || 0) - Number(diagnostics.centerBurst.sampleCount || 0))
+        : "-"
+    ),
+    usableSamples: payload.usableSamples ?? diagnostics.centerBurst?.sampleCount ?? "-",
+    fallbackUsed: payload.fallbackUsed ?? diagnostics.centerBurst?.fallbackUsed ?? false,
+    confidence: Number.isFinite(Number(payload.confidence ?? latestAnalysis?.quality?.confidence))
+      ? `${Math.round(Number(payload.confidence ?? latestAnalysis?.quality?.confidence) * 100)}%`
+      : "-",
+    limitation: payload.limitation || (Array.isArray(diagnostics.limitations) ? diagnostics.limitations.join(" | ") : ""),
+    mediaPipeError: payload.mediaPipeError || ""
+  };
+
+  visionDebugPanel.textContent = Object.entries(debugData)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join("\n");
+}
+
 function getCameraStabilityV2() {
   const recent = analysisHistory.slice(-7);
   if (recent.length < 3) {
@@ -3062,7 +3075,8 @@ function startNewCustomer() {
 
 function saveCurrentCustomer() {
   updateAdvice();
-  const record = saveCustomer({
+  const persistableAnalysis = getPersistableVisionAnalysis();
+  const customerDraft = {
     customer_code: customerCodeInput.value,
     session_code: currentSessionCode,
     customer_name: customerNameInput.value.trim(),
@@ -3077,7 +3091,7 @@ function saveCurrentCustomer() {
     has_prescription: hasPrescriptionInput.checked,
     prescription: readPrescriptionData(),
     preferences: readPreferences(),
-    analysis: latestAnalysis,
+    analysis: persistableAnalysis,
     faceShape_ai: latestAiFaceShape || latestAnalysis?.faceShape_ai || latestAnalysis?.shape || "",
     faceShape_confirmed: confirmedFaceShape || latestAnalysis?.faceShape_confirmed || "",
     consultation_mode: manualConsultationMode ? "manual" : "visionid",
@@ -3087,12 +3101,27 @@ function saveCurrentCustomer() {
       face_count: Number(faceCountText.textContent || 0),
       landmark_count: Number(landmarkCountText.textContent || 0)
     }
-  });
+  };
+  const record = saveCustomer(
+    hasVisionAnalysisConsent() ? customerDraft : purgeStoredVisionAnalysis(customerDraft)
+  );
 
   customerCodeInput.value = record.customer_code;
   renderCustomers();
   statusText.textContent = "Đã lưu hồ sơ";
   updateWorkflowAssistant();
+}
+
+function getPersistableVisionAnalysis() {
+  if (!hasVisionAnalysisConsent()) {
+    return null;
+  }
+
+  return latestAnalysis;
+}
+
+function hasVisionAnalysisConsent() {
+  return isExplicitConsentGranted(latestAnalysis?.privacyConsent?.analysisStorage);
 }
 
 function renderCustomers() {
@@ -3435,7 +3464,7 @@ function readPreferences() {
 }
 
 function readCustomerSnapshot() {
-  return {
+  const snapshot = {
     customer_code: customerCodeInput.value || "",
     customer_name: customerNameInput.value.trim() || "",
     customer_phone: customerPhoneInput.value.trim() || "",
@@ -3450,13 +3479,15 @@ function readCustomerSnapshot() {
     has_prescription: hasPrescriptionInput.checked,
     prescription: readPrescriptionData(),
     preferences: readPreferences(),
-    analysis: latestAnalysis,
+    analysis: getPersistableVisionAnalysis(),
     faceShape_ai: latestAiFaceShape || latestAnalysis?.faceShape_ai || latestAnalysis?.shape || "",
     faceShape_confirmed: confirmedFaceShape || latestAnalysis?.faceShape_confirmed || "",
     consultation_mode: manualConsultationMode ? "manual" : "visionid",
     recommendations: latestRecommendations,
     lens_recommendations: latestLensRecommendations
   };
+
+  return hasVisionAnalysisConsent() ? snapshot : purgeStoredVisionAnalysis(snapshot);
 }
 
 function syncCurrentCustomer(eventName, sourceRecord = null) {
@@ -3877,6 +3908,7 @@ function buildFeedbackRecord() {
   const diagnostics = latestAnalysis?.diagnostics || {};
   const classification = diagnostics.classification || {};
   const qualityGate = diagnostics.qualityGate || null;
+  const includeVisionAnalysis = hasVisionAnalysisConsent();
 
   return {
     id: `FB-${Date.now()}`,
@@ -3887,12 +3919,12 @@ function buildFeedbackRecord() {
     faceShape_ai: latestAiFaceShape || latestAnalysis?.faceShape_ai || latestAnalysis?.shape || "",
     faceShape_confirmed: confirmedFaceShape || latestAnalysis?.faceShape_confirmed || "",
     consultation_mode: manualConsultationMode ? "manual" : "visionid",
-    confidence: latestAnalysis?.quality?.confidence ?? null,
-    confidence_level: confidenceState.level || "low",
-    top_candidates: Array.isArray(classification.candidates)
+    confidence: includeVisionAnalysis ? latestAnalysis?.quality?.confidence ?? null : null,
+    confidence_level: includeVisionAnalysis ? confidenceState.level || "low" : "",
+    top_candidates: includeVisionAnalysis && Array.isArray(classification.candidates)
       ? classification.candidates.slice(0, 3)
       : [],
-    capture_quality: qualityGate
+    capture_quality: includeVisionAnalysis && qualityGate
       ? {
           passed: Boolean(qualityGate.passed),
           score: qualityGate.score ?? null,
@@ -3900,14 +3932,14 @@ function buildFeedbackRecord() {
           checks: Array.isArray(qualityGate.checks) ? qualityGate.checks : []
         }
       : {},
-    diagnostics: {
+    diagnostics: includeVisionAnalysis ? {
       warnings: Array.isArray(diagnostics.warnings) ? diagnostics.warnings.slice(0, 6) : [],
       confidenceComponents: diagnostics.confidenceComponents || {},
       confidenceBand: diagnostics.confidenceBand || "",
       calibrationSource: diagnostics.calibrationSource || classification.calibrationSource || "",
       centerBurst: diagnostics.centerBurst || null,
       scanMode: diagnostics.scanMode || ""
-    },
+    } : {},
     preferences: {
       ...readPreferences(),
       age_group: ageGroupInput.value || "",

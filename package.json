@@ -4,7 +4,8 @@
   "description": "Offline web prototype for DongDo Optic eyewear recommendation.",
   "main": "index.js",
   "scripts": {
-    "start": "python -m http.server 5173"
+    "start": "python -m http.server 5173",
+    "test": "node --test tests/**/*.test.js"
   },
   "keywords": [],
   "author": "",

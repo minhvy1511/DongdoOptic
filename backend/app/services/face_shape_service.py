@@ -1,5 +1,9 @@
 from app.utils.geometry import distance
 
+# Legacy service: VisionID Milestone 1 uses the frontend MediaPipe pipeline as
+# the source of truth. Keep this endpoint for compatibility until the backend
+# classifier is removed or unified with the frontend scoring engine.
+
 LANDMARKS = {
     "top_face": 10,
     "chin": 152,
