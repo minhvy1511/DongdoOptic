@@ -177,13 +177,25 @@ function buildCameraDiagnostics({ options = {}, requestedConstraints = null } = 
 }
 
 function enrichCameraError(error, code, diagnostics = {}) {
-  const cameraError = error instanceof Error ? error : new Error(String(error || "Camera error"));
-  cameraError.code = cameraError.code || code;
-  cameraError.diagnostics = {
-    ...(cameraError.diagnostics || {}),
+  const sourceError = error instanceof Error ? error : new Error(String(error || "Camera error"));
+  const nextDiagnostics = {
+    ...(sourceError.diagnostics || {}),
     ...diagnostics
   };
-  return cameraError;
+
+  try {
+    sourceError.code = sourceError.code || code;
+    sourceError.diagnostics = nextDiagnostics;
+    return sourceError;
+  } catch {
+    const cameraError = new Error(sourceError.message || "Camera error");
+    cameraError.name = sourceError.name || "CameraError";
+    cameraError.stack = sourceError.stack;
+    cameraError.cause = sourceError;
+    cameraError.code = sourceError.code || code;
+    cameraError.diagnostics = nextDiagnostics;
+    return cameraError;
+  }
 }
 
 function withTimeout(promise, timeoutMs, code) {

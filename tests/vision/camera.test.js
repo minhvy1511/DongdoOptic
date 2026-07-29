@@ -169,3 +169,41 @@ test("startUserCamera reports play errors and stops the stream", async () => {
     value: originalNavigator
   });
 });
+
+test("startUserCamera preserves camera errors with read-only code properties", async () => {
+  const originalNavigator = globalThis.navigator;
+  const permissionError = new Error("Permission denied");
+  permissionError.name = "NotAllowedError";
+  Object.defineProperty(permissionError, "code", {
+    configurable: true,
+    get() {
+      return "";
+    }
+  });
+
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: () => Promise.reject(permissionError)
+      }
+    }
+  });
+
+  const video = createFakeVideo();
+
+  await assert.rejects(
+    () => startUserCamera(video, { openTimeoutMs: 50, readyTimeoutMs: 50 }),
+    (error) => {
+      assert.equal(error.code, "NotAllowedError");
+      assert.equal(error.cause, permissionError);
+      assert.equal(error.diagnostics.hasGetUserMedia, true);
+      return true;
+    }
+  );
+
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: originalNavigator
+  });
+});
