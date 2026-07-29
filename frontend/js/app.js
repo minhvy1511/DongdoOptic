@@ -52,6 +52,7 @@ import {
   isMeaningfulOperationDraft,
   normalizeOperationDraft,
   normalizeOperationBusinessState,
+  OPERATION_DRAFT_STORAGE_KEY,
   operationStepToTabId,
   readOperationDraft,
   tabIdToOperationStep,
@@ -77,6 +78,20 @@ import {
   getWorkflowStepState,
   normalizeWorkflowStep
 } from "./workflow-state.js?v=20260729-87";
+import {
+  buildConsultationResultPayload,
+  canCompleteOperation,
+  consultationSourceLabel,
+  consultationSourceLimitation,
+  createConsultationContext,
+  getConsultationPresentation,
+  getConsultationSaveState,
+  getConsultationSignature,
+  getConsultationSource as getDetailedConsultationSource,
+  getCustomerOperationalStatus,
+  getCustomerPrimaryAction,
+  isConsultationResultCurrent
+} from "./consultation-state.js?v=20260729-87";
 import {
   createCustomerCode,
   createSessionCode,
@@ -203,6 +218,16 @@ const lensList = document.getElementById("lensList");
 const lensPreview = document.getElementById("lensPreview");
 const currentCustomerSummary = document.getElementById("currentCustomerSummary");
 const consultationSummary = document.getElementById("consultationSummary");
+const consultationActionPanel = document.getElementById("consultationActionPanel");
+const consultationSourceBadge = document.getElementById("consultationSourceBadge");
+const consultationResultState = document.getElementById("consultationResultState");
+const consultationSavedState = document.getElementById("consultationSavedState");
+const consultationMeasuredState = document.getElementById("consultationMeasuredState");
+const saveConsultationButton = document.getElementById("saveConsultationButton");
+const adjustNeedsButton = document.getElementById("adjustNeedsButton");
+const revisitVisionButton = document.getElementById("revisitVisionButton");
+const startNextCustomerButton = document.getElementById("startNextCustomerButton");
+const consultationSaveStatus = document.getElementById("consultationSaveStatus");
 const feedbackTypeInput = document.getElementById("feedbackType");
 const feedbackNotesInput = document.getElementById("feedbackNotes");
 const saveFeedbackButton = document.getElementById("saveFeedbackButton");
@@ -268,6 +293,13 @@ let lastDraftSavedAt = null;
 let lastCustomerSavedAt = null;
 let suppressOperationDraftTracking = false;
 let pendingContextChangeAction = null;
+let latestResultContext = null;
+let latestRecommendationContext = null;
+let persistedConsultationResult = null;
+let persistedConsultationContext = null;
+let savedConsultationSignature = "";
+let consultationSaveInFlight = false;
+let consultationSaveError = "";
 let modalReturnFocusElement = null;
 let customerSearchTimer = 0;
 let duplicatePhoneMatches = [];
@@ -1175,6 +1207,7 @@ function finalizeMultiAngleScan() {
 
   latestAnalysis = finalAnalysis;
   latestAiFaceShape = finalAnalysis.faceShape_ai;
+  stampCurrentResultContext();
   renderMetricsV2(finalAnalysis.metrics, finalAnalysis.quality, finalAnalysis.diagnostics);
   applyAnalysisConfidence(finalAnalysis, true);
   syncCurrentCustomer("customerUpdated");
@@ -1588,6 +1621,144 @@ function ensureCurrentSessionCode() {
   }
 
   return currentSessionCode;
+}
+
+function getCurrentConsultationContext() {
+  return createConsultationContext({
+    customerId: operationCustomerId || customerCodeInput.value || "",
+    draftId: operationDraftId,
+    sessionCode: ensureCurrentSessionCode()
+  });
+}
+
+function stampCurrentResultContext() {
+  latestResultContext = getCurrentConsultationContext();
+  latestRecommendationContext = latestResultContext;
+  consultationSaveError = "";
+  if (consultationSaveStateIsSaved()) {
+    savedConsultationSignature = "";
+  }
+}
+
+function consultationSaveStateIsSaved() {
+  const state = getCurrentConsultationSaveState();
+  return state.state === "saved" || state.state === "measured";
+}
+
+function resetVolatileConsultationState({ keepPersisted = false } = {}) {
+  latestAnalysis = null;
+  latestAiFaceShape = "";
+  confirmedFaceShape = "";
+  confirmedFaceShapeSource = "";
+  manualConsultationMode = false;
+  latestRecommendations = [];
+  latestLensRecommendations = [];
+  latestResultContext = null;
+  latestRecommendationContext = null;
+  consultationSaveError = "";
+  if (!keepPersisted) {
+    persistedConsultationResult = null;
+    persistedConsultationContext = null;
+    savedConsultationSignature = "";
+  }
+}
+
+function getCurrentDetailedConsultationSource() {
+  const currentContext = getCurrentConsultationContext();
+  const hasCurrentLiveResult = isConsultationResultCurrent({
+    resultContext: latestResultContext,
+    currentContext
+  });
+  const hasCurrentPersistedResult = persistedConsultationResult && isConsultationResultCurrent({
+    resultContext: persistedConsultationContext,
+    currentContext,
+    allowMissingDraft: true
+  });
+
+  if (hasCurrentPersistedResult && (!latestAnalysis || !hasCurrentLiveResult)) {
+    const source = persistedConsultationResult.consultationSource || "none";
+    return {
+      source,
+      valid: source !== "none",
+      label: consultationSourceLabel(source),
+      limitation: consultationSourceLimitation(source)
+    };
+  }
+
+  return getDetailedConsultationSource({
+    manualConsultationMode,
+    manualConfirmed: manualConsultationMode,
+    confirmedFaceShape,
+    analysis: latestAnalysis,
+    resultContext: latestResultContext,
+    currentContext,
+    imageAnalysisState: latestImageDebug.imageDecodeStatus === "analyzed" ? "analysis_complete" : ""
+  });
+}
+
+function getCurrentConsultationPayload(savedAt = new Date().toISOString()) {
+  return buildConsultationResultPayload({
+    source: getCurrentDetailedConsultationSource(),
+    confirmedFaceShape,
+    recommendations: latestRecommendations,
+    lensRecommendations: latestLensRecommendations,
+    needsSnapshot: readPreferences(),
+    prescriptionSnapshot: readPrescriptionData(),
+    savedAt
+  });
+}
+
+function getCurrentConsultationSignature() {
+  return getConsultationSignature(getCurrentConsultationPayload(persistedConsultationResult?.savedAt || "pending"));
+}
+
+function getCurrentConsultationSaveState() {
+  return getConsultationSaveState({
+    source: getCurrentDetailedConsultationSource(),
+    currentSignature: getCurrentConsultationSignature(),
+    savedSignature: savedConsultationSignature,
+    saving: consultationSaveInFlight,
+    error: consultationSaveError,
+    measured: customerStatusInput?.value === "measured"
+  });
+}
+
+function getConsultationStatusText() {
+  const source = getCurrentDetailedConsultationSource();
+  const saveState = getCurrentConsultationSaveState();
+  return {
+    sourceLabel: source.label,
+    resultLabel: source.valid ? "Co ket qua tu van" : "Chua co ket qua",
+    saveLabel: saveState.label,
+    measuredLabel: customerStatusInput?.value === "measured" ? "Da do" : "Chua danh dau da do",
+    limitation: source.limitation
+  };
+}
+
+function findCurrentCustomerRecord() {
+  const customerId = operationCustomerId || customerCodeInput.value;
+  if (!customerId) {
+    return null;
+  }
+  return loadCustomers().find((item) => item.customer_code === customerId) || null;
+}
+
+function completeCurrentOperationDraft(savedAt) {
+  const completedDraft = buildOperationDraftFromForm({ completedAt: savedAt });
+  const completed = writeCompletedOperationDraft(completedDraft);
+  if (completed.ok) {
+    clearOperationDraft();
+  }
+  return completed;
+}
+
+function writeCompletedOperationDraft(draft) {
+  try {
+    localStorage.setItem(OPERATION_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    return { ok: true, draft };
+  } catch (error) {
+    return { ok: false, reason: "STORAGE_ERROR", error };
+  }
 }
 
 async function initialize() {
@@ -2048,6 +2219,9 @@ async function analyzeUploadedFaceImage(file) {
     latestAnalysis = null;
     latestAiFaceShape = "";
     clearConfirmedFaceShape();
+    latestResultContext = null;
+    latestRecommendationContext = null;
+    consultationSaveError = "";
     setVisionExperienceState("analysis_error", { message: "Kh\u00f4ng th\u1ec3 ph\u00e2n t\u00edch \u1ea3nh. H\u00e3y ch\u1ecdn \u1ea3nh kh\u00e1c ho\u1eb7c t\u01b0 v\u1ea5n th\u1ee7 c\u00f4ng." });
     updateVisionDebugPanel({
       imageDebug: latestImageDebug,
@@ -2224,6 +2398,7 @@ function renderStaticImageResults(results) {
   finalAnalysis.warnings = finalAnalysis.diagnostics.warnings || [];
   latestAnalysis = finalAnalysis;
   latestAiFaceShape = finalAnalysis.faceShape_ai;
+  stampCurrentResultContext();
   latestImageDebug = {
     ...latestImageDebug,
     imageDecodeStatus: "analyzed",
@@ -4223,10 +4398,7 @@ function startNewCustomer() {
   setPrescriptionSectionVisible(false);
   clearPrescriptionInputs();
   analysisHistory = [];
-  latestAiFaceShape = "";
-  confirmedFaceShape = "";
-  confirmedFaceShapeSource = "";
-  manualConsultationMode = false;
+  resetVolatileConsultationState();
   autoScanState = createAutoScanState();
   updateScanHud();
   if (confirmedFaceShapeInput) {
@@ -4254,6 +4426,7 @@ function saveCurrentCustomer() {
 
   allowDuplicateCustomerSaveOnce = false;
   updateAdvice();
+  const existingRecord = findCurrentCustomerRecord();
   const persistableAnalysis = getPersistableVisionAnalysis();
   const customerDraft = {
     customer_code: customerCodeInput.value,
@@ -4276,6 +4449,9 @@ function saveCurrentCustomer() {
     consultation_mode: manualConsultationMode ? "manual" : "visionid",
     recommendations: latestRecommendations,
     lens_recommendations: latestLensRecommendations,
+    consultation_result: existingRecord?.consultation_result || persistedConsultationResult || null,
+    consultation_saved_at: existingRecord?.consultation_saved_at || persistedConsultationResult?.savedAt || "",
+    consultation_source: existingRecord?.consultation_source || persistedConsultationResult?.consultationSource || "",
     snapshot: {
       face_count: Number(faceCountText.textContent || 0),
       landmark_count: Number(landmarkCountText.textContent || 0)
@@ -4308,6 +4484,103 @@ function getPersistableVisionAnalysis() {
   return latestAnalysis;
 }
 
+async function saveConsultationResult() {
+  if (consultationSaveInFlight) {
+    return null;
+  }
+
+  consultationSaveInFlight = true;
+  consultationSaveError = "";
+  renderConsultationActions();
+
+  try {
+    if (!operationCustomerId) {
+      const savedCustomer = saveCurrentCustomerWithLock();
+      if (!savedCustomer) {
+        consultationSaveError = "Can luu ho so khach truoc khi luu ket qua tu van.";
+        renderConsultationActions();
+        return null;
+      }
+      latestResultContext = getCurrentConsultationContext();
+      latestRecommendationContext = latestResultContext;
+    }
+
+    const source = getCurrentDetailedConsultationSource();
+    const contextMatches = isConsultationResultCurrent({
+      resultContext: latestRecommendationContext || latestResultContext,
+      currentContext: getCurrentConsultationContext(),
+      allowMissingDraft: Boolean(persistedConsultationResult)
+    });
+    const completionGate = canCompleteOperation({
+      customerExists: Boolean(findCurrentCustomerRecord()),
+      source,
+      saveInFlight: false,
+      contextMatches
+    });
+
+    if (!completionGate.allowed) {
+      consultationSaveError = completionGate.reason === "CONTEXT_MISMATCH"
+        ? "Ket qua hien tai khong thuoc dung khach/phien dang mo."
+        : "Can co nguon tu van hop le truoc khi luu ket qua.";
+      renderConsultationActions();
+      return null;
+    }
+
+    updateAdvice();
+    const savedAt = new Date().toISOString();
+    const payload = getCurrentConsultationPayload(savedAt);
+    if (!payload) {
+      consultationSaveError = "Chua co goi y gong hop le de luu.";
+      renderConsultationActions();
+      return null;
+    }
+
+    const existing = findCurrentCustomerRecord() || readCustomerSnapshot();
+    const record = saveCustomer({
+      ...existing,
+      ...readCustomerSnapshot(),
+      customer_code: operationCustomerId || customerCodeInput.value,
+      session_code: ensureCurrentSessionCode(),
+      consultation_result: payload,
+      consultation_saved_at: savedAt,
+      consultation_source: payload.consultationSource,
+      recommendations: latestRecommendations,
+      lens_recommendations: latestLensRecommendations
+    });
+
+    operationCustomerId = record.customer_code;
+    persistedConsultationResult = payload;
+    persistedConsultationContext = getCurrentConsultationContext();
+    savedConsultationSignature = getConsultationSignature({ ...payload, savedAt: "pending" });
+    lastCustomerSavedAt = record.updated_at || savedAt;
+    setOperationSaveState("customer-saved", { customerSavedAt: lastCustomerSavedAt });
+    const completed = completeCurrentOperationDraft(savedAt);
+    if (!completed.ok) {
+      consultationSaveError = "Da luu ket qua, nhung chua the dong ban nhap thao tac.";
+    } else {
+      operationSaveState = "customer-saved";
+      lastOperationBusinessBaseline = getCurrentOperationBusinessState();
+    }
+    renderCustomers();
+    renderConsultationActions();
+    renderCustomerSessionHeader();
+    if (consultationSaveStatus) {
+      consultationSaveStatus.textContent = `Da luu ket qua tu van cho ${record.customer_name || "khach hang"}.`;
+      consultationSaveStatus.focus?.();
+    }
+    return record;
+  } catch (error) {
+    console.error(error);
+    consultationSaveError = "Luu ket qua that bai. Du lieu tren man hinh van duoc giu lai.";
+    renderConsultationActions();
+    return null;
+  } finally {
+    consultationSaveInFlight = false;
+    renderConsultationActions();
+    updateWorkflowAssistant();
+  }
+}
+
 function hasVisionAnalysisConsent() {
   return isExplicitConsentGranted(latestAnalysis?.privacyConsent?.analysisStorage);
 }
@@ -4315,6 +4588,7 @@ function hasVisionAnalysisConsent() {
 function renderCustomers() {
   const query = customerSearch.value;
   const customers = loadCustomers();
+  const activeDraft = readOperationDraft();
   const rankedRecords = rankCustomerMatches(customers, query, { limit: 8 });
   const records = rankedRecords.map((match) => match.customer);
   const total = customers.length;
@@ -4334,20 +4608,22 @@ function renderCustomers() {
         : (record.analysis?.label || "Chưa phân tích");
       const purpose = purposeLabel(record.preferences?.purpose);
       const rxTag = record.has_prescription ? "Có đơn kính" : "Chưa có đơn kính";
-      const status = statusLabel(record.customer_status);
+      const operationalStatus = getCustomerOperationalStatus(record, activeDraft);
+      const primaryAction = getCustomerPrimaryAction(record, activeDraft);
       const updatedAt = new Date(record.updated_at).toLocaleString("vi-VN");
       const consultDate = record.consult_date ? formatConsultDate(record.consult_date) : "Chưa có ngày";
       const ageGroup = ageGroupLabel(record.age_group);
       return `
         <article class="customer-card">
           <div>
-            <strong>${escapeHtml(record.customer_name || "Chưa nhập")} - ${escapeHtml(record.customer_code)} <span class="status-chip">${escapeHtml(status)}</span></strong>
+            <strong>${escapeHtml(record.customer_name || "Chưa nhập")} - ${escapeHtml(record.customer_code)} <span class="status-chip">${escapeHtml(operationalStatus.label)}</span></strong>
             <span>${escapeHtml(record.customer_phone || "Chưa có SĐT")} | ${escapeHtml(consultDate)} | ${escapeHtml(ageGroup)} | ${escapeHtml(label)} | ${escapeHtml(purpose)} | ${escapeHtml(rxTag)}</span>
             <span class="customer-note">${escapeHtml(record.customer_notes || "Chưa có ghi chú")}</span>
+            <span>Bước tiếp: ${escapeHtml(operationalStatus.nextStep)}</span>
             <span>Cập nhật: ${escapeHtml(updatedAt)}</span>
           </div>
           <div class="customer-actions">
-            <button type="button" data-load-customer="${escapeHtml(record.customer_code)}">Tiếp tục tư vấn</button>
+            <button type="button" data-load-customer="${escapeHtml(record.customer_code)}" data-open-intent="${escapeHtml(primaryAction.status)}">${escapeHtml(primaryAction.label)}</button>
             <button type="button" class="danger-action" data-delete-customer="${escapeHtml(record.customer_code)}">Xóa</button>
           </div>
         </article>
@@ -4404,7 +4680,24 @@ function loadCustomerRecord(customerCode) {
   applyPreferences(record.preferences);
   lensWidthMmInput.value = record.lens_width_mm ?? record.preferences?.lens_width_mm ?? "";
   bridgeWidthMmInput.value = record.bridge_width_mm ?? record.preferences?.bridge_width_mm ?? "";
+  currentSessionCode = record.session_code || createSessionCode();
+  ensureCurrentSessionCode();
   manualConsultationMode = record.consultation_mode === "manual";
+  persistedConsultationResult = record.consultation_result || null;
+  persistedConsultationContext = persistedConsultationResult
+    ? createConsultationContext({
+        customerId: record.customer_code,
+        draftId: "",
+        sessionCode: record.session_code || currentSessionCode
+      })
+    : null;
+  savedConsultationSignature = persistedConsultationResult
+    ? getConsultationSignature({
+        ...persistedConsultationResult,
+        savedAt: "pending"
+      })
+    : "";
+  consultationSaveError = "";
 
   if (record.analysis) {
     latestAnalysis = record.analysis;
@@ -4424,6 +4717,12 @@ function loadCustomerRecord(customerCode) {
       ? record.recommendations
       : (confirmedFaceShape ? getFrameRecommendations(confirmedFaceShape) : []);
     latestLensRecommendations = record.lens_recommendations || getLensRecommendations(readPreferences());
+    latestResultContext = createConsultationContext({
+      customerId: record.customer_code,
+      draftId: "",
+      sessionCode: record.session_code || currentSessionCode
+    });
+    latestRecommendationContext = latestResultContext;
     faceShapeText.textContent = confirmedFaceShape ? getFaceShapeLabel(confirmedFaceShape) : record.analysis.label;
     if (confirmedFaceShapeInput) {
       confirmedFaceShapeInput.value = confirmedFaceShape;
@@ -4441,7 +4740,22 @@ function loadCustomerRecord(customerCode) {
     confirmedFaceShapeSource = confirmedFaceShape ? "manual" : "";
     autoScanState = createAutoScanState();
     updateScanHud();
-    latestRecommendations = [];
+    latestRecommendations = persistedConsultationResult
+      ? [
+          persistedConsultationResult.primaryFrameRecommendation,
+          ...(persistedConsultationResult.alternativeFrameRecommendations || [])
+        ].filter(Boolean)
+      : [];
+    latestRecommendationContext = null;
+    latestLensRecommendations = persistedConsultationResult?.lensRecommendations || [];
+    latestResultContext = persistedConsultationResult
+      ? createConsultationContext({
+          customerId: record.customer_code,
+          draftId: "",
+          sessionCode: record.session_code || currentSessionCode
+        })
+      : null;
+    latestRecommendationContext = null;
     lastRenderedShape = "";
     faceShapeText.textContent = "Đang chờ";
     if (confirmedFaceShapeInput) {
@@ -4466,8 +4780,6 @@ function loadCustomerRecord(customerCode) {
   updateCameraStatus(0, record.analysis || null);
   renderConsultationSummary();
 
-  currentSessionCode = record.session_code || createSessionCode();
-  ensureCurrentSessionCode();
   operationDraftId = createOperationDraftId();
   operationDraftCreatedAt = new Date().toISOString();
   operationCustomerId = record.customer_code;
@@ -4764,6 +5076,9 @@ function updateMobileActionBar() {
   mobileSaveButton.classList.toggle("is-active", activeTabId === "tab-1");
   mobileScanButton.classList.toggle("is-active", activeTabId === "tab-3");
   mobileConsultButton.classList.toggle("is-active", activeTabId === "tab-4");
+  if (activeTabId !== "tab-4") {
+    mobileConsultButton.textContent = "Tư vấn";
+  }
   mobileConsultButton.disabled = !getConsultationSource(buildWorkflowContext()).valid;
 }
 
@@ -4799,7 +5114,7 @@ async function handleWorkflowNext() {
   }
 
   if (action.action === "complete_consultation") {
-    markCustomerAsMeasured();
+    markCustomerAsMeasuredSafely();
   }
 }
 
@@ -4844,7 +5159,10 @@ function readCustomerSnapshot() {
     faceShape_confirmed: confirmedFaceShape || latestAnalysis?.faceShape_confirmed || "",
     consultation_mode: manualConsultationMode ? "manual" : "visionid",
     recommendations: latestRecommendations,
-    lens_recommendations: latestLensRecommendations
+    lens_recommendations: latestLensRecommendations,
+    consultation_result: persistedConsultationResult,
+    consultation_saved_at: persistedConsultationResult?.savedAt || "",
+    consultation_source: persistedConsultationResult?.consultationSource || ""
   };
 
   return hasVisionAnalysisConsent() ? snapshot : purgeStoredVisionAnalysis(snapshot);
@@ -4980,11 +5298,13 @@ function renderCustomerSessionHeader() {
   if (currentCustomerPhoneLabel) currentCustomerPhoneLabel.textContent = phone;
   if (currentCustomerStepLabel) currentCustomerStepLabel.textContent = stepLabel;
   if (currentCustomerSourceLabel) {
-    currentCustomerSourceLabel.textContent = operationCustomerId ? "Ho so da luu" : "Phien moi";
+    currentCustomerSourceLabel.textContent = getCurrentDetailedConsultationSource().valid
+      ? getCurrentDetailedConsultationSource().label
+      : (operationCustomerId ? "Ho so da luu" : "Phien moi");
   }
   if (currentCustomerSaveStateLabel) {
-    const label = getOperationSaveStateLabel();
-    currentCustomerSaveStateLabel.textContent = label.text;
+    const label = getActiveTabId() === "tab-4" ? getCurrentConsultationSaveState() : getOperationSaveStateLabel();
+    currentCustomerSaveStateLabel.textContent = label.text || label.label;
     currentCustomerSaveStateLabel.dataset.state = label.state;
   }
 }
@@ -5132,13 +5452,20 @@ function closeContextChangeDialog({ restoreFocus = true } = {}) {
   modalReturnFocusElement = null;
 }
 
-function requestOpenCustomer(customerId, source = "customer-list") {
+function requestOpenCustomer(customerId, source = "customer-list", intent = "") {
   if (!customerId) {
     return;
   }
   requestCustomerContextChange(() => {
     loadCustomerRecord(customerId);
     operationDraftSource = "existing";
+    if (intent === "result_saved") {
+      showTab("tab-4");
+    } else if (intent === "consulting") {
+      showTab("tab-1");
+    } else {
+      showTab("tab-0");
+    }
     renderCustomerSessionHeader();
     updateCameraDebug({ customerOpenSource: source });
   });
@@ -5433,6 +5760,7 @@ function updateAdvice() {
 
   if (!adviceFaceShape && !manualConsultationMode) {
     latestRecommendations = [];
+    latestRecommendationContext = null;
     frameList.innerHTML = `<p class="empty-state">Hoàn tất VisionID để lấy gợi ý kiểu gọng nên thử.</p>`;
     renderConsultationSummary();
     updateWorkflowAssistant();
@@ -5442,6 +5770,7 @@ function updateAdvice() {
   latestRecommendations = manualConsultationMode && !adviceFaceShape
     ? getManualFrameRecommendations(preferences)
     : getFrameRecommendations(adviceFaceShape);
+  latestRecommendationContext = latestResultContext || getCurrentConsultationContext();
   renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences), !latestAnalysis && !manualConsultationMode);
   renderConsultationSummary();
   updateWorkflowAssistant();
@@ -5530,17 +5859,63 @@ function hasActionableLensData(preferences, lensAdvice) {
   return hasPrescriptionData || hasSpecificPurpose || hasExplicitLevel || preferences.budget === "premium";
 }
 
+function renderConsultationActions() {
+  const labels = getConsultationStatusText();
+  const saveState = getCurrentConsultationSaveState();
+  const source = getCurrentDetailedConsultationSource();
+  const canSave = source.valid && Boolean(latestRecommendations.length) && !consultationSaveInFlight;
+
+  if (consultationSourceBadge) consultationSourceBadge.textContent = labels.sourceLabel;
+  if (consultationResultState) consultationResultState.textContent = labels.resultLabel;
+  if (consultationSavedState) {
+    consultationSavedState.textContent = labels.saveLabel;
+    consultationSavedState.dataset.state = saveState.state;
+  }
+  if (consultationMeasuredState) consultationMeasuredState.textContent = labels.measuredLabel;
+  if (consultationSaveStatus) {
+    consultationSaveStatus.textContent = consultationSaveError || labels.limitation;
+    consultationSaveStatus.setAttribute("role", consultationSaveError ? "alert" : "status");
+  }
+  if (saveConsultationButton) {
+    saveConsultationButton.disabled = !canSave;
+    saveConsultationButton.textContent = saveState.actionLabel;
+    saveConsultationButton.setAttribute("aria-busy", consultationSaveInFlight ? "true" : "false");
+  }
+  if (startNextCustomerButton) {
+    startNextCustomerButton.hidden = saveState.state !== "saved" && saveState.state !== "measured";
+  }
+  if (consultationActionPanel) {
+    consultationActionPanel.dataset.saveState = saveState.state;
+  }
+  updateMobileConsultationCta(saveState, canSave);
+}
+
+function updateMobileConsultationCta(saveState, canSave) {
+  if (!mobileConsultButton || getActiveTabId() !== "tab-4") {
+    return;
+  }
+  mobileConsultButton.textContent = canSave ? saveState.actionLabel : "Tư vấn";
+  mobileConsultButton.disabled = !canSave && !getCurrentDetailedConsultationSource().valid;
+}
+
 function renderConsultationSummary() {
   if (!consultationSummary) {
     return;
   }
 
+  renderConsultationActions();
+  const source = getCurrentDetailedConsultationSource();
+  const presentation = getConsultationPresentation(
+    source.valid ? latestRecommendations : [],
+    source,
+    { lensRecommendations: latestLensRecommendations }
+  );
   const draftFaceShape = getDraftFaceShapeForAdvice();
   const summaryFaceShape = confirmedFaceShape || draftFaceShape || (latestAnalysis?.metrics ? "oval" : "");
   const isManualConsultation = manualConsultationMode && !summaryFaceShape;
   const isDraft = !confirmedFaceShape && Boolean(draftFaceShape);
 
-  if (!summaryFaceShape && !isManualConsultation) {
+  if (presentation.empty || (!summaryFaceShape && !isManualConsultation)) {
     consultationSummary.innerHTML = `
       <p class="empty-state">Hoàn tất VisionID để tạo kết luận tư vấn gọng.</p>
     `;
@@ -5567,8 +5942,8 @@ function renderConsultationSummary() {
     prescription: customer.prescription || {},
     preference: preferences.frame_preference
   });
-  const topFrames = (latestRecommendations.length
-    ? latestRecommendations
+  const topFrames = ([presentation.primary, ...presentation.alternatives].filter(Boolean).length
+    ? [presentation.primary, ...presentation.alternatives].filter(Boolean)
     : (isManualConsultation ? getManualFrameRecommendations(preferences) : getFrameRecommendations(summaryFaceShape)))
     .slice(0, 3);
   const trialPlan = buildFrameTrialPlan(directAdvice, topFrames, publicEvidence);
@@ -5852,12 +6227,7 @@ function enrichFrameRecommendations(frames, preferences) {
 
 function resetAdviceState() {
   clearUploadedImagePreview({ revoke: true, clearOverlay: true, reason: "reset-advice" });
-  latestAnalysis = null;
-  latestAiFaceShape = "";
-  confirmedFaceShape = "";
-  manualConsultationMode = false;
-  latestRecommendations = [];
-  latestLensRecommendations = [];
+  resetVolatileConsultationState({ keepPersisted: true });
   lastRenderedShape = "";
   faceShapeText.textContent = "Đang chờ";
   if (confirmedFaceShapeInput) {
@@ -5892,6 +6262,39 @@ function markCustomerAsMeasured() {
   updateWorkflowAssistant();
 }
 
+function markCustomerAsMeasuredSafely() {
+  const record = findCurrentCustomerRecord();
+  if (!record) {
+    statusText.textContent = "Can luu ho so khach truoc khi danh dau da do";
+    return;
+  }
+
+  const source = getCurrentDetailedConsultationSource();
+  if (!source.valid && !record.consultation_result) {
+    statusText.textContent = "Can co ket qua tu van hoac tu van thu cong truoc khi danh dau da do";
+    return;
+  }
+
+  customerStatusInput.value = "measured";
+  const updatedRecord = saveCustomer({
+    ...record,
+    ...readCustomerSnapshot(),
+    customer_code: record.customer_code,
+    customer_status: "measured",
+    consultation_result: record.consultation_result || persistedConsultationResult,
+    consultation_saved_at: record.consultation_saved_at || persistedConsultationResult?.savedAt || "",
+    consultation_source: record.consultation_source || persistedConsultationResult?.consultationSource || ""
+  });
+  persistedConsultationResult = updatedRecord.consultation_result || persistedConsultationResult;
+  persistedConsultationContext = persistedConsultationResult ? getCurrentConsultationContext() : persistedConsultationContext;
+  renderCustomers();
+  renderConsultationActions();
+  syncCurrentCustomer("customerUpdated", updatedRecord);
+  statusText.textContent = "Da chuyen sang trang thai da do";
+  showTab("tab-4");
+  updateWorkflowAssistant();
+}
+
 function openManualConsultationDialog(trigger = null) {
   if (!manualConsultationDialog || !manualConsultationDialogPanel) {
     enableManualConsultation();
@@ -5917,6 +6320,7 @@ function enableManualConsultation() {
   latestAiFaceShape = "";
   confirmedFaceShape = "";
   confirmedFaceShapeSource = "";
+  stampCurrentResultContext();
   statusText.textContent = "\u0110ang t\u01b0 v\u1ea5n th\u1ee7 c\u00f4ng";
   faceShapeText.textContent = "T\u01b0 v\u1ea5n th\u1ee7 c\u00f4ng";
   if (confirmedFaceShapeInput) {
@@ -6131,7 +6535,7 @@ customerStatusInput.addEventListener("change", () => {
 });
 
 if (markMeasuredButton) {
-  markMeasuredButton.addEventListener("click", markCustomerAsMeasured);
+  markMeasuredButton.addEventListener("click", markCustomerAsMeasuredSafely);
 }
 
 if (cameraModeButton) {
@@ -6226,6 +6630,51 @@ if (customerViewToggle) {
 
 if (saveFeedbackButton) {
   saveFeedbackButton.addEventListener("click", saveFeedback);
+}
+
+if (saveConsultationButton) {
+  saveConsultationButton.addEventListener("click", () => {
+    saveConsultationResult();
+  });
+}
+
+if (adjustNeedsButton) {
+  adjustNeedsButton.addEventListener("click", () => {
+    requestWorkflowNavigation("needs", "consultation-adjust-needs");
+  });
+}
+
+if (revisitVisionButton) {
+  revisitVisionButton.addEventListener("click", () => {
+    requestWorkflowNavigation("visionid", "consultation-revisit-vision");
+  });
+}
+
+if (startNextCustomerButton) {
+  startNextCustomerButton.addEventListener("click", () => {
+    const saveState = getCurrentConsultationSaveState();
+    if (saveState.state !== "saved" && saveState.state !== "measured") {
+      return;
+    }
+    startNewOperationSession({ clearDraft: true });
+    showTab("tab-0");
+    customerNameInput?.focus?.();
+  });
+}
+
+if (consultationSummary) {
+  consultationSummary.addEventListener("click", (event) => {
+    const action = event.target?.dataset?.consultationAction;
+    if (action === "needs") {
+      requestWorkflowNavigation("needs", "consultation-empty-needs");
+    }
+    if (action === "visionid") {
+      requestWorkflowNavigation("visionid", "consultation-empty-visionid");
+    }
+    if (action === "manual") {
+      openManualConsultationDialog(event.target);
+    }
+  });
 }
 
 if (workflowNextButton) {
@@ -6409,7 +6858,7 @@ customerList.addEventListener("click", (event) => {
   const createFromSearchButton = event.target.closest("[data-create-customer-from-search]");
 
   if (loadButton) {
-    requestOpenCustomer(loadButton.dataset.loadCustomer, "customer-list");
+    requestOpenCustomer(loadButton.dataset.loadCustomer, "customer-list", loadButton.dataset.openIntent || "");
   }
 
   if (createFromSearchButton) {

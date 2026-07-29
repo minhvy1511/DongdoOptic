@@ -124,6 +124,9 @@ export function normalizeCustomerRecord(record) {
     faceShape_confirmed: record.faceShape_confirmed || record.analysis?.faceShape_confirmed || "",
     recommendations: Array.isArray(record.recommendations) ? record.recommendations : [],
     lens_recommendations: Array.isArray(record.lens_recommendations) ? record.lens_recommendations : [],
+    consultation_result: record.consultation_result || null,
+    consultation_saved_at: record.consultation_saved_at || record.consultation_result?.savedAt || "",
+    consultation_source: record.consultation_source || record.consultation_result?.consultationSource || "",
     snapshot: record.snapshot || {},
     created_at: record.created_at || now,
     updated_at: record.updated_at || now

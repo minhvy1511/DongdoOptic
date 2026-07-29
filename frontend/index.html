@@ -447,6 +447,21 @@
               <p class="eyebrow">Kết luận</p>
               <h2>Tóm tắt tư vấn cho khách</h2>
             </div>
+            <div id="consultationActionPanel" class="consultation-action-panel" aria-live="polite">
+              <div class="consultation-action-status">
+                <span id="consultationSourceBadge" class="status-chip">Chua co nguon tu van</span>
+                <span id="consultationResultState" class="status-chip">Chua co ket qua</span>
+                <span id="consultationSavedState" class="status-chip">Ket qua chua luu</span>
+                <span id="consultationMeasuredState" class="status-chip">Chua danh dau da do</span>
+              </div>
+              <div class="consultation-action-buttons">
+                <button id="saveConsultationButton" type="button">Luu ket qua tu van</button>
+                <button id="adjustNeedsButton" type="button" class="secondary-action">Dieu chinh nhu cau</button>
+                <button id="revisitVisionButton" type="button" class="secondary-action">Quay lai VisionID</button>
+                <button id="startNextCustomerButton" type="button" class="secondary-action" hidden>Bat dau khach tiep theo</button>
+              </div>
+              <p id="consultationSaveStatus" class="consultation-save-status" aria-live="polite">Ket qua tu van se chi luu du lieu nghiep vu tong hop.</p>
+            </div>
             <div id="consultationSummary" class="consultation-summary">
               <p class="empty-state">Hoàn tất VisionID để tạo kết luận tư vấn gọng.</p>
             </div>

@@ -2138,9 +2138,67 @@ h1 {
   gap: 16px;
 }
 
+.consultation-action-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid rgba(15, 92, 86, 0.16);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(238, 247, 245, 0.82));
+}
+
+.consultation-action-status,
+.consultation-action-buttons,
+.consultation-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.consultation-action-buttons {
+  justify-content: flex-end;
+}
+
+.consultation-action-buttons button,
+.consultation-empty-actions button {
+  min-height: 40px;
+}
+
+.consultation-save-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.consultation-action-panel[data-save-state="error"] .consultation-save-status {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.consultation-empty-state {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px dashed rgba(15, 92, 86, 0.28);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.consultation-empty-state strong {
+  font-size: 18px;
+}
+
+.consultation-empty-state p {
+  margin: 0;
+  color: var(--muted);
+}
+
 .consult-command-strip {
   display: grid;
-  grid-template-columns: 0.9fr 1.1fr 1.2fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -3198,6 +3256,18 @@ h1 {
 
   .mobile-action-bar button:disabled {
     opacity: 0.42;
+  }
+
+  .consultation-action-panel {
+    padding: 12px;
+  }
+
+  .consultation-action-buttons {
+    justify-content: stretch;
+  }
+
+  .consultation-action-buttons button {
+    flex: 1 1 150px;
   }
 
   body:has(#tab-3.active) .mobile-action-bar {
