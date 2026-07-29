@@ -1,4 +1,4 @@
-import { startUserCamera } from "./camera.js?v=20260729-82";
+import { startUserCamera } from "./camera.js?v=20260729-85";
 import {
   clearCanvas,
   drawCalibrationGuide,
@@ -8,8 +8,8 @@ import {
   getRenderContextForImage,
   getRenderDiagnostics,
   resizeCanvasToVideo
-} from "./drawing.js?v=20260729-84";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-81";
+} from "./drawing.js?v=20260729-85";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-85";
 import {
   buildRecommendationDiagnostics,
   getColorGuidance,
@@ -19,11 +19,11 @@ import {
   getMaterialRecommendations,
   getPublicAdviceEvidence,
   getPublicAdviceSourceLabel
-} from "./recommendations.js?v=20260729-82";
-import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260728-75";
-import { detectFaceLandmarksForImage, detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js?v=20260729-84";
-import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js";
-import { DISTANCE_LANDMARKS as VISION_DISTANCE_LANDMARKS } from "./vision/landmark-map.js";
+} from "./recommendations.js?v=20260729-85";
+import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260729-85";
+import { detectFaceLandmarksForImage, detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js?v=20260729-85";
+import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js?v=20260729-85";
+import { DISTANCE_LANDMARKS as VISION_DISTANCE_LANDMARKS } from "./vision/landmark-map.js?v=20260729-85";
 import {
   DEVICE_PROFILES,
   detectDeviceProfile,
@@ -34,14 +34,14 @@ import {
   shouldFallbackToUploadAfterCameraError,
   shouldUseUploadFallback,
   withCameraStartupStatus
-} from "./vision/device-profile.js?v=20260729-84";
+} from "./vision/device-profile.js?v=20260729-85";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
   evaluateScanFrameQuality,
   getVisionLimitations
-} from "./vision/quality-gate.js";
-import { buildConsentScopedVisionFeedback, isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js";
+} from "./vision/quality-gate.js?v=20260729-85";
+import { buildConsentScopedVisionFeedback, isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js?v=20260729-85";
 import {
   createCustomerCode,
   createSessionCode,
@@ -51,7 +51,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260720-39";
+} from "./customer-store.js?v=20260729-85";
 
 const video = document.getElementById("webcam");
 const uploadedFaceImage = document.getElementById("uploadedFaceImage");
@@ -1504,7 +1504,7 @@ function ensureCurrentSessionCode() {
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
   landmarkerModeSwitchInFlight = true;
-  const landmarkerModule = await import("./face-landmarker.js?v=20260729-84");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260729-85");
   try {
     faceLandmarker = await landmarkerModule.createFaceLandmarker();
     drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
@@ -1524,7 +1524,7 @@ async function initializeImageLandmarker() {
 
   statusText.textContent = "Đang tải mô hình ảnh";
   landmarkerModeSwitchInFlight = true;
-  const landmarkerModule = await import("./face-landmarker.js?v=20260729-84");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260729-85");
   try {
     imageFaceLandmarker = await landmarkerModule.createFaceLandmarker({ runningMode: "IMAGE" });
     FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
