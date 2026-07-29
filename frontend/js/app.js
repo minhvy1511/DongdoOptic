@@ -1,7 +1,8 @@
-import { startUserCamera } from "./camera.js?v=20260729-80";
+import { startUserCamera } from "./camera.js?v=20260729-82";
 import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-39";
 import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-81";
 import {
+  buildRecommendationDiagnostics,
   getColorGuidance,
   getFaceShapeAdvice,
   getFitGuidance,
@@ -9,7 +10,7 @@ import {
   getMaterialRecommendations,
   getPublicAdviceEvidence,
   getPublicAdviceSourceLabel
-} from "./recommendations.js?v=20260723-71";
+} from "./recommendations.js?v=20260729-82";
 import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260728-75";
 import { detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js";
 import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js";
@@ -134,10 +135,13 @@ let currentSessionCode = "";
 let analysisHistory = [];
 let currentCameraMode = getDefaultCameraMode();
 let currentCameraStream = null;
+let cameraRequestInFlight = null;
 let cameraSessionToken = 0;
 let isAnalyzingFace = false;
 let confirmedFaceShapeSource = "";
 let manualConsultationMode = false;
+let latestCameraDebug = {};
+let latestRecommendationDebug = null;
 let autoScanState = createAutoScanState();
 
 const CONFIDENCE_THRESHOLDS = {
@@ -243,6 +247,7 @@ const FEEDBACK_STORAGE_KEY = "dongdo_optic_feedback";
 const FEEDBACK_API_URL = "/api/feedback";
 const VISION_DEBUG_ENABLED = new URLSearchParams(window.location.search).get("visionDebug") === "1";
 let visionDebugPanel = null;
+let visionDebugCameraButton = null;
 
 function createAutoScanState() {
   return {
@@ -1461,17 +1466,39 @@ function updateCameraStartButton({ active = false, loading = false } = {}) {
 }
 
 async function enableCamera() {
+  if (cameraRequestInFlight) {
+    return cameraRequestInFlight;
+  }
+
+  cameraRequestInFlight = openCameraFlow().finally(() => {
+    cameraRequestInFlight = null;
+  });
+  return cameraRequestInFlight;
+}
+
+async function openCameraFlow() {
   updateCameraStartButton({ loading: true });
+  const sessionToken = ++cameraSessionToken;
+  updateCameraDebug({
+    permissionRequestPhase: "before-request",
+    requestedFacingMode: currentCameraMode,
+    scanId: sessionToken
+  });
 
   try {
+    statusText.textContent = "Đang mở camera";
+    stopCurrentCameraStream({ silent: true });
+    currentCameraStream = await startUserCamera(video, { facingMode: currentCameraMode });
+    updateCameraDebug({
+      permissionRequestPhase: "camera-opened",
+      requestedConstraints: currentCameraStream?.visionCameraDiagnostics?.requestedConstraints || null,
+      fallbackConstraintsUsed: Boolean(currentCameraStream?.visionCameraDiagnostics?.fallbackConstraintsUsed)
+    });
+
     if (!faceLandmarker) {
       await initialize();
     }
 
-    statusText.textContent = "Đang mở camera";
-    stopCurrentCameraStream({ silent: true });
-    const sessionToken = ++cameraSessionToken;
-    currentCameraStream = await startUserCamera(video, { facingMode: currentCameraMode });
     resizeCanvasToVideo(canvas, video);
     cameraPanel?.classList.add("camera-active");
     statusText.textContent = "Đang nhận diện";
@@ -1489,6 +1516,16 @@ async function enableCamera() {
 
 function handleCameraOpenError(error) {
   console.error(error);
+  updateCameraDebug({
+    permissionRequestPhase: "failed",
+    cameraErrorName: error?.name || "",
+    cameraErrorCode: error?.code || "",
+    cameraErrorMessage: error?.message || "",
+    cameraErrorConstraint: error?.constraint || "",
+    requestedConstraints: error?.diagnostics?.requestedConstraints || null,
+    fallbackConstraintsUsed: Boolean(error?.diagnostics?.fallbackConstraintsUsed),
+    playPromiseError: error?.diagnostics?.playPromiseError || ""
+  });
   stopCurrentCameraStream({ silent: true });
   updateCameraStartButton({ active: false });
   if (analyzeFaceButton) {
@@ -1500,8 +1537,35 @@ function handleCameraOpenError(error) {
   }
   updateVisionDebugPanel({
     reasonCode: error?.code || error?.name || "CAMERA_OPEN_ERROR",
-    mediaPipeError: error?.message || "camera open failed"
+    mediaPipeError: error?.message || "camera open failed",
+    cameraErrorName: error?.name || "",
+    cameraErrorCode: error?.code || "",
+    cameraErrorMessage: error?.message || ""
   });
+}
+
+function updateCameraDebug(details = {}) {
+  latestCameraDebug = {
+    ...latestCameraDebug,
+    ...details,
+    userAgent: navigator.userAgent || "",
+    platform: navigator.platform || "",
+    isSecureContext: Boolean(window.isSecureContext),
+    documentVisibilityState: document.visibilityState || "",
+    documentHasFocus: typeof document.hasFocus === "function" ? document.hasFocus() : null,
+    hasMediaDevices: Boolean(navigator.mediaDevices),
+    hasGetUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
+    activeStreamCount: currentCameraStream?.getTracks?.().filter((track) => track.readyState === "live").length || 0,
+    currentTrackReadyState: currentCameraStream?.getVideoTracks?.()[0]?.readyState || "",
+    currentTrackMuted: currentCameraStream?.getVideoTracks?.()[0]?.muted ?? null,
+    currentTrackEnabled: currentCameraStream?.getVideoTracks?.()[0]?.enabled ?? null,
+    videoReadyState: video?.readyState ?? null,
+    videoWidth: video?.videoWidth || 0,
+    videoHeight: video?.videoHeight || 0,
+    videoPaused: video?.paused ?? null,
+    videoEnded: video?.ended ?? null
+  };
+  updateVisionDebugPanel({ cameraDebug: latestCameraDebug });
 }
 
 function getCameraErrorMessage(error) {
@@ -2008,10 +2072,17 @@ function renderCustomerResult() {
   customerResultCard?.classList.toggle("has-result", Boolean(shape));
 }
 
-function getDirectFrameAdvice(metrics = {}, fallbackShape = "") {
+function getDirectFrameAdvice(metrics = {}, fallbackShape = "", options = {}) {
   const lengthToWidth = Number(metrics.lengthToWidth || 0);
   const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
   const jawToCheek = Number(metrics.jawToCheek || 0);
+  const recommendationDiagnostics = buildRecommendationDiagnostics({
+    metrics,
+    classification: options.classification || getAnalysisDebugSummary(latestAnalysis) || {},
+    confidence: options.confidence ?? latestAnalysis?.quality?.confidence ?? 0,
+    adviceSource: options.adviceSource || (latestAnalysis ? "visionid" : "manual-or-generic"),
+    hasPhysicalCalibration: false
+  });
   const cheekToJaw = Number(metrics.cheekToJaw || 0);
   const shapeAdvice = fallbackShape && fallbackShape !== "unknown" ? getFaceShapeAdvice(fallbackShape) : getFaceShapeAdvice("oval");
   const advice = {
@@ -2020,7 +2091,10 @@ function getDirectFrameAdvice(metrics = {}, fallbackShape = "") {
     choose: [...shapeAdvice.choose],
     avoid: [...shapeAdvice.avoid],
     fit: [...shapeAdvice.fit],
-    summary: "Tỷ lệ khuôn mặt khá cân bằng, nên bắt đầu bằng các form dễ đeo rồi tinh chỉnh theo độ rộng gò má và chân mày."
+    summary: "Tỷ lệ khuôn mặt khá cân bằng, nên bắt đầu bằng các form dễ đeo rồi tinh chỉnh theo độ rộng gọng, bridge và chân mày.",
+    personalizedAdvice: [...recommendationDiagnostics.personalizedAdvice],
+    genericAdvice: [...recommendationDiagnostics.genericAdvice],
+    recommendationDiagnostics
   };
 
   if (lengthToWidth >= 1.5) {
@@ -2042,11 +2116,11 @@ function getDirectFrameAdvice(metrics = {}, fallbackShape = "") {
     advice.avoid = uniqueList(["Gọng vuông sắc", ...advice.avoid]);
   }
 
-  if (cheekToJaw >= 1.14) {
-    advice.headline = "Ưu tiên gọng không bó gò má";
-    advice.summary += " Gò má là vùng nổi bật, cần chọn bề ngang gọng nhỉnh nhẹ và viền dưới mềm.";
+  if (recommendationDiagnostics.cheekWarningTriggered) {
+    advice.headline = "Ưu tiên gọng làm mềm vùng gò má";
+    advice.summary += " VisionID ghi nhận tín hiệu gò má nổi bật; khi thử gọng, kiểm tra bề ngang không ép vùng gò má.";
     advice.choose = uniqueList(["Oval bản vừa", "Cat-eye nhẹ", "Rimless", "Browline mềm", ...advice.choose]);
-    advice.avoid = uniqueList(["Gọng hẹp bó sát gò má", "Gọng quá nhỏ", ...advice.avoid]);
+    advice.avoid = uniqueList(["Form quá hẹp ở hai bên", "Gọng quá nhỏ", ...advice.avoid]);
   }
 
   if (foreheadToCheek >= 0.96 && jawToCheek <= 0.88) {
@@ -2059,12 +2133,25 @@ function getDirectFrameAdvice(metrics = {}, fallbackShape = "") {
   advice.choose = advice.choose.slice(0, 4);
   advice.avoid = advice.avoid.slice(0, 3);
   advice.fit = uniqueList([
-    "Bề ngang gọng nên xấp xỉ hoặc nhỉnh nhẹ hơn điểm rộng nhất khuôn mặt.",
+    ...advice.personalizedAdvice,
     "Đường trên gọng nên đi theo chân mày, không che biểu cảm mắt.",
     ...advice.fit
   ]).slice(0, 4);
 
+  if (!recommendationDiagnostics.cheekWarningTriggered) {
+    advice.avoid = advice.avoid.filter((item) => !isCheekSpecificAdvice(item));
+    advice.fit = advice.fit.filter((item) => !isCheekSpecificAdvice(item));
+  }
+
+  latestRecommendationDebug = recommendationDiagnostics;
+  updateVisionDebugPanel({ recommendationDebug: latestRecommendationDebug });
+
   return advice;
+}
+
+function isCheekSpecificAdvice(text = "") {
+  const value = String(text).toLowerCase();
+  return value.includes("gò má") || value.includes("go ma");
 }
 
 function getManualDirectFrameAdvice(preferences = {}) {
@@ -2085,7 +2172,7 @@ function getManualDirectFrameAdvice(preferences = {}) {
     principle: "Chưa dùng VisionID để chốt hình thái khuôn mặt. Ưu tiên độ rộng gọng, vị trí đồng tử, bridge, chân mày và cảm giác đeo thực tế.",
     choose,
     avoid: [
-      "Gọng quá hẹp bó sát gò má",
+      "Gọng quá hẹp hoặc ép hai bên thái dương",
       "Gọng quá nặng làm trượt sống mũi",
       "Tròng quá dẹt nếu khách có khuôn mặt dài hoặc cần vùng nhìn rộng"
     ],
@@ -2095,7 +2182,7 @@ function getManualDirectFrameAdvice(preferences = {}) {
       "Bridge phải ngồi chắc trên sống mũi, không tạo vết hằn và không trượt khi cúi đầu.",
       "Đường trên gọng nên đi theo chân mày, không che biểu cảm mắt."
     ],
-    summary: "Dùng quy trình thủ công khi camera/AI chưa sẵn sàng: thử nhanh 2-3 form dễ đeo, loại form gây bó gò má hoặc trượt mũi, sau đó ghi góp ý để hiệu chuẩn app."
+    summary: "Dùng quy trình thủ công khi camera/AI chưa sẵn sàng: thử nhanh 2-3 form dễ đeo, loại form ép hai bên mặt hoặc trượt mũi, sau đó ghi góp ý để hiệu chuẩn app."
   };
 }
 
@@ -2579,7 +2666,7 @@ function buildFrameTrialPlan(directAdvice = {}, topFrames = [], publicEvidence =
       {
         label: "Loại nhanh",
         title: avoid,
-        note: `${fit} Nếu gọng làm gò má/hàm bị nặng hơn, chuyển sang form mềm hoặc rộng hơn.`
+        note: `${fit} Nếu gọng làm hai bên mặt hoặc đường hàm bị nặng hơn, chuyển sang form mềm hoặc rộng hơn.`
       }
     ],
     evidence: evidence.slice(0, 3)
@@ -2689,9 +2776,13 @@ function updateVisionDebugPanel(payload = {}) {
     document.body.appendChild(visionDebugPanel);
   }
 
+  ensureVisionDebugCameraButton();
+
   const debugSummary = getAnalysisDebugSummary(payload.analysis || latestAnalysis) || {};
   const diagnostics = (payload.analysis || latestAnalysis)?.diagnostics || {};
   const qualityGate = diagnostics.qualityGate || {};
+  const cameraDebug = payload.cameraDebug || latestCameraDebug || {};
+  const recommendationDebug = payload.recommendationDebug || latestRecommendationDebug || {};
   const formatMetric = (value, digits = 3) => Number.isFinite(Number(value))
     ? Number(value).toFixed(digits)
     : "-";
@@ -2741,12 +2832,106 @@ function updateVisionDebugPanel(payload = {}) {
     winningLabel: debugSummary.winningLabel || "-",
     secondLabel: debugSummary.secondLabel || "-",
     scoreMargin: formatMetric(debugSummary.scoreMargin),
-    invalidMetricReason: debugSummary.invalidMetricReason || "-"
+    invalidMetricReason: debugSummary.invalidMetricReason || "-",
+    cameraPhase: cameraDebug.permissionRequestPhase || "-",
+    cameraErrorName: payload.cameraErrorName || cameraDebug.cameraErrorName || "-",
+    cameraErrorCode: payload.cameraErrorCode || cameraDebug.cameraErrorCode || "-",
+    cameraErrorMessage: payload.cameraErrorMessage || cameraDebug.cameraErrorMessage || "-",
+    cameraErrorConstraint: cameraDebug.cameraErrorConstraint || "-",
+    requestedConstraints: cameraDebug.requestedConstraints ? JSON.stringify(cameraDebug.requestedConstraints) : "-",
+    fallbackConstraintsUsed: cameraDebug.fallbackConstraintsUsed ?? false,
+    activeStreamCount: cameraDebug.activeStreamCount ?? "-",
+    currentTrackReadyState: cameraDebug.currentTrackReadyState || "-",
+    currentTrackMuted: cameraDebug.currentTrackMuted ?? "-",
+    currentTrackEnabled: cameraDebug.currentTrackEnabled ?? "-",
+    videoReadyState: cameraDebug.videoReadyState ?? "-",
+    videoWidth: cameraDebug.videoWidth ?? "-",
+    videoHeight: cameraDebug.videoHeight ?? "-",
+    videoPaused: cameraDebug.videoPaused ?? "-",
+    videoEnded: cameraDebug.videoEnded ?? "-",
+    playPromiseError: cameraDebug.playPromiseError || "-",
+    pageLifecycleEvent: cameraDebug.pageLifecycleEvent || "-",
+    userAgent: cameraDebug.userAgent || navigator.userAgent || "-",
+    platform: cameraDebug.platform || navigator.platform || "-",
+    isSecureContext: cameraDebug.isSecureContext ?? Boolean(window.isSecureContext),
+    documentVisibilityState: cameraDebug.documentVisibilityState || document.visibilityState || "-",
+    hasMediaDevices: cameraDebug.hasMediaDevices ?? Boolean(navigator.mediaDevices),
+    hasGetUserMedia: cameraDebug.hasGetUserMedia ?? Boolean(navigator.mediaDevices?.getUserMedia),
+    winningFaceLabel: recommendationDebug.winningFaceLabel || "-",
+    secondFaceLabel: recommendationDebug.secondFaceLabel || "-",
+    faceLabelMargin: formatMetric(recommendationDebug.faceLabelMargin),
+    recommendationCheekWidthRatio: formatMetric(recommendationDebug.cheekWidthRatio),
+    jawToCheekRatio: formatMetric(recommendationDebug.jawToCheekRatio),
+    foreheadToCheekRatio: formatMetric(recommendationDebug.foreheadToCheekRatio),
+    cheekProminenceScore: formatMetric(recommendationDebug.cheekProminenceScore),
+    cheekWarningThreshold: formatMetric(recommendationDebug.cheekWarningThreshold),
+    cheekWarningTriggered: recommendationDebug.cheekWarningTriggered ?? false,
+    recommendationRuleIds: recommendationDebug.recommendationRuleIds?.join(", ") || "-",
+    personalizedAdvice: recommendationDebug.personalizedAdvice?.join(" | ") || "-",
+    genericAdvice: recommendationDebug.genericAdvice?.join(" | ") || "-",
+    adviceSource: recommendationDebug.adviceSource || "-",
+    invalidRecommendationMetric: recommendationDebug.invalidRecommendationMetric || "-"
   };
 
   visionDebugPanel.textContent = Object.entries(debugData)
     .map(([key, value]) => `${key}: ${value}`)
     .join("\n");
+}
+
+function ensureVisionDebugCameraButton() {
+  if (!VISION_DEBUG_ENABLED || visionDebugCameraButton) {
+    return;
+  }
+
+  visionDebugCameraButton = document.createElement("button");
+  visionDebugCameraButton.type = "button";
+  visionDebugCameraButton.textContent = "Kiểm tra camera";
+  visionDebugCameraButton.style.cssText = [
+    "position:fixed",
+    "right:12px",
+    "bottom:calc(45vh + 28px)",
+    "z-index:10000",
+    "min-height:36px",
+    "padding:8px 12px",
+    "border-radius:8px",
+    "border:1px solid rgba(216,255,244,0.4)",
+    "background:#0b695f",
+    "color:#fff",
+    "font:600 12px system-ui,sans-serif",
+    "box-shadow:0 8px 24px rgba(0,0,0,0.22)"
+  ].join(";");
+  visionDebugCameraButton.addEventListener("click", runVisionDebugCameraCheck);
+  document.body.appendChild(visionDebugCameraButton);
+}
+
+async function runVisionDebugCameraCheck() {
+  if (!VISION_DEBUG_ENABLED || !video) {
+    return;
+  }
+
+  visionDebugCameraButton.disabled = true;
+  visionDebugCameraButton.textContent = "Đang kiểm tra...";
+  updateCameraDebug({
+    permissionRequestPhase: "debug-check-start",
+    pageLifecycleEvent: "debug-camera-check"
+  });
+  let stream = null;
+
+  try {
+    stream = await startUserCamera(video, { facingMode: currentCameraMode, readyTimeoutMs: 5000 });
+    currentCameraStream = stream;
+    updateCameraDebug({
+      permissionRequestPhase: "debug-check-ok",
+      requestedConstraints: stream?.visionCameraDiagnostics?.requestedConstraints || null,
+      fallbackConstraintsUsed: Boolean(stream?.visionCameraDiagnostics?.fallbackConstraintsUsed)
+    });
+    statusText.textContent = "Camera debug OK";
+  } catch (error) {
+    handleCameraOpenError(error);
+  } finally {
+    visionDebugCameraButton.disabled = false;
+    visionDebugCameraButton.textContent = "Kiểm tra camera";
+  }
 }
 
 function getCameraStabilityV2() {
@@ -3075,9 +3260,7 @@ function getVideoFrameSize() {
 }
 
 function getDefaultCameraMode() {
-  const prefersRearCamera = window.matchMedia?.("(max-width: 900px)").matches
-    || window.matchMedia?.("(pointer: coarse)").matches;
-  return prefersRearCamera ? "environment" : "user";
+  return "user";
 }
 
 function updateCameraModeButton() {
@@ -3086,13 +3269,13 @@ function updateCameraModeButton() {
   }
 
   const isRear = currentCameraMode === "environment";
-  cameraModeButton.textContent = isRear ? "Camera sau" : "Camera trước";
+  cameraModeButton.textContent = isRear ? "Đổi sang camera trước" : "Đổi sang camera sau";
   cameraModeButton.setAttribute("aria-pressed", String(isRear));
 
   if (cameraModeHint) {
     cameraModeHint.textContent = isRear
-      ? "Ưu tiên camera sau trên điện thoại"
-      : "Ưu tiên camera trước cho máy bàn";
+      ? "Đang dùng camera sau; nếu khó căn mặt hãy đổi về camera trước."
+      : "Đang dùng camera trước để khách dễ tự căn mặt trên màn hình.";
   }
 }
 
@@ -4654,4 +4837,16 @@ window.addEventListener("customerUpdated", (event) => {
   suppressCurrentCustomerSync = true;
   renderCurrentCustomerSummary(event.detail.customer);
   suppressCurrentCustomerSync = false;
+});
+
+document.addEventListener("visibilitychange", () => {
+  updateCameraDebug({ pageLifecycleEvent: `visibility:${document.visibilityState}` });
+});
+
+window.addEventListener("pagehide", () => {
+  updateCameraDebug({ pageLifecycleEvent: "pagehide" });
+});
+
+window.addEventListener("pageshow", () => {
+  updateCameraDebug({ pageLifecycleEvent: "pageshow" });
 });

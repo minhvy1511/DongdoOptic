@@ -290,6 +290,75 @@ const PUBLIC_ADVICE_EVIDENCE = {
   fit: "Nguồn public và kinh nghiệm fitting đều nhấn mạnh: độ rộng gọng, vị trí đồng tử, bridge và chân mày quan trọng hơn nhãn dạng mặt."
 };
 
+export const CHEEK_WARNING_THRESHOLD = 1.14;
+export const CHEEK_WARNING_CONFIDENCE_MIN = 0.62;
+
+const GENERIC_FIT_ADVICE = [
+  "Thu gong co be ngang phu hop, khong ep hai ben thai duong hoac cham vung go ma.",
+  "Kiem tra chinh gong that tren mat: do rong, bridge, chan may va vi tri dong tu quan trong hon nhan dang mat."
+];
+
+function parseFiniteMetric(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : null;
+}
+
+export function buildRecommendationDiagnostics({
+  metrics = {},
+  classification = {},
+  confidence = 0,
+  adviceSource = "visionid",
+  hasPhysicalCalibration = false
+} = {}) {
+  const cheekToJaw = parseFiniteMetric(metrics.cheekToJaw);
+  const jawToCheek = parseFiniteMetric(metrics.jawToCheek);
+  const foreheadToCheek = parseFiniteMetric(metrics.foreheadToCheek);
+  const lengthToWidth = parseFiniteMetric(metrics.lengthToWidth);
+  const confidenceValue = Number(confidence);
+  const validConfidence = Number.isFinite(confidenceValue) ? confidenceValue : 0;
+  const invalidRecommendationMetric = [
+    !cheekToJaw ? "cheekToJaw" : "",
+    !jawToCheek ? "jawToCheek" : "",
+    !foreheadToCheek ? "foreheadToCheek" : "",
+    !lengthToWidth ? "lengthToWidth" : ""
+  ].filter(Boolean).join(", ");
+  const cheekProminenceScore = cheekToJaw
+    ? Math.min(1, Math.max(0, (cheekToJaw - 1.02) / 0.32))
+    : 0;
+  const cheekWarningTriggered = Boolean(
+    cheekToJaw
+    && cheekToJaw >= CHEEK_WARNING_THRESHOLD
+    && validConfidence >= CHEEK_WARNING_CONFIDENCE_MIN
+  );
+
+  return {
+    adviceSource,
+    hasPhysicalCalibration,
+    winningFaceLabel: classification.winningLabel || classification.shape || "-",
+    secondFaceLabel: classification.secondLabel || "-",
+    faceLabelMargin: Number.isFinite(Number(classification.scoreMargin)) ? Number(classification.scoreMargin) : null,
+    cheekWidthRatio: cheekToJaw,
+    jawToCheekRatio: jawToCheek,
+    foreheadToCheekRatio: foreheadToCheek,
+    lengthToWidthRatio: lengthToWidth,
+    cheekProminenceScore,
+    cheekWarningThreshold: CHEEK_WARNING_THRESHOLD,
+    cheekWarningTriggered,
+    recommendationRuleIds: [
+      lengthToWidth >= 1.5 ? "FACE_LONG_BALANCE" : "",
+      lengthToWidth && lengthToWidth <= 1.28 ? "FACE_COMPACT_DEFINITION" : "",
+      jawToCheek >= 0.9 ? "JAW_SOFTENING" : "",
+      cheekWarningTriggered ? "CHEEK_PROMINENCE_PERSONALIZED" : "",
+      foreheadToCheek >= 0.96 && jawToCheek <= 0.88 ? "UPPER_FACE_LIGHTEN" : ""
+    ].filter(Boolean),
+    personalizedAdvice: cheekWarningTriggered
+      ? ["Tin hieu go ma noi bat: khi thu gong, uu tien be ngang khong ep vung go ma va vien duoi mem."]
+      : [],
+    genericAdvice: [...GENERIC_FIT_ADVICE],
+    invalidRecommendationMetric: invalidRecommendationMetric || ""
+  };
+}
+
 export function getFaceShapeAdvice(faceShape) {
   return FACE_SHAPE_ADVICE[faceShape] || FACE_SHAPE_ADVICE.oval;
 }
@@ -379,7 +448,14 @@ export function getFitGuidance({ faceShape, metrics = {}, frameWidthMm = 0, lens
     notes.push("Khách thích nổi bật: chọn điểm nhấn ở màu hoặc dáng, không nên quá mạnh cả hai.");
   }
 
-  return notes.slice(0, 5);
+  return notes
+    .filter((note) => cheekToJaw >= 1.16 || !isCheekSpecificAdvice(note))
+    .slice(0, 5);
+}
+
+function isCheekSpecificAdvice(text = "") {
+  const value = String(text).toLowerCase();
+  return value.includes("gò má") || value.includes("go ma");
 }
 
 function calculateDecentration(lensWidthMm, bridgeWidthMm, pdMm) {
