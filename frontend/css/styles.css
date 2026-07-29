@@ -693,6 +693,7 @@ input[type="number"],
 }
 
 #webcam,
+#uploadedFaceImage,
 #overlay {
   position: absolute;
   inset: 0;
@@ -700,9 +701,14 @@ input[type="number"],
   height: 100%;
 }
 
-#webcam {
+#webcam,
+#uploadedFaceImage {
   z-index: 2;
   object-fit: cover;
+}
+
+#uploadedFaceImage[hidden] {
+  display: none;
 }
 
 #overlay {
@@ -1347,7 +1353,7 @@ h1 {
 
 .camera-actions {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr 1fr 1fr;
+  grid-template-columns: 1.1fr 0.9fr 0.9fr 1fr 1fr;
   gap: 10px;
   padding: 10px;
   border: 1px solid rgba(219, 226, 234, 0.95);
@@ -1359,6 +1365,46 @@ h1 {
 .camera-actions button {
   min-height: 44px;
   padding: 0 12px;
+}
+
+.compatibility-notice {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(10, 105, 95, 0.22);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: rgba(232, 245, 240, 0.86);
+  color: var(--ink);
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.compatibility-notice[hidden],
+.debug-device-profile[hidden] {
+  display: none;
+}
+
+.debug-device-profile {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px dashed rgba(10, 105, 95, 0.38);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.debug-device-profile select {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: 0 10px;
+  color: var(--ink);
 }
 
 #analyzeFaceButton.is-loading {

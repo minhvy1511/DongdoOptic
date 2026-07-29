@@ -12,6 +12,20 @@ export function detectFaceLandmarksForVideo(faceLandmarker, video, timestamp = p
   }
 }
 
+export function detectFaceLandmarksForImage(faceLandmarker, image, timestamp = performanceNow()) {
+  if (!faceLandmarker || typeof faceLandmarker.detect !== "function") {
+    return normalizeFaceTrackingResult({
+      error: new Error("FaceLandmarker chưa sẵn sàng.")
+    }, timestamp);
+  }
+
+  try {
+    return normalizeFaceTrackingResult(faceLandmarker.detect(image), timestamp);
+  } catch (error) {
+    return normalizeFaceTrackingResult({ error }, timestamp);
+  }
+}
+
 export function normalizeFaceTrackingResult(result = {}, timestamp = performanceNow()) {
   const faces = Array.isArray(result.faceLandmarks) ? result.faceLandmarks : [];
   const error = result.error || null;

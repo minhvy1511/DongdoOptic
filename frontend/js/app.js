@@ -5,9 +5,10 @@ import {
   drawLandmarkConnectors,
   drawSafariRenderDiagnostic,
   getRenderContext,
+  getRenderContextForImage,
   getRenderDiagnostics,
   resizeCanvasToVideo
-} from "./drawing.js?v=20260729-83";
+} from "./drawing.js?v=20260729-84";
 import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-81";
 import {
   buildRecommendationDiagnostics,
@@ -20,9 +21,20 @@ import {
   getPublicAdviceSourceLabel
 } from "./recommendations.js?v=20260729-82";
 import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260728-75";
-import { detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js";
+import { detectFaceLandmarksForImage, detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js?v=20260729-84";
 import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js";
 import { DISTANCE_LANDMARKS as VISION_DISTANCE_LANDMARKS } from "./vision/landmark-map.js";
+import {
+  DEVICE_PROFILES,
+  detectDeviceProfile,
+  getSessionDebugOverride,
+  sanitizeDeviceContextForDebug,
+  setSessionDebugOverride,
+  shouldAttemptLiveCamera,
+  shouldFallbackToUploadAfterCameraError,
+  shouldUseUploadFallback,
+  withCameraStartupStatus
+} from "./vision/device-profile.js?v=20260729-84";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
@@ -42,9 +54,13 @@ import {
 } from "./customer-store.js?v=20260720-39";
 
 const video = document.getElementById("webcam");
+const uploadedFaceImage = document.getElementById("uploadedFaceImage");
 const canvas = document.getElementById("overlay");
+const faceImageUploadInput = document.getElementById("faceImageUpload");
 const cameraPanel = document.querySelector(".camera-panel");
 const startButton = document.getElementById("cameraStartButton");
+const imageUploadButton = document.getElementById("imageUploadButton");
+const compatibilityNotice = document.getElementById("compatibilityNotice");
 const statusText = document.getElementById("status");
 const landmarkCountText = document.getElementById("landmarkCount");
 const faceCountText = document.getElementById("faceCount");
@@ -127,6 +143,7 @@ const feedbackStatus = document.getElementById("feedbackStatus");
 const canvasContext = canvas.getContext("2d");
 
 let faceLandmarker;
+let imageFaceLandmarker;
 let drawingUtils;
 let FaceLandmarkerApi;
 let lastVideoTime = -1;
@@ -153,6 +170,10 @@ let latestRecommendationDebug = null;
 let latestRenderDebug = {};
 let latestDebugLandmarks = null;
 let latestRenderContext = null;
+let currentDeviceContext = null;
+let deviceProfileOverride = "";
+let deviceProfileOverrideControl = null;
+let uploadedImageObjectUrl = "";
 let renderDiagnosticOverlayUntil = 0;
 const renderLifecycleCounts = {
   loadedmetadata: 0,
@@ -1463,11 +1484,24 @@ function ensureCurrentSessionCode() {
 
 async function initialize() {
   statusText.textContent = "Đang tải mô hình";
-  const landmarkerModule = await import("./face-landmarker.js?v=20260720-39");
+  const landmarkerModule = await import("./face-landmarker.js?v=20260729-84");
   faceLandmarker = await landmarkerModule.createFaceLandmarker();
   drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
   FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
   statusText.textContent = "Sẵn sàng";
+}
+
+async function initializeImageLandmarker() {
+  if (imageFaceLandmarker) {
+    return imageFaceLandmarker;
+  }
+
+  statusText.textContent = "Đang tải mô hình ảnh";
+  const landmarkerModule = await import("./face-landmarker.js?v=20260729-84");
+  imageFaceLandmarker = await landmarkerModule.createFaceLandmarker({ runningMode: "IMAGE" });
+  FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
+  statusText.textContent = "Sẵn sàng tải ảnh";
+  return imageFaceLandmarker;
 }
 
 function updateCameraStartButton({ active = false, loading = false } = {}) {
@@ -1485,9 +1519,110 @@ function updateCameraStartButton({ active = false, loading = false } = {}) {
   startButton.textContent = active ? "Tắt camera" : "Bật camera";
 }
 
+function refreshDeviceProfile(extra = {}) {
+  deviceProfileOverride = getSessionDebugOverride({
+    debugEnabled: VISION_DEBUG_ENABLED
+  });
+  currentDeviceContext = detectDeviceProfile({
+    debugEnabled: VISION_DEBUG_ENABLED,
+    override: deviceProfileOverride,
+    videoElement: video,
+    stream: currentCameraStream,
+    ...extra
+  });
+  renderDeviceProfileUi();
+  updateVisionDebugPanel({
+    deviceContext: sanitizeDeviceContextForDebug(currentDeviceContext)
+  });
+  return currentDeviceContext;
+}
+
+function renderDeviceProfileUi() {
+  if (!currentDeviceContext) {
+    return;
+  }
+
+  const uploadOnly = shouldUseUploadFallback(currentDeviceContext);
+  if (compatibilityNotice) {
+    compatibilityNotice.hidden = !uploadOnly;
+    compatibilityNotice.textContent = currentDeviceContext.deviceProfile === DEVICE_PROFILES.IOS_SAFARI_LIMITED
+      ? "Thiết bị này hiện được hỗ trợ ở chế độ tải ảnh. Vui lòng chụp hoặc chọn ảnh chính diện để tiếp tục."
+      : "Đang dùng chế độ tương thích bằng ảnh tĩnh. Vui lòng tải ảnh chính diện để VisionID phân tích.";
+  }
+
+  if (cameraModeButton) {
+    cameraModeButton.disabled = uploadOnly;
+  }
+
+  if (cameraModeHint) {
+    if (uploadOnly) {
+      cameraModeHint.textContent = "Chế độ tương thích dùng ảnh tĩnh, không tự mở live camera.";
+    } else {
+      updateCameraModeButton();
+    }
+  }
+
+  if (imageUploadButton) {
+    imageUploadButton.hidden = false;
+  }
+
+  if (cameraGuidance && uploadOnly && !latestAnalysis) {
+    cameraGuidance.textContent = "Chọn hoặc chụp một ảnh chính diện, đủ sáng để tiếp tục.";
+  }
+}
+
+function ensureDeviceProfileDebugOverride() {
+  if (!VISION_DEBUG_ENABLED || deviceProfileOverrideControl) {
+    return;
+  }
+
+  const container = document.createElement("label");
+  container.className = "debug-device-profile";
+  container.innerHTML = `
+    <span>Device profile override</span>
+    <select aria-label="VisionID device profile override">
+      <option value="">Auto</option>
+      <option value="${DEVICE_PROFILES.DESKTOP_CHROMIUM}">Desktop Chromium</option>
+      <option value="${DEVICE_PROFILES.ANDROID_CHROMIUM}">Android Chromium</option>
+      <option value="${DEVICE_PROFILES.IOS_SAFARI_LIMITED}">iOS Safari limited</option>
+      <option value="${DEVICE_PROFILES.UPLOAD_ONLY}">Upload-only</option>
+    </select>
+  `;
+  const select = container.querySelector("select");
+  select.value = getSessionDebugOverride({ debugEnabled: VISION_DEBUG_ENABLED });
+  select.addEventListener("change", () => {
+    setSessionDebugOverride(select.value, { debugEnabled: VISION_DEBUG_ENABLED });
+    refreshDeviceProfile();
+    statusText.textContent = select.value ? "Đang override device profile trong phiên debug" : "Device profile: Auto";
+  });
+  compatibilityNotice?.after(container);
+  deviceProfileOverrideControl = select;
+}
+
+function openImageUploadFallback(reason = "manual-upload") {
+  refreshDeviceProfile({
+    override: VISION_DEBUG_ENABLED ? deviceProfileOverride : null
+  });
+  currentDeviceContext = withCameraStartupStatus(currentDeviceContext, "upload_prompt", {
+    compatibilityFallbackUsed: true
+  });
+  updateVisionDebugPanel({
+    deviceContext: sanitizeDeviceContextForDebug(currentDeviceContext),
+    pageLifecycleEvent: reason
+  });
+  renderDeviceProfileUi();
+  faceImageUploadInput?.click();
+}
+
 async function enableCamera() {
   if (cameraRequestInFlight) {
     return cameraRequestInFlight;
+  }
+
+  const profileContext = refreshDeviceProfile();
+  if (shouldUseUploadFallback(profileContext)) {
+    openImageUploadFallback("profile-upload-fallback");
+    return Promise.resolve();
   }
 
   cameraRequestInFlight = openCameraFlow().finally(() => {
@@ -1497,6 +1632,12 @@ async function enableCamera() {
 }
 
 async function openCameraFlow() {
+  const profileContext = refreshDeviceProfile();
+  if (!shouldAttemptLiveCamera(profileContext) || shouldUseUploadFallback(profileContext)) {
+    openImageUploadFallback("camera-blocked-by-profile");
+    return;
+  }
+
   updateCameraStartButton({ loading: true });
   const sessionToken = ++cameraSessionToken;
   updateCameraDebug({
@@ -1508,7 +1649,21 @@ async function openCameraFlow() {
   try {
     statusText.textContent = "Đang mở camera";
     stopCurrentCameraStream({ silent: true });
+    if (uploadedFaceImage) {
+      uploadedFaceImage.hidden = true;
+    }
+    if (video) {
+      video.hidden = false;
+    }
     currentCameraStream = await startUserCamera(video, { facingMode: currentCameraMode });
+    currentDeviceContext = withCameraStartupStatus(refreshDeviceProfile({ stream: currentCameraStream }), "camera_opened", {
+      compatibilityFallbackUsed: false,
+      videoWidth: video?.videoWidth || 0,
+      videoHeight: video?.videoHeight || 0,
+      trackWidth: currentCameraStream?.getVideoTracks?.()[0]?.getSettings?.().width || 0,
+      trackHeight: currentCameraStream?.getVideoTracks?.()[0]?.getSettings?.().height || 0,
+      facingMode: currentCameraStream?.getVideoTracks?.()[0]?.getSettings?.().facingMode || currentCameraMode
+    });
     updateCameraDebug({
       permissionRequestPhase: "camera-opened",
       requestedConstraints: currentCameraStream?.visionCameraDiagnostics?.requestedConstraints || null,
@@ -1530,6 +1685,10 @@ async function openCameraFlow() {
     requestAnimationFrame(() => detectFrame(sessionToken));
   } catch (error) {
     handleCameraOpenError(error);
+    const latestProfile = refreshDeviceProfile();
+    if (shouldFallbackToUploadAfterCameraError(latestProfile)) {
+      openImageUploadFallback("camera-error-upload-fallback");
+    }
     throw error;
   }
 }
@@ -1647,6 +1806,244 @@ function stopCurrentCameraStream(options = {}) {
   }
 }
 
+function resizeCanvasToImage(canvasElement, imageElement, reason = "image-sync") {
+  const context = canvasElement?.getContext?.("2d");
+  if (!canvasElement || !imageElement || !context) {
+    return null;
+  }
+
+  const rect = imageElement.getBoundingClientRect?.() || {};
+  const dpr = Number(window.devicePixelRatio || 1);
+  const cssWidth = Math.max(1, Math.round(rect.width || imageElement.clientWidth || imageElement.naturalWidth || 0));
+  const cssHeight = Math.max(1, Math.round(rect.height || imageElement.clientHeight || imageElement.naturalHeight || 0));
+  canvasElement.width = Math.max(1, Math.round(cssWidth * dpr));
+  canvasElement.height = Math.max(1, Math.round(cssHeight * dpr));
+  canvasElement.style.width = `${cssWidth}px`;
+  canvasElement.style.height = `${cssHeight}px`;
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  latestRenderDebug = {
+    ...latestRenderDebug,
+    lastCanvasResizeReason: reason
+  };
+  return getRenderContextForImage(canvasElement, imageElement);
+}
+
+async function analyzeUploadedFaceImage(file) {
+  if (!file || !file.type?.startsWith("image/")) {
+    statusText.textContent = "Vui lòng chọn một ảnh khuôn mặt hợp lệ";
+    return;
+  }
+
+  setAnalyzingState(true);
+  stopCurrentCameraStream({ silent: true });
+  currentDeviceContext = withCameraStartupStatus(refreshDeviceProfile(), "image_upload_selected", {
+    compatibilityFallbackUsed: true
+  });
+  updateVisionDebugPanel({
+    deviceContext: sanitizeDeviceContextForDebug(currentDeviceContext),
+    pageLifecycleEvent: "image-upload-selected"
+  });
+
+  if (uploadedImageObjectUrl) {
+    URL.revokeObjectURL(uploadedImageObjectUrl);
+  }
+  uploadedImageObjectUrl = URL.createObjectURL(file);
+
+  try {
+    statusText.textContent = "Đang đọc ảnh";
+    await loadImageIntoStage(uploadedImageObjectUrl);
+    await initializeImageLandmarker();
+    const results = detectFaceLandmarksForImage(imageFaceLandmarker, uploadedFaceImage, performance.now());
+    renderStaticImageResults(results);
+  } catch (error) {
+    console.error(error);
+    statusText.textContent = "Không thể phân tích ảnh";
+    renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Không đọc được ảnh. Vui lòng chọn ảnh chính diện, đủ sáng.");
+    updateVisionDebugPanel({
+      reasonCode: error?.code || error?.name || "IMAGE_UPLOAD_ERROR",
+      mediaPipeError: error?.message || "image upload failed"
+    });
+  } finally {
+    setAnalyzingState(false);
+  }
+}
+
+function loadImageIntoStage(objectUrl) {
+  return new Promise((resolve, reject) => {
+    if (!uploadedFaceImage) {
+      reject(new Error("Image stage is not available"));
+      return;
+    }
+
+    uploadedFaceImage.onload = () => {
+      uploadedFaceImage.hidden = false;
+      if (video) {
+        video.hidden = true;
+      }
+      cameraPanel?.classList.add("camera-active");
+      latestRenderContext = resizeCanvasToImage(canvas, uploadedFaceImage, "image-upload");
+      resolve();
+    };
+    uploadedFaceImage.onerror = () => reject(new Error("Cannot load selected image"));
+    uploadedFaceImage.src = objectUrl;
+  });
+}
+
+function renderStaticImageResults(results) {
+  const faces = results.faces ?? [];
+  clearCanvas(canvas);
+  faceCountText.textContent = String(faces.length);
+  landmarkCountText.textContent = faces[0] ? String(faces[0].length) : "0";
+
+  if (results.error || faces.length !== 1) {
+    const reasonCode = results.error ? "FACE_TRACKING_ERROR" : faces.length > 1 ? "MULTIPLE_FACES" : "NO_FACE";
+    latestAnalysis = null;
+    latestAiFaceShape = "";
+    clearConfirmedFaceShape();
+    statusText.textContent = "Ảnh chưa đạt";
+    faceShapeText.textContent = "Không đủ dữ liệu";
+    renderConfidenceNotice(null, { level: "low", percent: 0 }, false, faces.length > 1
+      ? "Ảnh có hơn một khuôn mặt. Vui lòng chọn ảnh chỉ có một khách hàng."
+      : "Không thấy rõ khuôn mặt. Vui lòng chọn ảnh chính diện, đủ sáng.");
+    drawCalibrationGuide(canvas, null, getStaticImageScanGuideState("ERROR"), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL, latestRenderContext);
+    updateVisionDebugPanel({
+      faceCount: faces.length,
+      reasonCode,
+      mediaPipeError: results.error?.message || ""
+    });
+    updateWorkflowAssistant();
+    return;
+  }
+
+  const landmarks = faces[0];
+  latestDebugLandmarks = landmarks;
+  latestRenderContext = resizeCanvasToImage(canvas, uploadedFaceImage, "image-analysis") || latestRenderContext;
+  const analysis = analyzeFaceShape(landmarks, getImageFrameSize());
+  const pose = estimateHeadPose(landmarks);
+  const qualityGate = evaluateScanFrameQuality({
+    step: SCAN_STEPS[0],
+    analysis,
+    pose,
+    faceCount: faces.length,
+    config: SCAN_QUALITY_CONFIG
+  });
+  const qualityPassed = qualityGate.ready !== false && qualityGate.reasonCode === "OK";
+  if (!qualityPassed) {
+    latestAnalysis = null;
+    latestAiFaceShape = "";
+    clearConfirmedFaceShape();
+    statusText.textContent = "Ảnh chưa đạt";
+    faceShapeText.textContent = "Không đủ dữ liệu";
+    drawCalibrationGuide(canvas, landmarks, getStaticImageScanGuideState("ERROR"), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL, latestRenderContext);
+    drawStaticLandmarkOverlay(landmarks);
+    renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Ảnh chưa đủ rõ hoặc chưa chính diện. Vui lòng chọn ảnh chính diện, đủ sáng.");
+    updateCameraStatus(1, null);
+    updateVisionDebugPanel({
+      faceCount: faces.length,
+      reasonCode: qualityGate.reasonCode || "IMAGE_QUALITY_WARNING",
+      confidence: analysis?.quality?.confidence || 0,
+      limitation: "static image quality gate"
+    });
+    updateWorkflowAssistant();
+    return;
+  }
+  analysis.diagnostics = {
+    ...analysis.diagnostics,
+    headPose: pose,
+    headPoseLabel: formatPoseLabel(pose),
+    qualityGate,
+    scanMode: "static-image-primary",
+    limitations: [
+      "Phân tích từ ảnh tĩnh, không phải đo kích thước vật lý.",
+      ...getVisionLimitations({ hasPhysicalCalibration: false })
+    ],
+    warnings: [
+      ...(analysis.diagnostics?.warnings || []),
+      "Nguồn ảnh tĩnh: nên dùng ảnh chính diện, đủ sáng, không nghiêng đầu."
+    ]
+  };
+
+  const finalAnalysis = buildMultiAngleAnalysis([{
+    key: "center",
+    label: "Ảnh tĩnh",
+    analysis,
+    pose,
+    burst: {
+      sampleCount: 1,
+      totalSamples: 1,
+      fallbackUsed: false,
+      rejectedFrames: qualityPassed ? 0 : 1,
+      rejectionReasons: qualityPassed ? {} : { [qualityGate.reasonCode || "IMAGE_QUALITY_WARNING"]: 1 }
+    }
+  }]);
+
+  if (!finalAnalysis) {
+    renderStaticImageResults({ faces: [] });
+    return;
+  }
+
+  finalAnalysis.diagnostics = {
+    ...finalAnalysis.diagnostics,
+    scanMode: "static-image-primary",
+    limitations: analysis.diagnostics.limitations,
+    imageSource: "upload",
+    qualityGate
+  };
+  finalAnalysis.warnings = finalAnalysis.diagnostics.warnings || [];
+  latestAnalysis = finalAnalysis;
+  latestAiFaceShape = finalAnalysis.faceShape_ai;
+  latestRenderDebug = getRenderDiagnostics({
+    canvas,
+    video: uploadedFaceImage,
+    landmarks,
+    renderContext: latestRenderContext
+  });
+  drawCalibrationGuide(canvas, landmarks, getStaticImageScanGuideState("RESULT"), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL, latestRenderContext);
+  drawStaticLandmarkOverlay(landmarks);
+  renderMetricsV2(finalAnalysis.metrics, finalAnalysis.quality, finalAnalysis.diagnostics);
+  applyAnalysisConfidence(finalAnalysis, true);
+  renderConfidenceNotice(finalAnalysis, getConfidenceState(finalAnalysis), false, "Kết quả lấy từ ảnh tĩnh. Hãy xác nhận trước khi tư vấn.");
+  updateCameraStatus(1, finalAnalysis);
+  syncCurrentCustomer("customerUpdated");
+  statusText.textContent = "Đã phân tích ảnh";
+  autoScanState.active = false;
+  autoScanState.phase = "RESULT";
+  autoScanState.status = "captured";
+  autoScanState.progress = 1;
+  autoScanState.prompt = "Đã phân tích ảnh";
+  autoScanState.detail = "Kiểm tra kết quả và xác nhận trước khi tư vấn.";
+  updateScanHud();
+  updateWorkflowAssistant();
+}
+
+function drawStaticLandmarkOverlay(landmarks) {
+  [
+    [FaceLandmarkerApi.FACE_LANDMARKS_TESSELATION, { color: "rgba(32, 201, 151, 0.28)", lineWidth: 1 }],
+    [FaceLandmarkerApi.FACE_LANDMARKS_LEFT_EYE, { color: "#4dabf7", lineWidth: 2 }],
+    [FaceLandmarkerApi.FACE_LANDMARKS_RIGHT_EYE, { color: "#4dabf7", lineWidth: 2 }],
+    [FaceLandmarkerApi.FACE_LANDMARKS_LIPS, { color: "#ff6b6b", lineWidth: 2 }]
+  ].forEach(([connections, style]) => {
+    drawLandmarkConnectors(canvasContext, landmarks, connections, latestRenderContext, style);
+  });
+}
+
+function getStaticImageScanGuideState(phase = "IDLE") {
+  return {
+    mode: "scan",
+    phase,
+    status: phase === "ERROR" ? "error" : "captured",
+    progress: phase === "RESULT" ? 1 : 0,
+    label: phase === "RESULT" ? "Ảnh đã phân tích" : "Cần ảnh chính diện",
+    distance: { status: phase === "RESULT" ? "ready" : "near" }
+  };
+}
+
+function getImageFrameSize() {
+  return {
+    width: uploadedFaceImage?.naturalWidth || uploadedFaceImage?.width || 0,
+    height: uploadedFaceImage?.naturalHeight || uploadedFaceImage?.height || 0
+  };
+}
 function detectFrame(sessionToken) {
   if (sessionToken !== cameraSessionToken) {
     return;
@@ -2828,6 +3225,7 @@ function updateVisionDebugPanel(payload = {}) {
   const cameraDebug = payload.cameraDebug || latestCameraDebug || {};
   const recommendationDebug = payload.recommendationDebug || latestRecommendationDebug || {};
   const renderDebug = payload.renderDebug || latestRenderDebug || {};
+  const deviceDebug = payload.deviceContext || sanitizeDeviceContextForDebug(currentDeviceContext || {});
   const formatMetric = (value, digits = 3) => Number.isFinite(Number(value))
     ? Number(value).toFixed(digits)
     : "-";
@@ -2855,6 +3253,20 @@ function updateVisionDebugPanel(payload = {}) {
       : "-",
     limitation: payload.limitation || (Array.isArray(diagnostics.limitations) ? diagnostics.limitations.join(" | ") : ""),
     mediaPipeError: payload.mediaPipeError || "",
+    deviceProfile: deviceDebug.deviceProfile || "-",
+    devicePipeline: deviceDebug.pipeline || "-",
+    browserFamily: deviceDebug.browserFamily || "-",
+    osFamily: deviceDebug.osFamily || "-",
+    deviceClass: deviceDebug.deviceClass || "-",
+    deviceOrientation: deviceDebug.orientation || "-",
+    renderProfile: deviceDebug.renderProfile || "-",
+    cameraStartupStatus: deviceDebug.cameraStartupStatus || "-",
+    compatibilityFallbackUsed: deviceDebug.compatibilityFallbackUsed ?? false,
+    deviceOverrideActive: deviceDebug.overrideActive ?? false,
+    deviceOverrideProfile: deviceDebug.overrideProfile || "-",
+    deviceHasMediaDevices: deviceDebug.hasMediaDevices ?? "-",
+    deviceHasGetUserMedia: deviceDebug.hasGetUserMedia ?? "-",
+    supportedMediaConstraints: deviceDebug.supportedMediaConstraints ? JSON.stringify(deviceDebug.supportedMediaConstraints) : "-",
     inputWidth: debugSummary.inputWidth ?? "-",
     inputHeight: debugSummary.inputHeight ?? "-",
     inputAspectRatio: formatMetric(debugSummary.inputAspectRatio),
@@ -4879,7 +5291,7 @@ if (mobileSaveButton) {
 if (mobileScanButton) {
   mobileScanButton.addEventListener("click", () => {
     showTab("tab-3");
-    if (video?.srcObject) {
+    if (video?.srcObject && !video.hidden) {
       startAutoScanFlow("mobile-action");
       return;
     }
@@ -4893,6 +5305,20 @@ if (mobileScanButton) {
 if (mobileConsultButton) {
   mobileConsultButton.addEventListener("click", () => {
     showTab("tab-4");
+  });
+}
+
+if (imageUploadButton) {
+  imageUploadButton.addEventListener("click", () => openImageUploadFallback("upload-button"));
+}
+
+if (faceImageUploadInput) {
+  faceImageUploadInput.addEventListener("change", () => {
+    const file = faceImageUploadInput.files?.[0] || null;
+    faceImageUploadInput.value = "";
+    analyzeUploadedFaceImage(file).catch((error) => {
+      console.debug("[VisionID] Image upload failed", error?.code || error?.name || error?.message);
+    });
   });
 }
 
@@ -4949,6 +5375,8 @@ if (!initialCurrentCustomer?.customer_code || !loadCustomerRecord(initialCurrent
 }
 updateCameraModeButton();
 updateCameraStartButton({ active: Boolean(video?.srcObject) });
+ensureDeviceProfileDebugOverride();
+refreshDeviceProfile();
 renderCurrentCustomerSummary();
 renderCustomers();
 
@@ -4990,23 +5418,33 @@ video?.addEventListener("canplay", () => {
 
 window.addEventListener("resize", () => {
   renderLifecycleCounts.resize += 1;
-  latestRenderContext = resizeCanvasToVideo(canvas, video, "window-resize") || latestRenderContext;
-  latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
+  refreshDeviceProfile();
+  latestRenderContext = uploadedFaceImage && !uploadedFaceImage.hidden
+    ? resizeCanvasToImage(canvas, uploadedFaceImage, "window-resize-image") || latestRenderContext
+    : resizeCanvasToVideo(canvas, video, "window-resize") || latestRenderContext;
+  latestRenderDebug = getRenderDiagnostics({ canvas, video: uploadedFaceImage && !uploadedFaceImage.hidden ? uploadedFaceImage : video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
   updateVisionDebugPanel({ renderDebug: latestRenderDebug });
 });
 
 window.addEventListener("orientationchange", () => {
   renderLifecycleCounts.orientationchange += 1;
   requestAnimationFrame(() => {
-    latestRenderContext = resizeCanvasToVideo(canvas, video, "orientationchange") || latestRenderContext;
-    latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
+    refreshDeviceProfile();
+    latestRenderContext = uploadedFaceImage && !uploadedFaceImage.hidden
+      ? resizeCanvasToImage(canvas, uploadedFaceImage, "orientationchange-image") || latestRenderContext
+      : resizeCanvasToVideo(canvas, video, "orientationchange") || latestRenderContext;
+    latestRenderDebug = getRenderDiagnostics({ canvas, video: uploadedFaceImage && !uploadedFaceImage.hidden ? uploadedFaceImage : video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
     updateVisionDebugPanel({ renderDebug: latestRenderDebug });
   });
 });
 
 window.visualViewport?.addEventListener("resize", () => {
   renderLifecycleCounts.visualViewportResize += 1;
-  latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
+  refreshDeviceProfile();
+  latestRenderContext = uploadedFaceImage && !uploadedFaceImage.hidden
+    ? resizeCanvasToImage(canvas, uploadedFaceImage, "visual-viewport-resize-image") || latestRenderContext
+    : latestRenderContext;
+  latestRenderDebug = getRenderDiagnostics({ canvas, video: uploadedFaceImage && !uploadedFaceImage.hidden ? uploadedFaceImage : video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
   updateVisionDebugPanel({ renderDebug: latestRenderDebug });
 });
 

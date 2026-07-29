@@ -270,7 +270,9 @@
                   <span>Nhấn Bật camera để bắt đầu nhận diện khuôn mặt.</span>
                 </div>
                 <video id="webcam" autoplay playsinline muted></video>
+                <img id="uploadedFaceImage" alt="" hidden>
                 <canvas id="overlay"></canvas>
+                <input id="faceImageUpload" type="file" accept="image/*" capture="user" hidden>
                 <div id="cameraConfidenceOverlay" class="camera-confidence-overlay neutral" aria-live="polite">
                   <span>Độ tin cậy</span>
                   <strong>--</strong>
@@ -286,8 +288,10 @@
                 </div>
                 <p class="privacy-note">Ảnh được xử lý trực tiếp trên thiết bị, không lưu trữ hay gửi lên máy chủ.</p>
               </div>
+              <div id="compatibilityNotice" class="compatibility-notice" hidden></div>
               <div class="camera-actions">
                 <button id="cameraStartButton" type="button">Bật camera</button>
+                <button id="imageUploadButton" type="button" class="secondary-action">Tải ảnh</button>
                 <button id="analyzeFaceButton" type="button" class="secondary-action" disabled>Phân tích</button>
                 <button id="manualConsultButton" type="button" class="secondary-action">Tư vấn thủ công</button>
                 <button id="markMeasuredButton" type="button" class="secondary-action" disabled>Đánh dấu đã đo</button>
@@ -479,6 +483,6 @@
       <button id="mobileConsultButton" type="button">Tư vấn</button>
     </nav>
 
-    <script type="module" src="./js/app.mobile.js?v=20260729-81"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260729-84"></script>
   </body>
 </html>

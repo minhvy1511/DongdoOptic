@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   computeObjectFitTransform,
+  getRenderContextForImage,
   mapNormalizedPointToRenderedVideo,
   resizeCanvasToVideo
 } from "../../frontend/js/drawing.js";
@@ -41,6 +42,17 @@ function makeVideo({ videoWidth = 1280, videoHeight = 720, rectWidth = 640, rect
         getSettings: () => ({ width: videoWidth, height: videoHeight, aspectRatio: videoWidth / videoHeight })
       }]
     },
+    _objectFit: objectFit
+  };
+}
+
+function makeImage({ naturalWidth = 3000, naturalHeight = 2000, rectWidth = 300, rectHeight = 200, objectFit = "cover" } = {}) {
+  return {
+    naturalWidth,
+    naturalHeight,
+    clientWidth: rectWidth,
+    clientHeight: rectHeight,
+    getBoundingClientRect: () => ({ width: rectWidth, height: rectHeight }),
     _objectFit: objectFit
   };
 }
@@ -134,6 +146,20 @@ test("resizeCanvasToVideo applies DPR once and resets context transform", () => 
     assert.equal(canvas.width, 960);
     assert.equal(canvas.height, 720);
     assert.deepEqual(context.transforms.at(-1), [3, 0, 0, 3, 0, 0]);
+  });
+});
+
+test("image fallback render context uses natural image dimensions, not video dimensions", () => {
+  withWindow({ dpr: 2 }, () => {
+    const canvas = makeCanvas({ rectWidth: 300, rectHeight: 200 });
+    const image = makeImage({ naturalWidth: 4032, naturalHeight: 3024, rectWidth: 300, rectHeight: 200 });
+    const context = getRenderContextForImage(canvas, image);
+
+    assert.equal(context.selectedSourceWidth, 4032);
+    assert.equal(context.selectedSourceHeight, 3024);
+    assert.equal(context.selectedDestinationWidth, 300);
+    assert.equal(context.selectedDestinationHeight, 200);
+    assert.equal(context.mirrored, false);
   });
 });
 

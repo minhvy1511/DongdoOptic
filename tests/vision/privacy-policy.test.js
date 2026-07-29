@@ -179,3 +179,36 @@ test("feedback payload includes only allowed summarized VisionID fields with con
   assert.equal(payload.diagnostics.confidenceBand, "Cao");
   assert.deepEqual(payload.diagnostics.centerBurst, { sampleCount: 12, totalSamples: 24 });
 });
+
+test("feedback payload never includes raw image, landmarks, mesh, or device debug context", () => {
+  const payload = buildConsentScopedVisionFeedback({
+    includeVisionAnalysis: true,
+    latestAnalysis: {
+      quality: { confidence: 0.72 },
+      image: "data:image/png;base64,secret",
+      base64: "secret",
+      faceLandmarks: [{ x: 0.5, y: 0.5 }],
+      mesh: [1, 2, 3],
+      deviceContext: { deviceProfile: "desktop_chromium" }
+    },
+    confidenceState: { level: "medium" },
+    diagnostics: {
+      warnings: ["ok"],
+      deviceContext: { deviceProfile: "desktop_chromium" },
+      rawUserAgent: "raw ua",
+      faceLandmarks: [{ x: 1 }],
+      mesh: [1]
+    },
+    classification: { candidates: [{ shape: "oval", score: 0.7 }] },
+    qualityGate: { passed: true, score: 1, failedLabels: [], checks: [] }
+  });
+
+  const json = JSON.stringify(payload);
+  assert.equal(json.includes("data:image"), false);
+  assert.equal(json.includes("base64"), false);
+  assert.equal(json.includes("faceLandmarks"), false);
+  assert.equal(json.includes("landmark"), false);
+  assert.equal(json.includes("mesh"), false);
+  assert.equal(json.includes("deviceContext"), false);
+  assert.equal(json.includes("rawUserAgent"), false);
+});

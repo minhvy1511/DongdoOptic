@@ -7,15 +7,16 @@ import {
 const wasmPath = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 const modelPath = "./assets/models/face_landmarker.task";
 
-export async function createFaceLandmarker() {
+export async function createFaceLandmarker(options = {}) {
   const vision = await FilesetResolver.forVisionTasks(wasmPath);
+  const runningMode = options.runningMode === "IMAGE" ? "IMAGE" : "VIDEO";
 
   return FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: modelPath,
       delegate: "GPU"
     },
-    runningMode: "VIDEO",
+    runningMode,
     numFaces: 1,
     outputFaceBlendshapes: false,
     outputFacialTransformationMatrixes: false

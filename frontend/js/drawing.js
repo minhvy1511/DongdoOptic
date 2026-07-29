@@ -224,6 +224,34 @@ export function getRenderContext(canvas, video) {
   };
 }
 
+export function getRenderContextForImage(canvas, imageElement) {
+  const canvasSize = getCanvasCssSize(canvas);
+  const imageRect = getElementRect(imageElement);
+  const sourceWidth = Number(imageElement?.naturalWidth || imageElement?.width || 0);
+  const sourceHeight = Number(imageElement?.naturalHeight || imageElement?.height || 0);
+  const destinationWidth = Math.max(1, imageRect.width || canvasSize.width);
+  const destinationHeight = Math.max(1, imageRect.height || canvasSize.height);
+  const objectFit = getObjectFit(imageElement);
+  const transform = computeObjectFitTransform({
+    sourceWidth,
+    sourceHeight,
+    destinationWidth,
+    destinationHeight,
+    objectFit
+  });
+
+  return {
+    ...transform,
+    canvas: canvasSize,
+    videoRect: imageRect,
+    objectFit,
+    mirrored: false,
+    devicePixelRatio: getDevicePixelRatio(),
+    canvasResizeCount,
+    lastCanvasResizeReason
+  };
+}
+
 export function computeObjectFitTransform({
   sourceWidth,
   sourceHeight,
