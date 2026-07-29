@@ -9,6 +9,7 @@ BACKEND_ROOT = REPO_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.services import feedback_store  # noqa: E402
+from app.api.schemas import FeedbackRecord  # noqa: E402
 
 
 class FeedbackStorePrivacyTest(unittest.TestCase):
@@ -37,6 +38,22 @@ class FeedbackStorePrivacyTest(unittest.TestCase):
         self.assertNotIn("capture_quality", saved)
         self.assertNotIn("diagnostics", saved)
         self.assertEqual(saved["notes"], "keep note only")
+
+    def test_no_consent_pydantic_payload_does_not_create_empty_vision_fields(self):
+        payload = FeedbackRecord(
+            id="FB-no-consent-pydantic",
+            notes="sent without analysis consent",
+            customer_code="KH-2"
+        )
+
+        saved = feedback_store.save_feedback(payload.model_dump(exclude_unset=True))
+
+        self.assertNotIn("confidence", saved)
+        self.assertNotIn("confidence_level", saved)
+        self.assertNotIn("top_candidates", saved)
+        self.assertNotIn("capture_quality", saved)
+        self.assertNotIn("diagnostics", saved)
+        self.assertEqual(saved["customer_code"], "KH-2")
 
     def test_consent_record_keeps_allowed_vision_analysis_fields(self):
         saved = feedback_store.save_feedback({

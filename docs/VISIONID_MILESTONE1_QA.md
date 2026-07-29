@@ -4,6 +4,14 @@ Phạm vi: kiểm thử ổn định VisionID Core sau refactor. Không kiểm t
 
 Ghi chú debug QA: có thể mở `/frontend/?visionDebug=1` để xem faceCount, reason code, số frame, fallback, confidence và MediaPipe error. Chế độ này không lưu debug data, không hiển thị landmark thô và không gửi backend.
 
+## Manual QA Result
+
+| Ngày | URL | Debug URL | Commit được kiểm thử | Kết quả | Ghi chú |
+|---|---|---|---|---|---|
+| 2026-07-29 | `https://getvisionid.pythonanywhere.com/frontend/` | `https://getvisionid.pythonanywhere.com/frontend/?visionDebug=1` | `2ae925e52bc6371d5c695dc42b1536be8890bfca` | Pass có điều kiện | Không phát hiện lỗi Critical/High trong manual QA. Các giới hạn còn lại: chưa đo kích thước mặt bằng mm, chưa có calibration, chưa có virtual try-on, backend face-shape endpoint vẫn là legacy, chưa kiểm thử đủ mọi dòng Android/iPhone, kết quả là phân tích tỷ lệ và tư vấn tương đối. |
+
+Ghi chú sau QA: branch hiện có thêm commit `095b3c3888947eba2d4301d1eb03a8b7a3da85b6` để xử lý camera mobile mở quá lâu. Cần re-QA focused các case camera mobile trước khi merge production.
+
 ## Checklist
 
 | Test ID | Thiết bị | Trình duyệt | Điều kiện | Các bước | Kết quả mong đợi | Kết quả thực tế | Pass/Fail | Ghi chú |
@@ -44,15 +52,15 @@ Ghi chú debug QA: có thể mở `/frontend/?visionDebug=1` để xem faceCount
 
 ## Endpoint Expected Trong Một Lượt Quét
 
-- Static frontend: `/frontend/`, `/frontend/js/app.mobile.js?v=20260728-78`, `/frontend/js/app.js?v=20260728-78`, các module JS liên quan.
-- MediaPipe/model local: `/frontend/js/assets/models/face_landmarker.task` hoặc path tương đương từ `face-landmarker.js`.
+- Static frontend: `/frontend/`, `/frontend/js/app.mobile.js?v=20260729-79`, `/frontend/js/app.js?v=20260729-79`, các module JS liên quan.
+- MediaPipe/model local: `/frontend/assets/models/face_landmarker.task` theo `face-landmarker.js`.
 - Không gọi `/api/face-shape/analyze` trong luồng frontend hiện tại.
 - Chỉ gọi `/api/feedback` khi nhân viên bấm lưu góp ý.
 - `/api/lens/advice` chỉ liên quan tư vấn tròng, không chứa ảnh/landmark.
 
 ## Cache Notes
 
-- `index.html` hiện trỏ `app.mobile.js?v=20260728-78`.
-- `app.mobile.js` hiện import `app.js?v=20260728-78`.
+- `index.html` hiện trỏ `app.mobile.js?v=20260729-79`.
+- `app.mobile.js` hiện import `app.js?v=20260729-79`.
 - Backend FastAPI đặt `Cache-Control: no-store` cho `/api/*`; static `/frontend/*` không có no-store mặc định.
 - Khi deploy PythonAnywhere, nên reload web app và hard refresh mobile lần đầu sau deploy. Nếu vẫn thấy bundle cũ, tăng query version tiếp theo hoặc cấu hình static cache thấp hơn cho giai đoạn QA.

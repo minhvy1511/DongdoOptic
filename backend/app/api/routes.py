@@ -61,4 +61,4 @@ def feedback():
 
 @router.post("/feedback")
 def create_feedback(payload: FeedbackRecord):
-    return save_feedback(payload.model_dump())
+    return save_feedback(payload.model_dump(exclude_unset=True))
