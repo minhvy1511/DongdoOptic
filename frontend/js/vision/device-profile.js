@@ -42,6 +42,8 @@ export function detectDeviceProfile({
       deviceProfile: overrideProfile,
       pipeline: pipelineForProfile(overrideProfile, runtime),
       renderProfile: renderProfileForProfile(overrideProfile),
+      profileReason: "debug_override",
+      cameraCapability: getCameraCapability(runtime),
       overrideActive: true,
       overrideProfile,
       compatibilityFallbackUsed: overrideProfile === DEVICE_PROFILES.IOS_SAFARI_LIMITED || overrideProfile === DEVICE_PROFILES.UPLOAD_ONLY
@@ -55,6 +57,8 @@ export function detectDeviceProfile({
     deviceProfile,
     pipeline: pipelineForProfile(deviceProfile, runtime),
     renderProfile: renderProfileForProfile(deviceProfile),
+    profileReason: getProfileReason(runtime, deviceProfile),
+    cameraCapability: getCameraCapability(runtime),
     overrideActive: false,
     overrideProfile: "",
     compatibilityFallbackUsed: deviceProfile === DEVICE_PROFILES.IOS_SAFARI_LIMITED
@@ -173,6 +177,8 @@ export function sanitizeDeviceContextForDebug(profileContext = {}) {
     "trackHeight",
     "facingMode",
     "renderProfile",
+    "profileReason",
+    "cameraCapability",
     "cameraStartupStatus",
     "compatibilityFallbackUsed",
     "pipeline",
@@ -223,6 +229,35 @@ function renderProfileForProfile(profile) {
     return "static-image";
   }
   return "live-video";
+}
+
+function getProfileReason(context, profile) {
+  if (profile === DEVICE_PROFILES.IOS_SAFARI_LIMITED) {
+    return "ios_safari_uses_static_image_fallback";
+  }
+  if (profile === DEVICE_PROFILES.ANDROID_CHROMIUM) {
+    return "android_chromium_live_camera_supported";
+  }
+  if (profile === DEVICE_PROFILES.DESKTOP_CHROMIUM) {
+    return "desktop_chromium_live_camera_supported";
+  }
+  if (!context.hasMediaDevices || !context.hasGetUserMedia) {
+    return "camera_api_unavailable";
+  }
+  return "unknown_try_camera_then_upload";
+}
+
+function getCameraCapability(context) {
+  if (!context.hasMediaDevices) {
+    return "no_mediaDevices";
+  }
+  if (!context.hasGetUserMedia) {
+    return "no_getUserMedia";
+  }
+  if (!context.isSecureContext) {
+    return "insecure_context";
+  }
+  return "getUserMedia_available";
 }
 
 function detectBrowserFamily(navigatorLike) {

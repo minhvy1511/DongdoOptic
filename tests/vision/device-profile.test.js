@@ -80,6 +80,8 @@ test("desktop Chromium selects live camera pipeline", () => {
 
   assert.equal(profile.deviceProfile, DEVICE_PROFILES.DESKTOP_CHROMIUM);
   assert.equal(profile.pipeline, PIPELINES.LIVE_CAMERA);
+  assert.equal(profile.profileReason, "desktop_chromium_live_camera_supported");
+  assert.equal(profile.cameraCapability, "getUserMedia_available");
   assert.equal(shouldAttemptLiveCamera(profile), true);
   assert.equal(shouldUseUploadFallback(profile), false);
 });
@@ -116,6 +118,7 @@ test("iPhone Safari switches to limited upload profile", () => {
 
   assert.equal(profile.deviceProfile, DEVICE_PROFILES.IOS_SAFARI_LIMITED);
   assert.equal(profile.pipeline, PIPELINES.IMAGE_UPLOAD);
+  assert.equal(profile.profileReason, "ios_safari_uses_static_image_fallback");
   assert.equal(shouldUseUploadFallback(profile), true);
   assert.equal(shouldAttemptLiveCamera(profile), false);
 });
@@ -151,6 +154,8 @@ test("unknown without mediaDevices uses upload fallback safely", () => {
 
   assert.equal(profile.deviceProfile, DEVICE_PROFILES.UNKNOWN);
   assert.equal(profile.pipeline, PIPELINES.IMAGE_UPLOAD);
+  assert.equal(profile.profileReason, "camera_api_unavailable");
+  assert.equal(profile.cameraCapability, "no_mediaDevices");
   assert.equal(shouldUseUploadFallback(profile), true);
 });
 
@@ -190,12 +195,15 @@ test("debug override only works when visionDebug is enabled and stays session-sc
   assert.equal(profile.overrideActive, true);
   assert.equal(profile.deviceProfile, DEVICE_PROFILES.UPLOAD_ONLY);
   assert.equal(profile.pipeline, PIPELINES.IMAGE_UPLOAD);
+  assert.equal(profile.profileReason, "debug_override");
 });
 
 test("sanitized debug context omits raw user agent and backend-unsafe fields", () => {
   const sanitized = sanitizeDeviceContextForDebug({
     deviceProfile: DEVICE_PROFILES.DESKTOP_CHROMIUM,
     browserFamily: "chromium",
+    profileReason: "desktop_chromium_live_camera_supported",
+    cameraCapability: "getUserMedia_available",
     rawUserAgent: "secret raw ua",
     faceLandmarks: [{ x: 1 }],
     mesh: [1, 2, 3],
@@ -203,6 +211,8 @@ test("sanitized debug context omits raw user agent and backend-unsafe fields", (
   });
 
   assert.equal(sanitized.deviceProfile, DEVICE_PROFILES.DESKTOP_CHROMIUM);
+  assert.equal(sanitized.profileReason, "desktop_chromium_live_camera_supported");
+  assert.equal(sanitized.cameraCapability, "getUserMedia_available");
   assert.equal("rawUserAgent" in sanitized, false);
   assert.equal("faceLandmarks" in sanitized, false);
   assert.equal("mesh" in sanitized, false);
