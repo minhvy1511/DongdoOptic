@@ -504,6 +504,55 @@ input[type="number"],
   background: var(--sage-soft);
 }
 
+.tab-button.is-locked {
+  opacity: 0.72;
+}
+
+.tab-button[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.field-error {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+[aria-invalid="true"] {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px rgba(201, 77, 77, 0.12);
+}
+
+.vision-fallback-actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(183, 119, 29, 0.28);
+  border-radius: var(--radius-md);
+  background: var(--amber-soft);
+  color: var(--text);
+}
+
+.vision-fallback-actions[hidden] {
+  display: none;
+}
+
+.vision-fallback-actions strong {
+  font-size: 0.92rem;
+}
+
+.vision-fallback-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.vision-fallback-buttons button {
+  min-height: 44px;
+}
+
 .customer-session {
   grid-column: 1 / -1;
   display: grid;

@@ -65,6 +65,19 @@ import {
   rankCustomerMatches
 } from "./customer-lookup.js?v=20260729-87";
 import {
+  getFirstValidationError,
+  validateNeedsState,
+  validateProfileState
+} from "./operation-validation.js?v=20260729-87";
+import {
+  STEP_TO_TAB_ID,
+  canEnterStep,
+  getConsultationSource,
+  getNextWorkflowAction,
+  getWorkflowStepState,
+  normalizeWorkflowStep
+} from "./workflow-state.js?v=20260729-87";
+import {
   createCustomerCode,
   createSessionCode,
   deleteCustomer,
@@ -84,6 +97,7 @@ const startButton = document.getElementById("cameraStartButton");
 const imageUploadButton = document.getElementById("imageUploadButton");
 const clearImageButton = document.getElementById("clearImageButton");
 const compatibilityNotice = document.getElementById("compatibilityNotice");
+const visionFallbackActions = document.getElementById("visionFallbackActions");
 const statusText = document.getElementById("status");
 const landmarkCountText = document.getElementById("landmarkCount");
 const faceCountText = document.getElementById("faceCount");
@@ -172,6 +186,10 @@ const duplicateCustomerDialogMatches = document.getElementById("duplicateCustome
 const openExistingDuplicateButton = document.getElementById("openExistingDuplicateButton");
 const reviewDuplicateButton = document.getElementById("reviewDuplicateButton");
 const createSeparateDuplicateButton = document.getElementById("createSeparateDuplicateButton");
+const manualConsultationDialog = document.getElementById("manualConsultationDialog");
+const manualConsultationDialogPanel = manualConsultationDialog?.querySelector(".operation-dialog");
+const confirmManualConsultationButton = document.getElementById("confirmManualConsultationButton");
+const cancelManualConsultationButton = document.getElementById("cancelManualConsultationButton");
 const mobileNewButton = document.getElementById("mobileNewButton");
 const mobileSaveButton = document.getElementById("mobileSaveButton");
 const mobileScanButton = document.getElementById("mobileScanButton");
@@ -228,6 +246,10 @@ let latestImageDebug = createImageDebugState();
 let activeLandmarkerMode = "none";
 let landmarkerModeSwitchInFlight = false;
 let renderDiagnosticOverlayUntil = 0;
+let workflowNavigationInFlight = false;
+let saveCustomerInFlight = false;
+let manualConsultationDialogTrigger = null;
+let visionExperienceState = "idle";
 const renderLifecycleCounts = {
   loadedmetadata: 0,
   canplay: 0,
@@ -1730,10 +1752,12 @@ async function enableCamera() {
 
   const profileContext = refreshDeviceProfile();
   if (shouldUseUploadFallback(profileContext)) {
+    setVisionExperienceState("camera_unavailable", { message: "Thiết bị này dùng chế độ tải ảnh để tiếp tục." });
     openImageUploadFallback("profile-upload-fallback");
     return Promise.resolve();
   }
 
+  setVisionExperienceState("requesting_permission");
   cameraRequestInFlight = openCameraFlow().finally(() => {
     cameraRequestInFlight = null;
   });
@@ -1748,6 +1772,7 @@ async function openCameraFlow() {
   }
 
   updateCameraStartButton({ loading: true });
+  setVisionExperienceState("starting_camera");
   const sessionToken = ++cameraSessionToken;
   updateCameraDebug({
     permissionRequestPhase: "before-request",
@@ -1789,6 +1814,7 @@ async function openCameraFlow() {
       analyzeFaceButton.disabled = false;
     }
     updateCameraStartButton({ active: true });
+    setVisionExperienceState("camera_ready");
     startAutoScanFlow("camera-start");
     requestAnimationFrame(() => detectFrame(sessionToken));
   } catch (error) {
@@ -1822,6 +1848,12 @@ function handleCameraOpenError(error) {
   if (cameraGuidance) {
     cameraGuidance.textContent = getCameraErrorGuidance(error);
   }
+  setVisionExperienceState(
+    error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError"
+      ? "permission_denied"
+      : "camera_unavailable",
+    { message: getCameraErrorMessage(error) }
+  );
   updateVisionDebugPanel({
     reasonCode: error?.code || error?.name || "CAMERA_OPEN_ERROR",
     mediaPipeError: error?.message || "camera open failed",
@@ -1972,6 +2004,7 @@ function resizeCanvasToImage(canvasElement, imageElement, reason = "image-sync")
 async function analyzeUploadedFaceImage(file) {
   if (!file || !file.type?.startsWith("image/")) {
     statusText.textContent = "Vui lòng chọn một ảnh khuôn mặt hợp lệ";
+    setVisionExperienceState("analysis_error", { message: "\u1ea2nh t\u1ea3i l\u00ean ch\u01b0a h\u1ee3p l\u1ec7." });
     return;
   }
 
@@ -2015,6 +2048,7 @@ async function analyzeUploadedFaceImage(file) {
     latestAnalysis = null;
     latestAiFaceShape = "";
     clearConfirmedFaceShape();
+    setVisionExperienceState("analysis_error", { message: "Kh\u00f4ng th\u1ec3 ph\u00e2n t\u00edch \u1ea3nh. H\u00e3y ch\u1ecdn \u1ea3nh kh\u00e1c ho\u1eb7c t\u01b0 v\u1ea5n th\u1ee7 c\u00f4ng." });
     updateVisionDebugPanel({
       imageDebug: latestImageDebug,
       reasonCode: error?.code || error?.name || "IMAGE_UPLOAD_ERROR",
@@ -2099,6 +2133,9 @@ function renderStaticImageResults(results) {
       reasonCode,
       mediaPipeError: results.error?.message || ""
     });
+    setVisionExperienceState(faces.length > 1 ? "low_quality" : "no_face", {
+      message: faces.length > 1 ? "\u1ea2nh c\u00f3 h\u01a1n m\u1ed9t khu\u00f4n m\u1eb7t." : "Kh\u00f4ng th\u1ea5y r\u00f5 khu\u00f4n m\u1eb7t trong \u1ea3nh."
+    });
     updateWorkflowAssistant();
     return;
   }
@@ -2138,6 +2175,7 @@ function renderStaticImageResults(results) {
       confidence: analysis?.quality?.confidence || 0,
       limitation: "static image quality gate"
     });
+    setVisionExperienceState("low_quality", { message: "\u1ea2nh ch\u01b0a \u0111\u1ee7 r\u00f5 ho\u1eb7c ch\u01b0a ch\u00ednh di\u1ec7n." });
     updateWorkflowAssistant();
     return;
   }
@@ -2205,6 +2243,7 @@ function renderStaticImageResults(results) {
   updateCameraStatus(1, finalAnalysis);
   syncCurrentCustomer("customerUpdated");
   statusText.textContent = "Đã phân tích ảnh";
+  setVisionExperienceState("analysis_complete");
   autoScanState.active = false;
   autoScanState.phase = "RESULT";
   autoScanState.status = "captured";
@@ -4258,6 +4297,7 @@ function saveCurrentCustomer() {
   renderCustomers();
   statusText.textContent = "Đã lưu hồ sơ";
   updateWorkflowAssistant();
+  return record;
 }
 
 function getPersistableVisionAnalysis() {
@@ -4463,74 +4503,216 @@ function getActiveTabId() {
   return [...tabPanels].find((panel) => panel.classList.contains("active"))?.id || "tab-0";
 }
 
+function getCurrentWorkflowStep() {
+  return normalizeWorkflowStep(getActiveTabId());
+}
+
+function getCurrentVisionAnalysisState() {
+  if (isAnalyzingFace) return "analyzing";
+  if (manualConsultationMode) return "manual_mode";
+  if (latestAnalysis && confirmedFaceShape) return "analysis_complete";
+  if (latestAnalysis) return "low_quality";
+  if (latestImageDebug.imageDecodeStatus === "analyzed") return "analysis_complete";
+  if (latestImageDebug.imageDecodeStatus === "loaded") return "image_ready";
+  if (latestImageDebug.imageDecodeStatus === "error" || latestImageDebug.imageDecodeStatus === "decode_error") return "analysis_error";
+  if (video?.srcObject) return "camera_ready";
+  return visionExperienceState || "idle";
+}
+
+function getProfileValidation() {
+  const duplicateBlocked = Boolean((duplicatePhoneMatches.length ? duplicatePhoneMatches : getDuplicateMatchesForCurrentPhone()).length)
+    && !allowDuplicateCustomerSaveOnce;
+  return validateProfileState({
+    customerName: customerNameInput.value,
+    customerPhone: customerPhoneInput.value,
+    hasPrescription: hasPrescriptionInput.checked,
+    prescriptionPd: prescriptionPdInput.value,
+    prescriptionSph: prescriptionSphInput.value,
+    prescriptionCyl: prescriptionCylInput.value,
+    duplicateBlocked
+  });
+}
+
+function getNeedsValidation() {
+  return validateNeedsState({
+    budget: budgetInput.value,
+    purpose: purposeInput.value,
+    framePreference: framePreferenceInput.value
+  });
+}
+
+function buildWorkflowContext() {
+  const visionState = getCurrentVisionAnalysisState();
+  return {
+    currentStep: getCurrentWorkflowStep(),
+    hasProfileData: Boolean(customerNameInput.value.trim() || customerPhoneInput.value.trim()),
+    hasNeedsData: Boolean(purposeInput.value || budgetInput.value || customerNotesInput.value.trim() || hasPrescriptionInput.checked),
+    profileValidation: getProfileValidation(),
+    needsValidation: getNeedsValidation(),
+    confirmedFaceShape,
+    draftFaceShape: getDraftFaceShapeForAdvice(),
+    manualConsultationMode,
+    analysisState: visionState,
+    imageAnalysisState: latestImageDebug.imageDecodeStatus === "analyzed" ? "analysis_complete" : visionState,
+    cameraActive: Boolean(video?.srcObject && !video.hidden),
+    consultationComplete: ["measured", "closed"].includes(customerStatusInput.value),
+    actionInFlight: workflowNavigationInFlight || saveCustomerInFlight || isAnalyzingFace || Boolean(cameraRequestInFlight)
+  };
+}
+
+function clearInlineValidationErrors() {
+  document.querySelectorAll(".field-error").forEach((element) => element.remove());
+  document.querySelectorAll("[aria-invalid='true']").forEach((element) => {
+    element.removeAttribute("aria-invalid");
+    element.removeAttribute("aria-describedby");
+  });
+}
+
+function showInlineValidationErrors(validation) {
+  clearInlineValidationErrors();
+  const firstError = getFirstValidationError(validation);
+  (validation?.errors || []).forEach((error) => {
+    const field = document.getElementById(error.field);
+    if (!field) return;
+    const errorId = `${error.field}Error`;
+    const message = document.createElement("p");
+    message.id = errorId;
+    message.className = "field-error";
+    message.setAttribute("role", "alert");
+    message.textContent = error.message;
+    field.setAttribute("aria-invalid", "true");
+    field.setAttribute("aria-describedby", errorId);
+    field.insertAdjacentElement("afterend", message);
+  });
+
+  if (firstError) {
+    const field = document.getElementById(firstError.field);
+    field?.focus?.();
+    statusText.textContent = firstError.message;
+  }
+}
+
+function setWorkflowActionLock(locked) {
+  workflowNavigationInFlight = locked;
+  [workflowNextButton, mobileSaveButton, mobileScanButton, mobileConsultButton].forEach((button) => {
+    if (button) button.classList.toggle("is-loading", locked);
+  });
+}
+
+function saveCurrentCustomerWithLock() {
+  if (saveCustomerInFlight) {
+    return null;
+  }
+  saveCustomerInFlight = true;
+  saveCustomerButton.disabled = true;
+  try {
+    const validation = getProfileValidation();
+    if (!validation.valid) {
+      showInlineValidationErrors(validation);
+      return null;
+    }
+    clearInlineValidationErrors();
+    return saveCurrentCustomer();
+  } finally {
+    saveCustomerInFlight = false;
+    saveCustomerButton.disabled = false;
+    updateWorkflowAssistant();
+  }
+}
+
+function renderVisionFallbackActions(state, message = "") {
+  if (!visionFallbackActions) return;
+
+  const fallbackStates = new Set([
+    "camera_unavailable",
+    "permission_denied",
+    "analysis_error",
+    "no_face",
+    "low_quality"
+  ]);
+
+  if (!fallbackStates.has(state)) {
+    visionFallbackActions.hidden = true;
+    visionFallbackActions.innerHTML = "";
+    return;
+  }
+
+  visionFallbackActions.hidden = false;
+  visionFallbackActions.innerHTML = `
+    <strong>${escapeHtml(message || "VisionID ch\u01b0a \u0111\u1ee7 d\u1eef li\u1ec7u \u0111\u1ec3 t\u01b0 v\u1ea5n.")}</strong>
+    <div class="vision-fallback-buttons">
+      <button type="button" data-vision-fallback-action="retry-camera">Th\u1eed l\u1ea1i camera</button>
+      <button type="button" data-vision-fallback-action="upload-image" class="secondary-action">T\u1ea3i \u1ea3nh</button>
+      <button type="button" data-vision-fallback-action="manual-consult" class="secondary-action">T\u01b0 v\u1ea5n th\u1ee7 c\u00f4ng</button>
+    </div>
+  `;
+}
+
+function setVisionExperienceState(state, options = {}) {
+  visionExperienceState = state;
+  renderVisionFallbackActions(state, options.message || "");
+  updateWorkflowAssistant();
+}
+
+async function requestWorkflowNavigation(targetStep, source = "unknown", options = {}) {
+  const normalizedTarget = normalizeWorkflowStep(targetStep);
+  if (workflowNavigationInFlight && !options.skipLock) {
+    return false;
+  }
+
+  setWorkflowActionLock(true);
+  try {
+    flushOperationDraftSave(`workflow-${source}`);
+    const context = buildWorkflowContext();
+    const targetOrder = Object.keys(STEP_TO_TAB_ID);
+    const movingForward = targetOrder.indexOf(normalizedTarget) > targetOrder.indexOf(context.currentStep);
+
+    if (movingForward || normalizedTarget !== "profile") {
+      const gate = canEnterStep(normalizedTarget, context);
+      if (!gate.allowed) {
+        showInlineValidationErrors(gate.validation || { valid: false, errors: [] });
+        if (gate.reason === "CONSULTATION_SOURCE_REQUIRED") {
+          setVisionExperienceState("low_quality", { message: "C\u1ea7n VisionID ho\u00e0n t\u1ea5t ho\u1eb7c x\u00e1c nh\u1eadn t\u01b0 v\u1ea5n th\u1ee7 c\u00f4ng tr\u01b0\u1edbc khi sang T\u01b0 v\u1ea5n." });
+        }
+        updateWorkflowAssistant();
+        return false;
+      }
+    }
+
+    if (movingForward && context.currentStep === "profile") {
+      const saved = saveCurrentCustomerWithLock();
+      if (!saved) return false;
+    }
+
+    if (movingForward && context.currentStep === "needs") {
+      syncCurrentCustomer("customerUpdated");
+      updateAdvice();
+    }
+
+    showTab(STEP_TO_TAB_ID[normalizedTarget] || "tab-0");
+    return true;
+  } finally {
+    setWorkflowActionLock(false);
+  }
+}
+
 function getWorkflowState() {
-  const activeTabId = getActiveTabId();
-  const hasIdentity = Boolean(customerNameInput.value.trim() || customerPhoneInput.value.trim());
-  const hasPreferences = Boolean(purposeInput.value || budgetInput.value || customerNotesInput.value.trim());
-  const hasDraftVisionId = Boolean(getDraftFaceShapeForAdvice());
-  const hasConfirmedVisionId = Boolean(confirmedFaceShape);
-  const hasManualConsultation = Boolean(manualConsultationMode);
-
-  if (activeTabId === "tab-0") {
-    return {
-      step: hasIdentity ? "Hồ sơ đã có dữ liệu" : "Bước 1 · Hồ sơ",
-      next: hasIdentity ? "Lưu hồ sơ và sang Nhu cầu" : "Nhập tên hoặc SĐT, rồi sang Nhu cầu",
-      action: "Lưu & sang Nhu cầu",
-      tone: hasIdentity ? "ready" : "neutral"
-    };
-  }
-
-  if (activeTabId === "tab-1") {
-    return {
-      step: hasPreferences ? "Bước 2 · Nhu cầu" : "Bước 2 · Bổ sung nhu cầu",
-      next: "Kiểm tra tròng kính nhanh, rồi sang VisionID",
-      action: "Sang VisionID",
-      tone: "ready"
-    };
-  }
-
-  if (activeTabId === "tab-3") {
-    if (hasConfirmedVisionId || hasManualConsultation) {
-      return {
-        step: hasManualConsultation ? "Tư vấn thủ công đã sẵn sàng" : "VisionID đã xác nhận",
-        next: "Sang Tư vấn để xem kết luận và sản phẩm gợi ý",
-        action: "Sang Tư vấn",
-        tone: "ready"
-      };
-    }
-
-    if (hasDraftVisionId) {
-      return {
-        step: "VisionID có gợi ý nháp",
-        next: "Xác nhận dạng mặt để mở khóa kết luận chính thức",
-        action: "Xác nhận dạng mặt",
-        tone: "warning"
-      };
-    }
-
-    return {
-      step: "Bước 3 · VisionID",
-      next: video?.srcObject ? "Giữ mặt thẳng để lấy ảnh chất lượng cao" : "Bật camera để bắt đầu quét",
-      action: video?.srcObject ? "Quét lại từ đầu" : "Bật camera",
-      tone: video?.srcObject ? "warning" : "neutral"
-    };
-  }
-
-  if (activeTabId === "tab-4") {
-    const canComplete = hasConfirmedVisionId || hasManualConsultation;
-    return {
-      step: canComplete ? "Bước 4 · Tư vấn" : "Tư vấn đang ở dạng nháp",
-      next: canComplete ? "Lưu trạng thái đã đo sau khi tư vấn xong" : "Quay lại VisionID để xác nhận hoặc tư vấn thủ công",
-      action: canComplete ? "Lưu đã đo" : "Quay lại VisionID",
-      tone: canComplete ? "ready" : "warning"
-    };
-  }
+  const context = buildWorkflowContext();
+  const action = getNextWorkflowAction(context);
+  const activeStep = getCurrentWorkflowStep();
+  const source = getConsultationSource(context);
+  const stepLabels = {
+    profile: context.profileValidation.valid ? "B\u01b0\u1edbc 1 \u00b7 H\u1ed3 s\u01a1" : "B\u01b0\u1edbc 1 \u00b7 C\u1ea7n ho\u00e0n thi\u1ec7n h\u1ed3 s\u01a1",
+    needs: context.needsValidation.valid ? "B\u01b0\u1edbc 2 \u00b7 Nhu c\u1ea7u" : "B\u01b0\u1edbc 2 \u00b7 C\u1ea7n ho\u00e0n thi\u1ec7n nhu c\u1ea7u",
+    visionid: source.valid ? source.label : "B\u01b0\u1edbc 3 \u00b7 VisionID",
+    consultation: source.valid ? "B\u01b0\u1edbc 4 \u00b7 T\u01b0 v\u1ea5n" : "T\u01b0 v\u1ea5n \u0111ang b\u1ecb kh\u00f3a"
+  };
 
   return {
-    step: "Quy trình tư vấn",
-    next: "Tiếp tục theo bước đang mở",
-    action: "Tiếp theo",
-    tone: "neutral"
+    step: stepLabels[activeStep] || "Quy tr\u00ecnh t\u01b0 v\u1ea5n",
+    next: action.title,
+    action: action.label,
+    tone: action.tone || "neutral"
   };
 }
 
@@ -4544,35 +4726,31 @@ function updateWorkflowAssistant() {
   workflowStepLabel.textContent = state.step;
   workflowNextLabel.textContent = state.next;
   workflowNextButton.textContent = state.action;
+  workflowNextButton.disabled = Boolean(buildWorkflowContext().actionInFlight);
   updateProcessStepper();
   updateMobileActionBar();
 }
 
 function updateProcessStepper() {
-  const hasProfile = Boolean(customerNameInput.value.trim() || customerPhoneInput.value.trim());
-  const hasNeeds = Boolean(purposeInput.value || budgetInput.value || customerNotesInput.value.trim() || hasPrescriptionInput.checked);
-  const hasVisionId = Boolean(confirmedFaceShape || manualConsultationMode);
-  const hasDraftVisionId = Boolean(getDraftFaceShapeForAdvice());
-  const hasConsultDone = ["measured", "closed"].includes(customerStatusInput.value);
-  const states = {
-    "tab-0": hasProfile ? "Đã có" : "Cần nhập",
-    "tab-1": hasNeeds ? "Đã chọn" : "Chờ",
-    "tab-3": hasVisionId ? "Sẵn sàng" : (hasDraftVisionId ? "Cần xác nhận" : "Chờ"),
-    "tab-4": hasConsultDone ? "Đã lưu" : (hasVisionId ? "Sẵn sàng" : "Chờ")
+  const context = buildWorkflowContext();
+  const states = getWorkflowStepState(context);
+  const labels = {
+    complete: "\u0110\u00e3 xong",
+    current: "\u0110ang l\u00e0m",
+    available: "C\u00f3 th\u1ec3 m\u1edf",
+    locked: "Ch\u1edd"
   };
 
   tabButtons.forEach((button) => {
     const target = button.dataset.tabTarget;
-    const isComplete = (
-      (target === "tab-0" && hasProfile)
-      || (target === "tab-1" && hasNeeds)
-      || (target === "tab-3" && hasVisionId)
-      || (target === "tab-4" && hasConsultDone)
-    );
-    const isWarning = target === "tab-3" && hasDraftVisionId && !hasVisionId;
-    button.classList.toggle("is-complete", isComplete);
+    const step = normalizeWorkflowStep(target);
+    const state = states[step] || { status: "locked", locked: true };
+    const isWarning = step === "visionid" && Boolean(context.draftFaceShape) && !getConsultationSource(context).valid;
+    button.classList.toggle("is-complete", state.status === "complete");
     button.classList.toggle("is-warning", isWarning);
-    button.dataset.statusLabel = states[target] || "Chờ";
+    button.classList.toggle("is-locked", state.locked);
+    button.setAttribute("aria-disabled", state.locked ? "true" : "false");
+    button.dataset.statusLabel = labels[state.status] || "Ch?";
   });
 }
 
@@ -4586,55 +4764,42 @@ function updateMobileActionBar() {
   mobileSaveButton.classList.toggle("is-active", activeTabId === "tab-1");
   mobileScanButton.classList.toggle("is-active", activeTabId === "tab-3");
   mobileConsultButton.classList.toggle("is-active", activeTabId === "tab-4");
-  mobileConsultButton.disabled = !Boolean(confirmedFaceShape || getDraftFaceShapeForAdvice() || manualConsultationMode);
+  mobileConsultButton.disabled = !getConsultationSource(buildWorkflowContext()).valid;
 }
 
 async function handleWorkflowNext() {
-  const activeTabId = getActiveTabId();
-
-  if (activeTabId === "tab-0") {
-    saveCurrentCustomer();
-    showTab("tab-1");
+  const action = getNextWorkflowAction(buildWorkflowContext());
+  if (action.action === "navigate") {
+    await requestWorkflowNavigation(action.targetStep, "workflow-next");
     return;
   }
 
-  if (activeTabId === "tab-1") {
-    syncCurrentCustomer("customerUpdated");
-    updateAdvice();
-    showTab("tab-3");
-    return;
-  }
-
-  if (activeTabId === "tab-3") {
-    if (confirmedFaceShape || manualConsultationMode) {
-      showTab("tab-4");
-      return;
-    }
-
+  if (action.action === "confirm_face_shape") {
     if (getDraftFaceShapeForAdvice() && confirmedFaceShapeInput) {
       confirmedFaceShapeInput.disabled = false;
       confirmedFaceShapeInput.focus();
-      statusText.textContent = "Chọn dạng mặt xác nhận";
+      statusText.textContent = "Ch?n d?ng m?t x?c nh?n";
       updateWorkflowAssistant();
-      return;
     }
+    return;
+  }
 
+  if (action.action === "start_camera") {
     if (!video?.srcObject) {
       await enableCamera();
-    } else {
-      startAutoScanFlow("workflow-restart");
     }
     updateWorkflowAssistant();
     return;
   }
 
-  if (activeTabId === "tab-4") {
-    if (confirmedFaceShape || manualConsultationMode) {
-      markCustomerAsMeasured();
-    } else {
-      showTab("tab-3");
-    }
+  if (action.action === "restart_scan") {
+    startAutoScanFlow("workflow-restart");
     updateWorkflowAssistant();
+    return;
+  }
+
+  if (action.action === "complete_consultation") {
+    markCustomerAsMeasured();
   }
 }
 
@@ -5727,18 +5892,46 @@ function markCustomerAsMeasured() {
   updateWorkflowAssistant();
 }
 
+function openManualConsultationDialog(trigger = null) {
+  if (!manualConsultationDialog || !manualConsultationDialogPanel) {
+    enableManualConsultation();
+    return;
+  }
+  manualConsultationDialogTrigger = trigger || document.activeElement;
+  manualConsultationDialog.hidden = false;
+  manualConsultationDialogPanel.focus();
+}
+
+function closeManualConsultationDialog({ restoreFocus = true } = {}) {
+  if (!manualConsultationDialog) return;
+  manualConsultationDialog.hidden = true;
+  if (restoreFocus) {
+    manualConsultationDialogTrigger?.focus?.();
+  }
+  manualConsultationDialogTrigger = null;
+}
+
 function enableManualConsultation() {
   manualConsultationMode = true;
-  statusText.textContent = "Đang tư vấn thủ công";
-  faceShapeText.textContent = "Tư vấn thủ công";
+  latestAnalysis = null;
+  latestAiFaceShape = "";
+  confirmedFaceShape = "";
+  confirmedFaceShapeSource = "";
+  statusText.textContent = "\u0110ang t\u01b0 v\u1ea5n th\u1ee7 c\u00f4ng";
+  faceShapeText.textContent = "T\u01b0 v\u1ea5n th\u1ee7 c\u00f4ng";
+  if (confirmedFaceShapeInput) {
+    confirmedFaceShapeInput.value = "";
+    confirmedFaceShapeInput.disabled = true;
+  }
   if (markMeasuredButton) {
     markMeasuredButton.disabled = false;
   }
-  renderConfidenceNotice(null, { level: "medium", percent: 0 }, false, "Đã bỏ qua VisionID. Hãy thử gọng thật và lưu góp ý sau tư vấn.");
+  renderConfidenceNotice(null, { level: "medium", percent: 0 }, false, "\u0110\u00e3 b\u1ecf qua VisionID. H\u00e3y th\u1eed g\u1ecdng th\u1eadt v\u00e0 l\u01b0u g\u00f3p \u00fd sau t\u01b0 v\u1ea5n.");
   renderCustomerResult();
   updateAdvice();
   syncCurrentCustomer("manualConsultation");
-  showTab("tab-4");
+  setVisionExperienceState("manual_mode");
+  requestWorkflowNavigation("consultation", "manual-consultation", { skipLock: true });
 }
 
 function budgetLabel(value) {
@@ -5950,7 +6143,59 @@ if (analyzeFaceButton) {
 }
 
 if (manualConsultButton) {
-  manualConsultButton.addEventListener("click", enableManualConsultation);
+  manualConsultButton.addEventListener("click", () => openManualConsultationDialog(manualConsultButton));
+}
+
+if (confirmManualConsultationButton) {
+  confirmManualConsultationButton.addEventListener("click", () => {
+    closeManualConsultationDialog({ restoreFocus: false });
+    enableManualConsultation();
+  });
+}
+
+if (cancelManualConsultationButton) {
+  cancelManualConsultationButton.addEventListener("click", () => {
+    closeManualConsultationDialog();
+  });
+}
+
+if (manualConsultationDialog) {
+  manualConsultationDialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeManualConsultationDialog();
+    }
+    if (event.key === "Tab") {
+      const focusable = [...manualConsultationDialog.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")]
+        .filter((element) => !element.disabled && !element.hidden);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  });
+}
+
+if (visionFallbackActions) {
+  visionFallbackActions.addEventListener("click", (event) => {
+    const action = event.target?.dataset?.visionFallbackAction;
+    if (action === "retry-camera") {
+      enableCamera().catch((error) => {
+        console.debug("[VisionID] Camera retry failed", error?.code || error?.name || error?.message);
+      });
+    }
+    if (action === "upload-image") {
+      openImageUploadFallback("vision-fallback-action");
+    }
+    if (action === "manual-consult") {
+      openManualConsultationDialog(event.target);
+    }
+  });
 }
 
 if (confirmedFaceShapeInput) {
@@ -6012,8 +6257,7 @@ if (startNewSessionButton) {
 
 if (switchCustomerButton) {
   switchCustomerButton.addEventListener("click", () => {
-    showTab("tab-0");
-    customerSearch?.focus();
+    requestWorkflowNavigation("profile", "switch-customer").then(() => customerSearch?.focus());
   });
 }
 
@@ -6067,28 +6311,24 @@ if (discardDraftButton) {
 
 if (mobileSaveButton) {
   mobileSaveButton.addEventListener("click", () => {
-    saveCurrentCustomer();
-    showTab("tab-1");
+    requestWorkflowNavigation("needs", "mobile-save");
   });
 }
 
 if (mobileScanButton) {
   mobileScanButton.addEventListener("click", () => {
-    showTab("tab-3");
-    if (video?.srcObject && !video.hidden) {
-      startAutoScanFlow("mobile-action");
-      return;
-    }
-
-    enableCamera().catch((error) => {
-      console.debug("[VisionID] Mobile camera start failed", error?.code || error?.name || error?.message);
+    requestWorkflowNavigation("visionid", "mobile-scan").then((entered) => {
+      if (!entered) return;
+      if (video?.srcObject && !video.hidden) {
+        startAutoScanFlow("mobile-action");
+      }
     });
   });
 }
 
 if (mobileConsultButton) {
   mobileConsultButton.addEventListener("click", () => {
-    showTab("tab-4");
+    requestWorkflowNavigation("consultation", "mobile-consult");
   });
 }
 
@@ -6132,13 +6372,15 @@ startButton.addEventListener("click", async () => {
 });
 
 tabButtons.forEach((button) => {
-  button.addEventListener("click", () => showTab(button.dataset.tabTarget));
+  button.addEventListener("click", () => {
+    requestWorkflowNavigation(normalizeWorkflowStep(button.dataset.tabTarget), "tab-navigation");
+  });
 });
 
 newCustomerButton.addEventListener("click", () => {
   requestCustomerContextChange(() => startNewOperationSession({ clearDraft: true }));
 });
-saveCustomerButton.addEventListener("click", saveCurrentCustomer);
+saveCustomerButton.addEventListener("click", saveCurrentCustomerWithLock);
 customerSearch.addEventListener("input", () => {
   window.clearTimeout(customerSearchTimer);
   customerSearchTimer = window.setTimeout(renderCustomers, 200);

@@ -307,6 +307,7 @@
                 <p class="privacy-note">Ảnh được xử lý trực tiếp trên thiết bị, không lưu trữ hay gửi lên máy chủ.</p>
               </div>
               <div id="compatibilityNotice" class="compatibility-notice" hidden></div>
+              <div id="visionFallbackActions" class="vision-fallback-actions" role="status" aria-live="polite" hidden></div>
               <div class="camera-actions">
                 <button id="cameraStartButton" type="button">Bật camera</button>
                 <button id="imageUploadButton" type="button" class="secondary-action">Tải ảnh</button>
@@ -529,6 +530,17 @@
           <button id="openExistingDuplicateButton" type="button">Mở hồ sơ đã có</button>
           <button id="reviewDuplicateButton" type="button" class="secondary-action">Quay lại kiểm tra</button>
           <button id="createSeparateDuplicateButton" type="button" class="secondary-action">Vẫn tạo hồ sơ riêng</button>
+        </div>
+      </section>
+    </div>
+    <div id="manualConsultationDialog" class="modal-backdrop" hidden>
+      <section class="operation-dialog" role="dialog" aria-modal="true" aria-labelledby="manualConsultationDialogTitle" tabindex="-1">
+        <p class="eyebrow">Tư vấn thủ công</p>
+        <h2 id="manualConsultationDialogTitle">Bỏ qua VisionID cho khách này?</h2>
+        <p id="manualConsultationDialogSummary" class="dialog-summary">Chỉ tiếp tục khi nhân viên muốn tư vấn dựa trên quan sát trực tiếp và thử gọng thật. Hệ thống sẽ không tạo dạng mặt giả.</p>
+        <div class="dialog-actions">
+          <button id="confirmManualConsultationButton" type="button">Tiếp tục tư vấn thủ công</button>
+          <button id="cancelManualConsultationButton" type="button" class="secondary-action">Quay lại VisionID</button>
         </div>
       </section>
     </div>
