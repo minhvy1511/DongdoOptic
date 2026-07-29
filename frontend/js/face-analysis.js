@@ -1,4 +1,4 @@
-import { PUBLIC_FACE_SHAPE_CALIBRATION, getCalibrationSourceLabel } from "./face-calibration.js?v=20260722-58";
+import { PUBLIC_FACE_SHAPE_CALIBRATION, getCalibrationSourceLabel } from "./face-calibration.js?v=20260729-85";
 
 const LANDMARKS = {
   topFace: 10,

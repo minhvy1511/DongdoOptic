@@ -1,4 +1,4 @@
-import { getBrandEvidenceLine, getBrandKnowledge } from "./brand-knowledge.js?v=20260723-71";
+import { getBrandEvidenceLine, getBrandKnowledge } from "./brand-knowledge.js?v=20260729-85";
 
 export const LENS_CATALOG = [
   {
