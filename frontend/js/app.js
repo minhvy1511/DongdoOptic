@@ -1,6 +1,6 @@
-import { startUserCamera } from "./camera.js?v=20260729-79";
+import { startUserCamera } from "./camera.js?v=20260729-80";
 import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-39";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260722-62";
+import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-81";
 import {
   getColorGuidance,
   getFaceShapeAdvice,
@@ -731,10 +731,14 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
     confidence: Math.round((stableCapture.analysis.quality?.confidence || 0) * 100)
   });
   updateVisionDebugPanel({
+    analysis: stableCapture.analysis,
+    scanId: autoScanState.token,
+    attemptedFrames: samples.captureStats?.attemptedFrames ?? samples.length,
     acceptedFrames: stableCapture.sampleCount,
     rejectedFrames: samples.captureStats?.rejectedFrames ?? Math.max(0, samples.length - stableCapture.sampleCount),
     usableSamples: stableCapture.sampleCount,
     fallbackUsed: stableCapture.fallbackUsed,
+    rejectionReasons: samples.captureStats?.rejectionReasons || {},
     confidence: stableCapture.analysis.quality?.confidence,
     reasonCode: stableCapture.analysis.diagnostics?.qualityGate?.reasonCodes?.join(", ")
       || Object.keys(samples.captureStats?.rejectionReasons || {}).join(", ")
@@ -843,6 +847,13 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     ].slice(0, 4);
   }
   analysis.warnings = analysis.diagnostics.warnings;
+  attachRuntimeDebugSummary(analysis, buildAggregateDebugSummary({
+    selectedSamples,
+    metrics,
+    classification,
+    quality,
+    samples
+  }));
 
   return {
     analysis,
@@ -1251,7 +1262,7 @@ function calculatePoseStability(captures) {
 }
 
 function cloneAnalysis(analysis) {
-  return {
+  const cloned = {
     ...analysis,
     metrics: { ...(analysis?.metrics || {}) },
     quality: {
@@ -1265,6 +1276,79 @@ function cloneAnalysis(analysis) {
     },
     warnings: Array.isArray(analysis?.warnings) ? [...analysis.warnings] : []
   };
+  const debugSummary = getAnalysisDebugSummary(analysis);
+  if (debugSummary) {
+    attachRuntimeDebugSummary(cloned, { ...debugSummary });
+  }
+
+  return cloned;
+}
+
+function attachRuntimeDebugSummary(analysis, debugSummary) {
+  if (!analysis || !debugSummary) {
+    return analysis;
+  }
+
+  Object.defineProperty(analysis, "__visionDebug", {
+    value: debugSummary,
+    enumerable: false,
+    configurable: true
+  });
+
+  return analysis;
+}
+
+function buildAggregateDebugSummary({ selectedSamples = [], metrics = {}, classification = {}, quality = {}, samples = [] } = {}) {
+  const summaries = selectedSamples
+    .map((sample) => getAnalysisDebugSummary(sample.analysis))
+    .filter(Boolean);
+  const representative = summaries.at(-1) || {};
+  const scoreMap = Object.fromEntries(
+    (classification.candidates || []).map((candidate) => [candidate.name, candidate.score])
+  );
+
+  return {
+    ...representative,
+    scanId: autoScanState.token,
+    inputWidth: medianDebugValue(summaries, "inputWidth") ?? representative.inputWidth ?? 0,
+    inputHeight: medianDebugValue(summaries, "inputHeight") ?? representative.inputHeight ?? 0,
+    inputAspectRatio: medianDebugValue(summaries, "inputAspectRatio") ?? representative.inputAspectRatio ?? 1,
+    rawFaceHeight: medianDebugValue(summaries, "rawFaceHeight"),
+    rawFaceWidth: medianDebugValue(summaries, "rawFaceWidth"),
+    rawLengthWidthRatio: medianDebugValue(summaries, "rawLengthWidthRatio"),
+    aspectCorrectionFactor: medianDebugValue(summaries, "aspectCorrectionFactor") ?? representative.aspectCorrectionFactor ?? 1,
+    correctedFaceHeight: medianDebugValue(summaries, "correctedFaceHeight"),
+    correctedFaceWidth: medianDebugValue(summaries, "correctedFaceWidth"),
+    correctedLengthWidthRatio: metrics.lengthToWidth ?? representative.correctedLengthWidthRatio ?? null,
+    foreheadWidthRatio: metrics.foreheadToCheek ?? representative.foreheadWidthRatio ?? null,
+    jawWidthRatio: metrics.jawToCheek ?? representative.jawWidthRatio ?? null,
+    cheekWidthRatio: metrics.cheekToJaw ?? representative.cheekWidthRatio ?? null,
+    scores: scoreMap,
+    winningLabel: classification.bestShape || classification.shape || "unknown",
+    secondLabel: classification.secondShape || "unknown",
+    scoreMargin: classification.margin ?? 0,
+    invalidMetricReason: classification.invalidMetricReason || "",
+    analysisInstanceId: `scan-${autoScanState.token}-aggregate`,
+    attemptedFrames: samples.captureStats?.attemptedFrames ?? selectedSamples.length,
+    acceptedFrames: selectedSamples.length,
+    confidence: quality.confidence ?? null
+  };
+}
+
+function medianDebugValue(summaries, key) {
+  const values = summaries
+    .map((summary) => Number(summary?.[key]))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+
+  if (!values.length) {
+    return null;
+  }
+
+  const middle = Math.floor(values.length / 2);
+  return values.length % 2
+    ? values[middle]
+    : (values[middle - 1] + values[middle]) / 2;
 }
 
 function getYawGuidance(step, yawDeg = 0) {
@@ -2605,26 +2689,59 @@ function updateVisionDebugPanel(payload = {}) {
     document.body.appendChild(visionDebugPanel);
   }
 
-  const diagnostics = latestAnalysis?.diagnostics || {};
+  const debugSummary = getAnalysisDebugSummary(payload.analysis || latestAnalysis) || {};
+  const diagnostics = (payload.analysis || latestAnalysis)?.diagnostics || {};
   const qualityGate = diagnostics.qualityGate || {};
+  const formatMetric = (value, digits = 3) => Number.isFinite(Number(value))
+    ? Number(value).toFixed(digits)
+    : "-";
   const debugData = {
+    scanId: payload.scanId ?? debugSummary.scanId ?? autoScanState.token,
+    analysisInstanceId: debugSummary.analysisInstanceId || "-",
     phase: autoScanState.phase,
     step: SCAN_STEPS[autoScanState.stepIndex]?.key || "-",
     faceCount: payload.faceCount ?? Number(faceCountText?.textContent || 0),
     reasonCode: payload.reasonCode || qualityGate.reasonCodes?.join(", ") || "-",
+    attemptedFrames: payload.attemptedFrames ?? debugSummary.attemptedFrames ?? "-",
     acceptedFrames: payload.acceptedFrames ?? diagnostics.centerBurst?.sampleCount ?? "-",
     rejectedFrames: payload.rejectedFrames ?? (
       diagnostics.centerBurst
         ? Math.max(0, Number(diagnostics.centerBurst.totalSamples || 0) - Number(diagnostics.centerBurst.sampleCount || 0))
         : "-"
     ),
+    rejectionReasons: payload.rejectionReasons
+      ? JSON.stringify(payload.rejectionReasons)
+      : (diagnostics.centerBurst?.rejectionReasons ? JSON.stringify(diagnostics.centerBurst.rejectionReasons) : "-"),
     usableSamples: payload.usableSamples ?? diagnostics.centerBurst?.sampleCount ?? "-",
     fallbackUsed: payload.fallbackUsed ?? diagnostics.centerBurst?.fallbackUsed ?? false,
-    confidence: Number.isFinite(Number(payload.confidence ?? latestAnalysis?.quality?.confidence))
-      ? `${Math.round(Number(payload.confidence ?? latestAnalysis?.quality?.confidence) * 100)}%`
+    confidence: Number.isFinite(Number(payload.confidence ?? (payload.analysis || latestAnalysis)?.quality?.confidence))
+      ? `${Math.round(Number(payload.confidence ?? (payload.analysis || latestAnalysis)?.quality?.confidence) * 100)}%`
       : "-",
     limitation: payload.limitation || (Array.isArray(diagnostics.limitations) ? diagnostics.limitations.join(" | ") : ""),
-    mediaPipeError: payload.mediaPipeError || ""
+    mediaPipeError: payload.mediaPipeError || "",
+    inputWidth: debugSummary.inputWidth ?? "-",
+    inputHeight: debugSummary.inputHeight ?? "-",
+    inputAspectRatio: formatMetric(debugSummary.inputAspectRatio),
+    rawFaceHeight: formatMetric(debugSummary.rawFaceHeight),
+    rawFaceWidth: formatMetric(debugSummary.rawFaceWidth),
+    rawLengthWidthRatio: formatMetric(debugSummary.rawLengthWidthRatio),
+    aspectCorrectionFactor: formatMetric(debugSummary.aspectCorrectionFactor),
+    correctedFaceHeight: formatMetric(debugSummary.correctedFaceHeight),
+    correctedFaceWidth: formatMetric(debugSummary.correctedFaceWidth),
+    correctedLengthWidthRatio: formatMetric(debugSummary.correctedLengthWidthRatio),
+    foreheadWidthRatio: formatMetric(debugSummary.foreheadWidthRatio),
+    jawWidthRatio: formatMetric(debugSummary.jawWidthRatio),
+    cheekWidthRatio: formatMetric(debugSummary.cheekWidthRatio),
+    scoreRound: formatMetric(debugSummary.scores?.round),
+    scoreOval: formatMetric(debugSummary.scores?.oval),
+    scoreLong: formatMetric(debugSummary.scores?.long),
+    scoreSquare: formatMetric(debugSummary.scores?.square),
+    scoreHeart: formatMetric(debugSummary.scores?.heart),
+    scoreDiamond: formatMetric(debugSummary.scores?.diamond),
+    winningLabel: debugSummary.winningLabel || "-",
+    secondLabel: debugSummary.secondLabel || "-",
+    scoreMargin: formatMetric(debugSummary.scoreMargin),
+    invalidMetricReason: debugSummary.invalidMetricReason || "-"
   };
 
   visionDebugPanel.textContent = Object.entries(debugData)

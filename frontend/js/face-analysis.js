@@ -19,8 +19,15 @@ const HEAD_POSE_LANDMARKS = {
   noseTip: 1
 };
 
-const CAMERA_ASPECT_CORRECTION_STRENGTH = 0.42;
 const BROW_TO_CHIN_HEIGHT_FACTOR = 1.34;
+const REQUIRED_METRIC_KEYS = Object.freeze([
+  "lengthToWidth",
+  "jawToCheek",
+  "foreheadToCheek",
+  "jawToForehead",
+  "cheekToJaw"
+]);
+let analysisInstanceCounter = 0;
 
 const FACE_SHAPE_LABELS = {
   oval: "Trái xoan",
@@ -34,13 +41,17 @@ const FACE_SHAPE_LABELS = {
 
 export function analyzeFaceShape(landmarks, frameSize = null) {
   if (!landmarks?.length) {
-    return emptyAnalysis();
+    return emptyAnalysis("MISSING_LANDMARKS", frameSize);
   }
 
   const faceBox = getFaceBox(landmarks);
+  const rawFrameAspect = getRawFrameAspect(frameSize);
+  const metricAspect = getFrameAspect(frameSize);
   const browCenter = midpoint(landmarks[LANDMARKS.leftBrowOuter], landmarks[LANDMARKS.rightBrowOuter]);
   const browToChin = metricDistance(browCenter, landmarks[LANDMARKS.chin], frameSize);
+  const rawBrowToChin = rawDistance(browCenter, landmarks[LANDMARKS.chin]);
   const contourHeight = metricDistance(landmarks[LANDMARKS.topFace], landmarks[LANDMARKS.chin], frameSize);
+  const rawContourHeight = rawDistance(landmarks[LANDMARKS.topFace], landmarks[LANDMARKS.chin]);
   const browBasedHeight = browToChin * BROW_TO_CHIN_HEIGHT_FACTOR;
   const boxBasedHeight = faceBox.height * 1.03;
   const faceHeight = medianNumber([
@@ -48,13 +59,22 @@ export function analyzeFaceShape(landmarks, frameSize = null) {
     contourHeight ? contourHeight * 1.08 : 0,
     boxBasedHeight
   ]);
+  const rawFaceHeight = medianNumber([
+    rawBrowToChin * BROW_TO_CHIN_HEIGHT_FACTOR,
+    rawContourHeight ? rawContourHeight * 1.08 : 0,
+    boxBasedHeight
+  ]);
+  const rawCheekWidth = rawDistance(landmarks[LANDMARKS.leftCheek], landmarks[LANDMARKS.rightCheek]);
   const cheekWidth = metricDistance(landmarks[LANDMARKS.leftCheek], landmarks[LANDMARKS.rightCheek], frameSize);
+  const rawForeheadWidth = rawDistance(landmarks[LANDMARKS.leftBrowOuter], landmarks[LANDMARKS.rightBrowOuter])
+    || rawDistance(landmarks[LANDMARKS.leftTemple], landmarks[LANDMARKS.rightTemple]);
   const foreheadWidth = metricDistance(landmarks[LANDMARKS.leftBrowOuter], landmarks[LANDMARKS.rightBrowOuter], frameSize)
     || metricDistance(landmarks[LANDMARKS.leftTemple], landmarks[LANDMARKS.rightTemple], frameSize);
+  const rawJawWidth = rawDistance(landmarks[LANDMARKS.leftJaw], landmarks[LANDMARKS.rightJaw]);
   const jawWidth = metricDistance(landmarks[LANDMARKS.leftJaw], landmarks[LANDMARKS.rightJaw], frameSize);
 
   if (!browToChin || !faceHeight || !cheekWidth || !foreheadWidth || !jawWidth) {
-    return emptyAnalysis();
+    return emptyAnalysis("INVALID_METRICS", frameSize);
   }
 
   const lengthToWidth = faceHeight / cheekWidth;
@@ -68,8 +88,8 @@ export function analyzeFaceShape(landmarks, frameSize = null) {
     coverage: faceBox.width * faceBox.height,
     symmetryScore: calculateSymmetryScore(landmarks),
     measurementSource: "aspect_corrected_landmarks",
-    frameAspect: getRawFrameAspect(frameSize),
-    metricAspect: getFrameAspect(frameSize),
+    frameAspect: rawFrameAspect,
+    metricAspect,
     heightEstimate: {
       browBasedHeight,
       contourHeight,
@@ -96,7 +116,7 @@ export function analyzeFaceShape(landmarks, frameSize = null) {
     classification
   });
 
-  return {
+  const analysis = {
     shape,
     label: FACE_SHAPE_LABELS[shape],
     metrics,
@@ -104,6 +124,31 @@ export function analyzeFaceShape(landmarks, frameSize = null) {
     diagnostics,
     warnings: diagnostics.warnings
   };
+  attachDebugSummary(analysis, {
+    inputWidth: Number(frameSize?.width || 0),
+    inputHeight: Number(frameSize?.height || 0),
+    inputAspectRatio: rawFrameAspect,
+    rawFaceHeight,
+    rawFaceWidth: rawCheekWidth,
+    rawLengthWidthRatio: safeRatio(rawFaceHeight, rawCheekWidth),
+    aspectCorrectionFactor: metricAspect,
+    correctedFaceHeight: faceHeight,
+    correctedFaceWidth: cheekWidth,
+    correctedLengthWidthRatio: lengthToWidth,
+    foreheadWidthRatio: foreheadToCheek,
+    jawWidthRatio: jawToCheek,
+    cheekWidthRatio: cheekToJaw,
+    rawForeheadWidth,
+    rawJawWidth,
+    scores: scoresFromClassification(classification),
+    winningLabel: classification.bestShape,
+    secondLabel: classification.secondShape,
+    scoreMargin: classification.margin,
+    invalidMetricReason: classification.invalidMetricReason || "",
+    analysisInstanceId: nextAnalysisInstanceId()
+  });
+
+  return analysis;
 }
 
 export function getFaceShapeLabel(shape) {
@@ -115,6 +160,24 @@ export function classifyFaceShapeFromMetrics(metrics) {
 }
 
 export function getClassificationDetail(metrics) {
+  const invalidMetricReason = getInvalidMetricReason(metrics);
+  if (invalidMetricReason) {
+    return {
+      shape: "unknown",
+      bestShape: "unknown",
+      secondShape: "unknown",
+      bestScore: 0,
+      secondScore: 0,
+      margin: 0,
+      clarity: 0,
+      invalidMetricReason,
+      calibrationSource: getCalibrationSourceLabel(),
+      candidates: Object.keys(FACE_SHAPE_LABELS)
+        .filter((name) => name !== "unknown")
+        .map((name) => ({ name, score: 0 }))
+    };
+  }
+
   const ordered = getShapeCandidates(metrics);
   const [bestShape, bestScore] = ordered[0] || ["unknown", 0];
   const [secondShape, secondScore] = ordered[1] || ["unknown", 0];
@@ -133,9 +196,14 @@ export function getClassificationDetail(metrics) {
     secondScore,
     margin,
     clarity,
+    invalidMetricReason: "",
     calibrationSource: getCalibrationSourceLabel(),
     candidates: ordered.map(([name, score]) => ({ name, score }))
   };
+}
+
+export function getAnalysisDebugSummary(analysis) {
+  return analysis?.__visionDebug || null;
 }
 
 export function estimateHeadPose(landmarks) {
@@ -207,8 +275,7 @@ function metricDistance(pointA, pointB, frameSize = null) {
 }
 
 function getFrameAspect(frameSize = null) {
-  const rawAspect = getRawFrameAspect(frameSize);
-  return clamp(1 + (rawAspect - 1) * CAMERA_ASPECT_CORRECTION_STRENGTH, 0.75, 1.58);
+  return getRawFrameAspect(frameSize);
 }
 
 function getRawFrameAspect(frameSize = null) {
@@ -236,6 +303,14 @@ function medianNumber(values) {
   return numericValues.length % 2
     ? numericValues[middle]
     : (numericValues[middle - 1] + numericValues[middle]) / 2;
+}
+
+function rawDistance(pointA, pointB) {
+  if (!pointA || !pointB) {
+    return 0;
+  }
+
+  return Math.hypot(pointA.x - pointB.x, pointA.y - pointB.y);
 }
 
 function midpoint(pointA, pointB) {
@@ -306,6 +381,17 @@ function pairBalance(pointA, pointB) {
 }
 
 function scoreRuleBasedShapes(metrics = {}) {
+  if (getInvalidMetricReason(metrics)) {
+    return {
+      oval: 0,
+      round: 0,
+      square: 0,
+      long: 0,
+      heart: 0,
+      diamond: 0
+    };
+  }
+
   const lengthToWidth = Number(metrics.lengthToWidth || 0);
   const foreheadToCheek = Number(metrics.foreheadToCheek || 0);
   const jawToCheek = Number(metrics.jawToCheek || 0);
@@ -407,6 +493,48 @@ function ramp(value, start, end) {
 
 function closeness(value, target, tolerance) {
   return clamp(1 - Math.abs(Number(value || 0) - target) / tolerance, 0, 1);
+}
+
+function getInvalidMetricReason(metrics = {}) {
+  for (const key of REQUIRED_METRIC_KEYS) {
+    const value = Number(metrics?.[key]);
+    if (!Number.isFinite(value)) {
+      return `INVALID_${key.toUpperCase()}`;
+    }
+
+    if (value <= 0) {
+      return `NON_POSITIVE_${key.toUpperCase()}`;
+    }
+  }
+
+  return "";
+}
+
+function scoresFromClassification(classification = {}) {
+  return Object.fromEntries(
+    (classification.candidates || []).map((candidate) => [candidate.name, candidate.score])
+  );
+}
+
+function safeRatio(numerator, denominator) {
+  const top = Number(numerator);
+  const bottom = Number(denominator);
+  return Number.isFinite(top) && Number.isFinite(bottom) && bottom > 0
+    ? top / bottom
+    : null;
+}
+
+function attachDebugSummary(analysis, debugSummary) {
+  Object.defineProperty(analysis, "__visionDebug", {
+    value: debugSummary,
+    enumerable: false,
+    configurable: true
+  });
+}
+
+function nextAnalysisInstanceId() {
+  analysisInstanceCounter += 1;
+  return `analysis-${analysisInstanceCounter}`;
 }
 
 function clamp(value, min, max) {
@@ -545,8 +673,15 @@ function idealForeheadRatio(shape) {
   return PUBLIC_FACE_SHAPE_CALIBRATION.shapeTargets[shape]?.targets?.foreheadToCheek?.[0] ?? 0.94;
 }
 
-function emptyAnalysis() {
-  return {
+function emptyAnalysis(invalidMetricReason = "NO_ANALYSIS", frameSize = null) {
+  const classification = getClassificationDetail({
+    lengthToWidth: 0,
+    foreheadToCheek: 0,
+    jawToCheek: 0,
+    jawToForehead: 0,
+    cheekToJaw: 0
+  });
+  const analysis = {
     shape: "unknown",
     label: FACE_SHAPE_LABELS.unknown,
     metrics: {
@@ -579,9 +714,33 @@ function emptyAnalysis() {
       centerLabel: "Chưa thấy",
       ready: false,
       readinessScore: 0,
+      classification,
       warnings: [],
       summary: "Cần đưa mặt vào khung."
     },
     warnings: []
   };
+  attachDebugSummary(analysis, {
+    inputWidth: Number(frameSize?.width || 0),
+    inputHeight: Number(frameSize?.height || 0),
+    inputAspectRatio: getRawFrameAspect(frameSize),
+    rawFaceHeight: null,
+    rawFaceWidth: null,
+    rawLengthWidthRatio: null,
+    aspectCorrectionFactor: getFrameAspect(frameSize),
+    correctedFaceHeight: null,
+    correctedFaceWidth: null,
+    correctedLengthWidthRatio: null,
+    foreheadWidthRatio: null,
+    jawWidthRatio: null,
+    cheekWidthRatio: null,
+    scores: scoresFromClassification(classification),
+    winningLabel: "unknown",
+    secondLabel: "unknown",
+    scoreMargin: 0,
+    invalidMetricReason,
+    analysisInstanceId: nextAnalysisInstanceId()
+  });
+
+  return analysis;
 }
