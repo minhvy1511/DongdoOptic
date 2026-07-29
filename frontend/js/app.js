@@ -1,4 +1,4 @@
-import { startUserCamera } from "./camera.js?v=20260729-85";
+import { startUserCamera } from "./camera.js?v=20260729-86";
 import {
   clearCanvas,
   drawCalibrationGuide,
