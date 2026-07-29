@@ -72,6 +72,22 @@
             </div>
             <button id="workflowNextButton" type="button">Tiếp theo</button>
           </div>
+          <section id="currentCustomerSession" class="customer-session" aria-label="Khach hang hien tai">
+            <div class="customer-session-main">
+              <span class="eyebrow">Khach hang hien tai</span>
+              <strong id="currentCustomerName">Khach moi chua dat ten</strong>
+              <span id="currentCustomerPhone">Chua co so dien thoai</span>
+            </div>
+            <div class="customer-session-meta">
+              <span id="currentCustomerStep">Ho so</span>
+              <span id="currentCustomerSource">Phien moi</span>
+              <span id="currentCustomerSaveState" aria-live="polite">Chua co thay doi</span>
+            </div>
+            <div class="customer-session-actions">
+              <button id="switchCustomerButton" type="button" class="secondary-action">Doi khach</button>
+              <button id="startNewSessionButton" type="button" class="secondary-action">Tao khach moi</button>
+            </div>
+          </section>
         </header>
 
         <section id="tab-0" class="tab-panel active compact-tab">
@@ -477,6 +493,29 @@
         </section>
       </section>
     </main>
+    <div id="operationDraftDialog" class="modal-backdrop" hidden>
+      <section class="operation-dialog" role="dialog" aria-modal="true" aria-labelledby="operationDraftDialogTitle" tabindex="-1">
+        <p class="eyebrow">Ban nhap phien tu van</p>
+        <h2 id="operationDraftDialogTitle">Ban co mot phien tu van chua hoan thanh.</h2>
+        <p id="operationDraftDialogSummary" class="dialog-summary">Kiem tra ban nhap truoc khi tiep tuc.</p>
+        <div class="dialog-actions">
+          <button id="resumeDraftButton" type="button">Tiep tuc phien gan nhat</button>
+          <button id="discardDraftButton" type="button" class="secondary-action">Bat dau phien moi</button>
+        </div>
+      </section>
+    </div>
+    <div id="contextChangeDialog" class="modal-backdrop" hidden>
+      <section class="operation-dialog" role="dialog" aria-modal="true" aria-labelledby="contextChangeDialogTitle" tabindex="-1">
+        <p class="eyebrow">Phien dang do</p>
+        <h2 id="contextChangeDialogTitle">Ban dang roi phien tu van hien tai.</h2>
+        <p id="contextChangeDialogSummary" class="dialog-summary">Hay chon cach xu ly ban nhap truoc khi doi khach.</p>
+        <div class="dialog-actions">
+          <button id="keepDraftButton" type="button">Luu ban nhap va tiep tuc sau</button>
+          <button id="discardChangesButton" type="button" class="secondary-action">Bo thay doi</button>
+          <button id="cancelContextChangeButton" type="button" class="secondary-action">Huy</button>
+        </div>
+      </section>
+    </div>
     <nav class="mobile-action-bar" aria-label="Thao tác nhanh">
       <button id="mobileNewButton" type="button">Tạo mới</button>
       <button id="mobileSaveButton" type="button">Lưu</button>

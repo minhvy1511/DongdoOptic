@@ -43,6 +43,21 @@ import {
 } from "./vision/quality-gate.js?v=20260729-85";
 import { buildConsentScopedVisionFeedback, isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js?v=20260729-85";
 import {
+  clearOperationDraft,
+  createDebouncedDraftSaver,
+  createOperationDraft,
+  createOperationDraftId,
+  getDraftResumeSummary,
+  hasBusinessStateChanged,
+  isMeaningfulOperationDraft,
+  normalizeOperationDraft,
+  normalizeOperationBusinessState,
+  operationStepToTabId,
+  readOperationDraft,
+  tabIdToOperationStep,
+  writeOperationDraft
+} from "./operation-draft-store.js?v=20260729-85";
+import {
   createCustomerCode,
   createSessionCode,
   deleteCustomer,
@@ -123,6 +138,25 @@ const workflowAssistant = document.getElementById("workflowAssistant");
 const workflowStepLabel = document.getElementById("workflowStepLabel");
 const workflowNextLabel = document.getElementById("workflowNextLabel");
 const workflowNextButton = document.getElementById("workflowNextButton");
+const currentCustomerSession = document.getElementById("currentCustomerSession");
+const currentCustomerNameLabel = document.getElementById("currentCustomerName");
+const currentCustomerPhoneLabel = document.getElementById("currentCustomerPhone");
+const currentCustomerStepLabel = document.getElementById("currentCustomerStep");
+const currentCustomerSourceLabel = document.getElementById("currentCustomerSource");
+const currentCustomerSaveStateLabel = document.getElementById("currentCustomerSaveState");
+const switchCustomerButton = document.getElementById("switchCustomerButton");
+const startNewSessionButton = document.getElementById("startNewSessionButton");
+const operationDraftDialog = document.getElementById("operationDraftDialog");
+const operationDraftDialogPanel = operationDraftDialog?.querySelector(".operation-dialog");
+const operationDraftDialogSummary = document.getElementById("operationDraftDialogSummary");
+const resumeDraftButton = document.getElementById("resumeDraftButton");
+const discardDraftButton = document.getElementById("discardDraftButton");
+const contextChangeDialog = document.getElementById("contextChangeDialog");
+const contextChangeDialogPanel = contextChangeDialog?.querySelector(".operation-dialog");
+const contextChangeDialogSummary = document.getElementById("contextChangeDialogSummary");
+const keepDraftButton = document.getElementById("keepDraftButton");
+const discardChangesButton = document.getElementById("discardChangesButton");
+const cancelContextChangeButton = document.getElementById("cancelContextChangeButton");
 const mobileNewButton = document.getElementById("mobileNewButton");
 const mobileSaveButton = document.getElementById("mobileSaveButton");
 const mobileScanButton = document.getElementById("mobileScanButton");
@@ -187,6 +221,21 @@ const renderLifecycleCounts = {
   visualViewportResize: 0
 };
 let autoScanState = createAutoScanState();
+let operationDraftId = createOperationDraftId();
+let operationDraftCreatedAt = new Date().toISOString();
+let operationCustomerId = null;
+let operationDraftSource = "new";
+let lastOperationBusinessBaseline = null;
+let operationSaveState = "idle";
+let lastDraftSavedAt = null;
+let lastCustomerSavedAt = null;
+let suppressOperationDraftTracking = false;
+let pendingContextChangeAction = null;
+let modalReturnFocusElement = null;
+const operationDraftSaver = createDebouncedDraftSaver({
+  delayMs: 750,
+  saveFn: () => flushOperationDraftSave("debounce")
+});
 
 const CONFIDENCE_THRESHOLDS = {
   high: 0.8,
@@ -4167,6 +4216,12 @@ function saveCurrentCustomer() {
   );
 
   customerCodeInput.value = record.customer_code;
+  operationCustomerId = record.customer_code;
+  operationDraftSource = "existing";
+  lastCustomerSavedAt = record.updated_at || new Date().toISOString();
+  flushOperationDraftSave("customer-save");
+  setOperationBaselineFromCurrent();
+  setOperationSaveState("customer-saved", { customerSavedAt: lastCustomerSavedAt });
   renderCustomers();
   statusText.textContent = "Đã lưu hồ sơ";
   updateWorkflowAssistant();
@@ -4231,6 +4286,7 @@ function loadCustomerRecord(customerCode) {
   }
 
   isLoadingCustomer = true;
+  suppressOperationDraftTracking = true;
   analysisHistory = [];
   customerCodeInput.value = record.customer_code;
   customerNameInput.value = record.customer_name || "";
@@ -4310,18 +4366,35 @@ function loadCustomerRecord(customerCode) {
 
   currentSessionCode = record.session_code || createSessionCode();
   ensureCurrentSessionCode();
+  operationDraftId = createOperationDraftId();
+  operationDraftCreatedAt = new Date().toISOString();
+  operationCustomerId = record.customer_code;
+  operationDraftSource = "existing";
+  lastCustomerSavedAt = record.updated_at || null;
+  lastDraftSavedAt = null;
+  operationSaveState = "idle";
   syncCurrentCustomer("customerSelected", record);
+  lastOperationBusinessBaseline = getCurrentOperationBusinessState();
+  suppressOperationDraftTracking = false;
+  renderCustomerSessionHeader();
   statusText.textContent = "Đã mở hồ sơ";
   isLoadingCustomer = false;
   return true;
 }
 
 function showTab(tabId) {
+  if (!suppressOperationDraftTracking) {
+    flushOperationDraftSave("before-tab-change");
+  }
   tabPanels.forEach((panel) => panel.classList.toggle("active", panel.id === tabId));
   tabButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.tabTarget === tabId);
   });
+  if (!suppressOperationDraftTracking) {
+    scheduleOperationDraftSave("tab-change");
+  }
   updateWorkflowAssistant();
+  renderCustomerSessionHeader();
 }
 
 function getActiveTabId() {
@@ -4550,6 +4623,366 @@ function readCustomerSnapshot() {
   return hasVisionAnalysisConsent() ? snapshot : purgeStoredVisionAnalysis(snapshot);
 }
 
+function buildOperationDraftFromForm(overrides = {}) {
+  return createOperationDraft({
+    draftId: operationDraftId,
+    customerId: operationCustomerId,
+    sessionCode: ensureCurrentSessionCode(),
+    source: operationDraftSource,
+    currentStep: tabIdToOperationStep(getActiveTabId()),
+    customer: {
+      name: customerNameInput.value,
+      phone: customerPhoneInput.value,
+      consultDate: consultDateInput.value,
+      ageGroup: ageGroupInput.value,
+      status: customerStatusInput.value,
+      notes: customerNotesInput.value,
+      frameWidthMm: frameWidthMmInput.value,
+      lensWidthMm: lensWidthMmInput.value,
+      bridgeWidthMm: bridgeWidthMmInput.value,
+      hasPrescription: hasPrescriptionInput.checked,
+      prescription: {
+        pd: prescriptionPdInput.value,
+        sph: prescriptionSphInput.value,
+        cyl: prescriptionCylInput.value
+      }
+    },
+    needs: {
+      budget: budgetInput.value,
+      purpose: purposeInput.value,
+      prescriptionLevel: prescriptionLevelInput.value || derivePrescriptionLevel(),
+      framePreference: framePreferenceInput.value,
+      brands: [...preferenceForm.querySelectorAll('input[name="brands"]:checked')].map((input) => input.value)
+    },
+    consultation: {
+      manualMode: manualConsultationMode
+    },
+    consent: {
+      analysisPersistenceAllowed: hasVisionAnalysisConsent()
+    },
+    createdAt: operationDraftCreatedAt,
+    lastSavedCustomerAt: lastCustomerSavedAt,
+    ...overrides
+  });
+}
+
+function getCurrentOperationBusinessState() {
+  return normalizeOperationBusinessState(buildOperationDraftFromForm());
+}
+
+function setOperationBaselineFromCurrent() {
+  lastOperationBusinessBaseline = getCurrentOperationBusinessState();
+  renderCustomerSessionHeader();
+}
+
+function hasUnsavedOperationChanges() {
+  const currentState = getCurrentOperationBusinessState();
+  return hasBusinessStateChanged(currentState, lastOperationBusinessBaseline);
+}
+
+function setOperationSaveState(state, options = {}) {
+  operationSaveState = state;
+  if (options.draftSavedAt) {
+    lastDraftSavedAt = options.draftSavedAt;
+  }
+  if (options.customerSavedAt) {
+    lastCustomerSavedAt = options.customerSavedAt;
+  }
+  renderCustomerSessionHeader();
+}
+
+function scheduleOperationDraftSave(reason = "change") {
+  if (suppressOperationDraftTracking) {
+    return;
+  }
+
+  const draft = buildOperationDraftFromForm();
+  if (!isMeaningfulOperationDraft(draft)) {
+    renderCustomerSessionHeader();
+    return;
+  }
+
+  if (hasUnsavedOperationChanges()) {
+    setOperationSaveState("dirty");
+  }
+  operationDraftSaver.schedule();
+  updateCameraDebug({ operationDraftSaveScheduled: reason });
+}
+
+function flushOperationDraftSave(reason = "manual") {
+  if (suppressOperationDraftTracking) {
+    return { ok: false, reason: "SUPPRESSED" };
+  }
+
+  const draft = buildOperationDraftFromForm();
+  if (!isMeaningfulOperationDraft(draft)) {
+    renderCustomerSessionHeader();
+    return { ok: false, reason: "EMPTY_DRAFT" };
+  }
+
+  setOperationSaveState("saving");
+  const result = writeOperationDraft(draft);
+  if (result.ok) {
+    operationDraftId = result.draft.draftId;
+    operationDraftCreatedAt = result.draft.createdAt;
+    lastDraftSavedAt = result.draft.updatedAt;
+    lastOperationBusinessBaseline = normalizeOperationBusinessState(result.draft);
+    setOperationSaveState("draft-saved", { draftSavedAt: result.draft.updatedAt });
+  } else {
+    setOperationSaveState("error");
+  }
+  updateCameraDebug({ operationDraftLastFlush: reason, operationDraftSaved: Boolean(result.ok) });
+  return result;
+}
+
+function renderCustomerSessionHeader() {
+  if (!currentCustomerSession) {
+    return;
+  }
+
+  const name = customerNameInput.value.trim() || "Khach moi chua dat ten";
+  const phone = customerPhoneInput.value.trim() || "Chua co so dien thoai";
+  const stepLabel = {
+    profile: "Ho so",
+    needs: "Nhu cau",
+    visionid: "VisionID",
+    consultation: "Tu van"
+  }[tabIdToOperationStep(getActiveTabId())] || "Ho so";
+
+  if (currentCustomerNameLabel) currentCustomerNameLabel.textContent = name;
+  if (currentCustomerPhoneLabel) currentCustomerPhoneLabel.textContent = phone;
+  if (currentCustomerStepLabel) currentCustomerStepLabel.textContent = stepLabel;
+  if (currentCustomerSourceLabel) {
+    currentCustomerSourceLabel.textContent = operationCustomerId ? "Ho so da luu" : "Phien moi";
+  }
+  if (currentCustomerSaveStateLabel) {
+    const label = getOperationSaveStateLabel();
+    currentCustomerSaveStateLabel.textContent = label.text;
+    currentCustomerSaveStateLabel.dataset.state = label.state;
+  }
+}
+
+function getOperationSaveStateLabel() {
+  if (operationSaveState === "dirty") {
+    return { state: "dirty", text: "Co thay doi chua luu" };
+  }
+  if (operationSaveState === "saving") {
+    return { state: "saving", text: "Dang luu ban nhap..." };
+  }
+  if (operationSaveState === "draft-saved" && lastDraftSavedAt) {
+    return { state: "draft-saved", text: `Da luu ban nhap luc ${formatTime(lastDraftSavedAt)}` };
+  }
+  if (operationSaveState === "customer-saved" && lastCustomerSavedAt) {
+    return { state: "customer-saved", text: `Ho so da luu luc ${formatTime(lastCustomerSavedAt)}` };
+  }
+  if (operationSaveState === "error") {
+    return { state: "error", text: "Khong the luu ban nhap" };
+  }
+  return { state: "idle", text: "Chua co thay doi" };
+}
+
+function formatTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+  return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function hydrateOperationDraft(draft) {
+  const normalized = normalizeOperationDraft(draft);
+  if (!normalized) {
+    return;
+  }
+  suppressOperationDraftTracking = true;
+  clearUploadedImagePreview({ revoke: true, clearOverlay: true, reason: "resume-draft" });
+  operationDraftId = normalized.draftId;
+  operationDraftCreatedAt = normalized.createdAt;
+  operationCustomerId = normalized.customerId;
+  operationDraftSource = normalized.source;
+  lastCustomerSavedAt = normalized.lastSavedCustomerAt;
+  lastDraftSavedAt = normalized.updatedAt;
+  currentSessionCode = normalized.sessionCode || createSessionCode();
+  ensureCurrentSessionCode();
+  customerCodeInput.value = normalized.customerId || createCustomerCode();
+  customerNameInput.value = normalized.customer.name;
+  customerPhoneInput.value = normalized.customer.phone;
+  consultDateInput.value = normalized.customer.consultDate || todayInputValue();
+  ageGroupInput.value = normalized.customer.ageGroup;
+  customerNotesInput.value = normalized.customer.notes;
+  frameWidthMmInput.value = normalized.customer.frameWidthMm;
+  lensWidthMmInput.value = normalized.customer.lensWidthMm;
+  bridgeWidthMmInput.value = normalized.customer.bridgeWidthMm;
+  customerStatusInput.value = normalized.customer.status || "waiting";
+  hasPrescriptionInput.checked = normalized.customer.hasPrescription;
+  setPrescriptionSectionVisible(hasPrescriptionInput.checked);
+  prescriptionPdInput.value = normalized.customer.prescription.pd;
+  prescriptionSphInput.value = normalized.customer.prescription.sph;
+  prescriptionCylInput.value = normalized.customer.prescription.cyl;
+  budgetInput.value = normalized.needs.budget;
+  purposeInput.value = normalized.needs.purpose;
+  prescriptionLevelInput.value = normalized.needs.prescriptionLevel;
+  framePreferenceInput.value = normalized.needs.framePreference;
+  preferenceForm.querySelectorAll('input[name="brands"]').forEach((input) => {
+    input.checked = normalized.needs.brands.length ? normalized.needs.brands.includes(input.value) : input.checked;
+  });
+  manualConsultationMode = normalized.consultation.manualMode;
+  analysisHistory = [];
+  latestAnalysis = null;
+  latestAiFaceShape = "";
+  confirmedFaceShape = "";
+  confirmedFaceShapeSource = "";
+  latestRecommendations = [];
+  latestLensRecommendations = [];
+  resetAdviceState();
+  renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Da khoi phuc ban nhap. Hay quet lai VisionID neu can.");
+  renderCustomerResult();
+  updateAdvice();
+  showTab(operationStepToTabId(normalized.currentStep));
+  syncCurrentCustomer("customerSelected");
+  lastOperationBusinessBaseline = normalizeOperationBusinessState(normalized);
+  operationSaveState = "draft-saved";
+  suppressOperationDraftTracking = false;
+  renderCustomerSessionHeader();
+}
+
+function startNewOperationSession({ clearDraft = false } = {}) {
+  operationDraftSaver.cancel();
+  suppressOperationDraftTracking = true;
+  startNewCustomer();
+  operationDraftId = createOperationDraftId();
+  operationDraftCreatedAt = new Date().toISOString();
+  operationCustomerId = null;
+  operationDraftSource = "new";
+  lastDraftSavedAt = null;
+  lastCustomerSavedAt = null;
+  operationSaveState = "idle";
+  if (clearDraft) {
+    clearOperationDraft();
+  }
+  lastOperationBusinessBaseline = getCurrentOperationBusinessState();
+  suppressOperationDraftTracking = false;
+  renderCustomerSessionHeader();
+}
+
+function requestCustomerContextChange(action) {
+  const currentDraft = buildOperationDraftFromForm();
+  const shouldGuard = isMeaningfulOperationDraft(currentDraft)
+    && (hasUnsavedOperationChanges() || operationSaveState === "draft-saved" || operationSaveState === "dirty");
+  if (!shouldGuard) {
+    action();
+    return;
+  }
+
+  pendingContextChangeAction = action;
+  showContextChangeDialog();
+}
+
+function showContextChangeDialog() {
+  if (!contextChangeDialog || !contextChangeDialogPanel) {
+    flushOperationDraftSave("context-change-fallback");
+    pendingContextChangeAction?.();
+    pendingContextChangeAction = null;
+    return;
+  }
+
+  modalReturnFocusElement = document.activeElement;
+  if (contextChangeDialogSummary) {
+    contextChangeDialogSummary.textContent = "Ban co thay doi chua luu trong phien hien tai. Luu ban nhap de tiep tuc sau, hoac bo thay doi neu khong can giu.";
+  }
+  contextChangeDialog.hidden = false;
+  trapDialogFocus(contextChangeDialog, contextChangeDialogPanel);
+}
+
+function closeContextChangeDialog({ restoreFocus = true } = {}) {
+  if (contextChangeDialog) {
+    contextChangeDialog.hidden = true;
+  }
+  releaseDialogFocus();
+  if (restoreFocus) {
+    modalReturnFocusElement?.focus?.();
+  }
+  modalReturnFocusElement = null;
+}
+
+function maybeShowResumeDraftDialog() {
+  const draft = readOperationDraft();
+  if (!draft || !isMeaningfulOperationDraft(draft)) {
+    return;
+  }
+
+  const summary = getDraftResumeSummary(draft);
+  if (!summary || !operationDraftDialog || !operationDraftDialogPanel) {
+    return;
+  }
+
+  modalReturnFocusElement = document.activeElement;
+  if (operationDraftDialogSummary) {
+    const updatedAt = formatTime(summary.updatedAt);
+    operationDraftDialogSummary.textContent = `${summary.name}${summary.phone ? ` - ${summary.phone}` : ""}. Buoc gan nhat: ${summary.step}. Cap nhat luc ${updatedAt}.`;
+  }
+  operationDraftDialog.hidden = false;
+  trapDialogFocus(operationDraftDialog, operationDraftDialogPanel);
+}
+
+function closeResumeDraftDialog({ restoreFocus = true } = {}) {
+  if (operationDraftDialog) {
+    operationDraftDialog.hidden = true;
+  }
+  releaseDialogFocus();
+  if (restoreFocus) {
+    modalReturnFocusElement?.focus?.();
+  }
+  modalReturnFocusElement = null;
+}
+
+let activeDialogCleanup = null;
+
+function trapDialogFocus(backdrop, panel) {
+  releaseDialogFocus();
+  const focusableSelector = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
+  const focusFirst = () => {
+    const focusable = [...panel.querySelectorAll(focusableSelector)].filter((element) => !element.disabled);
+    (focusable[0] || panel).focus();
+  };
+  const handleKeydown = (event) => {
+    if (event.key === "Escape") {
+      if (backdrop === contextChangeDialog) {
+        closeContextChangeDialog();
+      } else {
+        closeResumeDraftDialog();
+      }
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    const focusable = [...panel.querySelectorAll(focusableSelector)].filter((element) => !element.disabled);
+    if (!focusable.length) {
+      event.preventDefault();
+      panel.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  backdrop.addEventListener("keydown", handleKeydown);
+  activeDialogCleanup = () => backdrop.removeEventListener("keydown", handleKeydown);
+  focusFirst();
+}
+
+function releaseDialogFocus() {
+  activeDialogCleanup?.();
+  activeDialogCleanup = null;
+}
+
 function syncCurrentCustomer(eventName, sourceRecord = null) {
   if (suppressCurrentCustomerSync) {
     return;
@@ -4559,6 +4992,8 @@ function syncCurrentCustomer(eventName, sourceRecord = null) {
   customer.session_code = customer.session_code || ensureCurrentSessionCode();
   setCurrentCustomer(customer, eventName);
   renderCurrentCustomerSummary(customer);
+  renderCustomerSessionHeader();
+  scheduleOperationDraftSave(eventName || "customer-sync");
   updateWorkflowAssistant();
 }
 
@@ -5428,7 +5863,73 @@ if (workflowNextButton) {
 
 if (mobileNewButton) {
   mobileNewButton.addEventListener("click", () => {
-    startNewCustomer();
+    requestCustomerContextChange(() => {
+      startNewOperationSession({ clearDraft: true });
+      showTab("tab-0");
+    });
+  });
+}
+
+if (startNewSessionButton) {
+  startNewSessionButton.addEventListener("click", () => {
+    requestCustomerContextChange(() => {
+      startNewOperationSession({ clearDraft: true });
+      showTab("tab-0");
+    });
+  });
+}
+
+if (switchCustomerButton) {
+  switchCustomerButton.addEventListener("click", () => {
+    showTab("tab-0");
+    customerSearch?.focus();
+  });
+}
+
+if (keepDraftButton) {
+  keepDraftButton.addEventListener("click", () => {
+    flushOperationDraftSave("context-keep-draft");
+    closeContextChangeDialog({ restoreFocus: false });
+    const action = pendingContextChangeAction;
+    pendingContextChangeAction = null;
+    action?.();
+  });
+}
+
+if (discardChangesButton) {
+  discardChangesButton.addEventListener("click", () => {
+    operationDraftSaver.cancel();
+    clearOperationDraft();
+    closeContextChangeDialog({ restoreFocus: false });
+    const action = pendingContextChangeAction;
+    pendingContextChangeAction = null;
+    action?.();
+  });
+}
+
+if (cancelContextChangeButton) {
+  cancelContextChangeButton.addEventListener("click", () => {
+    pendingContextChangeAction = null;
+    closeContextChangeDialog();
+  });
+}
+
+if (resumeDraftButton) {
+  resumeDraftButton.addEventListener("click", () => {
+    const draft = readOperationDraft();
+    closeResumeDraftDialog({ restoreFocus: false });
+    if (draft && isMeaningfulOperationDraft(draft)) {
+      hydrateOperationDraft(draft);
+    }
+  });
+}
+
+if (discardDraftButton) {
+  discardDraftButton.addEventListener("click", () => {
+    operationDraftSaver.cancel();
+    clearOperationDraft();
+    closeResumeDraftDialog({ restoreFocus: false });
+    startNewOperationSession({ clearDraft: true });
     showTab("tab-0");
   });
 }
@@ -5503,7 +6004,9 @@ tabButtons.forEach((button) => {
   button.addEventListener("click", () => showTab(button.dataset.tabTarget));
 });
 
-newCustomerButton.addEventListener("click", startNewCustomer);
+newCustomerButton.addEventListener("click", () => {
+  requestCustomerContextChange(() => startNewOperationSession({ clearDraft: true }));
+});
 saveCustomerButton.addEventListener("click", saveCurrentCustomer);
 customerSearch.addEventListener("input", renderCustomers);
 preferenceForm.addEventListener("input", () => {
@@ -5520,14 +6023,14 @@ customerList.addEventListener("click", (event) => {
   const deleteButton = event.target.closest("[data-delete-customer]");
 
   if (loadButton) {
-    loadCustomerRecord(loadButton.dataset.loadCustomer);
+    requestCustomerContextChange(() => loadCustomerRecord(loadButton.dataset.loadCustomer));
   }
 
   if (deleteButton) {
     const deletedCustomerCode = deleteButton.dataset.deleteCustomer;
     deleteCustomer(deletedCustomerCode);
     if (deletedCustomerCode === customerCodeInput.value) {
-      startNewCustomer();
+      startNewOperationSession({ clearDraft: true });
     }
     renderCustomers();
   }
@@ -5535,7 +6038,7 @@ customerList.addEventListener("click", (event) => {
 
 const initialCurrentCustomer = loadCurrentCustomer();
 if (!initialCurrentCustomer?.customer_code || !loadCustomerRecord(initialCurrentCustomer.customer_code)) {
-  startNewCustomer();
+  startNewOperationSession();
 }
 updateCameraModeButton();
 updateCameraStartButton({ active: Boolean(video?.srcObject) });
@@ -5543,6 +6046,8 @@ ensureDeviceProfileDebugOverride();
 refreshDeviceProfile();
 renderCurrentCustomerSummary();
 renderCustomers();
+setOperationBaselineFromCurrent();
+maybeShowResumeDraftDialog();
 
 window.addEventListener("customerSelected", (event) => {
   if (!event.detail?.customer) {
@@ -5564,6 +6069,9 @@ window.addEventListener("customerUpdated", (event) => {
 
 document.addEventListener("visibilitychange", () => {
   updateCameraDebug({ pageLifecycleEvent: `visibility:${document.visibilityState}` });
+  if (document.visibilityState === "hidden") {
+    operationDraftSaver.flush();
+  }
 });
 
 video?.addEventListener("loadedmetadata", () => {
@@ -5613,6 +6121,7 @@ window.visualViewport?.addEventListener("resize", () => {
 });
 
 window.addEventListener("pagehide", () => {
+  operationDraftSaver.flush();
   clearUploadedImagePreview({ revoke: true, clearOverlay: false, reason: "pagehide" });
   updateCameraDebug({ pageLifecycleEvent: "pagehide" });
 });
