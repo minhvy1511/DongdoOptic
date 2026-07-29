@@ -1,0 +1,123 @@
+[
+  {
+    "name": "desktop-profile-empty.png",
+    "width": 1920,
+    "height": 1080,
+    "overflowX": false,
+    "scrollWidth": 1920,
+    "innerWidth": 1920,
+    "activeTab": "tab-0",
+    "videoCanvasReady": true,
+    "activeButtons": 17
+  },
+  {
+    "name": "desktop-profile-with-customer.png",
+    "width": 1920,
+    "height": 1080,
+    "overflowX": false,
+    "scrollWidth": 1920,
+    "innerWidth": 1920,
+    "activeTab": "tab-0",
+    "videoCanvasReady": true,
+    "activeButtons": 17
+  },
+  {
+    "name": "desktop-visionid.png",
+    "width": 1920,
+    "height": 1080,
+    "overflowX": false,
+    "scrollWidth": 1920,
+    "innerWidth": 1920,
+    "activeTab": "tab-3",
+    "videoCanvasReady": true,
+    "activeButtons": 18
+  },
+  {
+    "name": "desktop-consultation.png",
+    "width": 1920,
+    "height": 1080,
+    "overflowX": false,
+    "scrollWidth": 1920,
+    "innerWidth": 1920,
+    "activeTab": "tab-4",
+    "videoCanvasReady": true,
+    "activeButtons": 18
+  },
+  {
+    "name": "laptop-profile.png",
+    "width": 1366,
+    "height": 768,
+    "overflowX": false,
+    "scrollWidth": 1366,
+    "innerWidth": 1366,
+    "activeTab": "tab-0",
+    "videoCanvasReady": true,
+    "activeButtons": 17
+  },
+  {
+    "name": "tablet-profile.png",
+    "width": 1024,
+    "height": 768,
+    "overflowX": false,
+    "scrollWidth": 1024,
+    "innerWidth": 1024,
+    "activeTab": "tab-0",
+    "videoCanvasReady": true,
+    "activeButtons": 17
+  },
+  {
+    "name": "mobile-profile.png",
+    "width": 390,
+    "height": 844,
+    "overflowX": false,
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "activeTab": "tab-0",
+    "videoCanvasReady": true,
+    "activeButtons": 17
+  },
+  {
+    "name": "mobile-visionid.png",
+    "width": 390,
+    "height": 844,
+    "overflowX": false,
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "activeTab": "tab-3",
+    "videoCanvasReady": true,
+    "activeButtons": 18
+  },
+  {
+    "name": "tablet-portrait-check",
+    "width": 768,
+    "height": 1024,
+    "overflowX": false,
+    "scrollWidth": 768,
+    "innerWidth": 768,
+    "activeTab": "tab-0",
+    "videoCanvasReady": true,
+    "activeButtons": 18
+  },
+  {
+    "name": "mobile-360-check",
+    "width": 360,
+    "height": 800,
+    "overflowX": false,
+    "scrollWidth": 360,
+    "innerWidth": 360,
+    "activeTab": "tab-3",
+    "videoCanvasReady": true,
+    "activeButtons": 18
+  },
+  {
+    "name": "desktop-needs-check",
+    "width": 1920,
+    "height": 1080,
+    "overflowX": false,
+    "scrollWidth": 1920,
+    "innerWidth": 1920,
+    "activeTab": "tab-1",
+    "videoCanvasReady": true,
+    "activeButtons": 18
+  }
+]

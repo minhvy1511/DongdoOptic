@@ -94,6 +94,23 @@ button {
   font: inherit;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid rgba(11, 140, 133, 0.34);
+  outline-offset: 3px;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 h1,
 h2,
 h3,
@@ -2662,8 +2679,18 @@ h1 {
 }
 
 .empty-state {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
   margin: 0;
+  padding: var(--space-6);
+  border: 1px dashed rgba(8, 115, 111, 0.2);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(241, 251, 249, 0.72));
   color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
 }
 
 .customer-panel {
@@ -2701,6 +2728,9 @@ h1 {
 .customer-list {
   display: grid;
   gap: var(--space-3);
+  max-height: min(58vh, 560px);
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .customer-toolbar {
@@ -2910,6 +2940,12 @@ h1 {
 
   .mobile-action-bar button:disabled {
     opacity: 0.42;
+  }
+
+  body:has(#tab-3.active) .mobile-action-bar {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .two-column,
