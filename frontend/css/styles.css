@@ -631,6 +631,58 @@ input[type="number"],
   min-height: 44px;
 }
 
+.duplicate-notice {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid rgba(183, 119, 29, 0.28);
+  border-left: 4px solid var(--warning);
+  border-radius: var(--radius-md);
+  background: var(--amber-soft);
+  color: #573508;
+}
+
+.duplicate-notice[hidden] {
+  display: none;
+}
+
+.duplicate-notice strong,
+.duplicate-notice span {
+  display: block;
+}
+
+.duplicate-notice-actions,
+.empty-search-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.duplicate-match-list {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.duplicate-match-card {
+  padding: var(--space-3);
+  border: 1px solid rgba(13, 107, 98, 0.16);
+  border-radius: var(--radius-md);
+  background: var(--mint-soft);
+}
+
+.duplicate-match-card strong,
+.duplicate-match-card span {
+  display: block;
+}
+
+.duplicate-match-card span {
+  margin-top: 3px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
 .tab-panel {
   display: none;
 }

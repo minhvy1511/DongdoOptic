@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Eye Dong Do - Tư vấn gọng kính</title>
-    <link rel="stylesheet" href="./css/styles.css?v=20260729-85" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260729-87" />
   </head>
   <body>
     <main class="app-shell">
@@ -109,6 +109,7 @@
                   <label>Số điện thoại
                     <input id="customerPhone" name="customer_phone" type="tel" placeholder="Nhập số điện thoại">
                   </label>
+                  <div id="phoneDuplicateNotice" class="duplicate-notice" role="status" aria-live="polite" hidden></div>
                   <label>Nhóm tuổi
                     <select id="ageGroup" name="age_group">
                       <option value="">Chọn</option>
@@ -190,10 +191,11 @@
               <summary>Khách hàng đã lưu</summary>
               <div class="section-heading">
                 <p class="eyebrow">Hồ sơ</p>
-                <h2>Khách hàng đã lưu</h2>
+                <h2>Tìm khách hàng</h2>
+                <p>Tìm hồ sơ cũ trước khi tạo khách mới để tránh trùng dữ liệu.</p>
               </div>
               <div class="customer-toolbar">
-                <input id="customerSearch" type="search" placeholder="Tìm theo mã, tên hoặc số điện thoại">
+                <input id="customerSearch" type="search" placeholder="Nhập tên hoặc số điện thoại" aria-label="Tìm khách hàng">
                 <span id="customerCount">0 hồ sơ</span>
               </div>
               <div class="customer-list" id="customerList">
@@ -516,6 +518,20 @@
         </div>
       </section>
     </div>
+    <div id="duplicateCustomerDialog" class="modal-backdrop" hidden>
+      <section class="operation-dialog" role="dialog" aria-modal="true" aria-labelledby="duplicateCustomerDialogTitle" tabindex="-1">
+        <p class="eyebrow">Kiểm tra trùng hồ sơ</p>
+        <h2 id="duplicateCustomerDialogTitle">Đã tồn tại hồ sơ có số điện thoại này.</h2>
+        <p id="duplicateCustomerDialogSummary" class="dialog-summary">Hãy mở hồ sơ đã có nếu đây là cùng một khách hàng.</p>
+        <div id="duplicateCustomerDialogMatches" class="duplicate-match-list"></div>
+        <p class="dialog-summary">Chỉ chọn tạo hồ sơ riêng khi đây thực sự là một khách hàng khác dùng chung số điện thoại.</p>
+        <div class="dialog-actions">
+          <button id="openExistingDuplicateButton" type="button">Mở hồ sơ đã có</button>
+          <button id="reviewDuplicateButton" type="button" class="secondary-action">Quay lại kiểm tra</button>
+          <button id="createSeparateDuplicateButton" type="button" class="secondary-action">Vẫn tạo hồ sơ riêng</button>
+        </div>
+      </section>
+    </div>
     <nav class="mobile-action-bar" aria-label="Thao tác nhanh">
       <button id="mobileNewButton" type="button">Tạo mới</button>
       <button id="mobileSaveButton" type="button">Lưu</button>
@@ -523,6 +539,6 @@
       <button id="mobileConsultButton" type="button">Tư vấn</button>
     </nav>
 
-    <script type="module" src="./js/app.mobile.js?v=20260729-86"></script>
+    <script type="module" src="./js/app.mobile.js?v=20260729-87"></script>
   </body>
 </html>

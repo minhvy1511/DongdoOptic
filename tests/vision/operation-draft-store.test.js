@@ -90,6 +90,19 @@ test("name, customerId, prescription, later step, or manual mode make draft mean
   assert.equal(isMeaningfulOperationDraft(createOperationDraft({ consultation: { manualMode: true } })), true);
 });
 
+test("customer search query is not business state but form phone remains business state", () => {
+  const baseline = normalizeOperationBusinessState(createOperationDraft());
+  const searched = normalizeOperationBusinessState(createOperationDraft({ searchQuery: "0911" }));
+  const phoneEdited = normalizeOperationBusinessState(createOperationDraft({
+    customer: { phone: "0911 515 000" }
+  }));
+
+  assert.equal(isMeaningfulOperationDraft(createOperationDraft({ searchQuery: "0911" })), false);
+  assert.equal(hasBusinessStateChanged(searched, baseline), false);
+  assert.equal(hasBusinessStateChanged(phoneEdited, baseline), true);
+  assert.equal(isMeaningfulOperationDraft(createOperationDraft({ customer: { phone: "0911 515 000" } })), true);
+});
+
 test("storage exception does not throw and does not clear existing valid draft", () => {
   const failingStorage = memoryStorage();
   const existingDraft = createOperationDraft({ customer: { name: "Existing" } });

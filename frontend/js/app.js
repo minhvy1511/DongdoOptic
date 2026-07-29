@@ -58,6 +58,13 @@ import {
   writeOperationDraft
 } from "./operation-draft-store.js?v=20260729-85";
 import {
+  createCustomerPrefillFromQuery,
+  findExactPhoneMatches,
+  getDuplicateSaveDecision,
+  isPhoneLikeQuery,
+  rankCustomerMatches
+} from "./customer-lookup.js?v=20260729-87";
+import {
   createCustomerCode,
   createSessionCode,
   deleteCustomer,
@@ -132,6 +139,7 @@ const saveCustomerButton = document.getElementById("saveCustomerButton");
 const customerList = document.getElementById("customerList");
 const customerSearch = document.getElementById("customerSearch");
 const customerCount = document.getElementById("customerCount");
+const phoneDuplicateNotice = document.getElementById("phoneDuplicateNotice");
 const tabButtons = document.querySelectorAll("[data-tab-target]");
 const tabPanels = document.querySelectorAll(".tab-panel");
 const workflowAssistant = document.getElementById("workflowAssistant");
@@ -157,6 +165,13 @@ const contextChangeDialogSummary = document.getElementById("contextChangeDialogS
 const keepDraftButton = document.getElementById("keepDraftButton");
 const discardChangesButton = document.getElementById("discardChangesButton");
 const cancelContextChangeButton = document.getElementById("cancelContextChangeButton");
+const duplicateCustomerDialog = document.getElementById("duplicateCustomerDialog");
+const duplicateCustomerDialogPanel = duplicateCustomerDialog?.querySelector(".operation-dialog");
+const duplicateCustomerDialogSummary = document.getElementById("duplicateCustomerDialogSummary");
+const duplicateCustomerDialogMatches = document.getElementById("duplicateCustomerDialogMatches");
+const openExistingDuplicateButton = document.getElementById("openExistingDuplicateButton");
+const reviewDuplicateButton = document.getElementById("reviewDuplicateButton");
+const createSeparateDuplicateButton = document.getElementById("createSeparateDuplicateButton");
 const mobileNewButton = document.getElementById("mobileNewButton");
 const mobileSaveButton = document.getElementById("mobileSaveButton");
 const mobileScanButton = document.getElementById("mobileScanButton");
@@ -232,6 +247,9 @@ let lastCustomerSavedAt = null;
 let suppressOperationDraftTracking = false;
 let pendingContextChangeAction = null;
 let modalReturnFocusElement = null;
+let customerSearchTimer = 0;
+let duplicatePhoneMatches = [];
+let allowDuplicateCustomerSaveOnce = false;
 const operationDraftSaver = createDebouncedDraftSaver({
   delayMs: 750,
   saveFn: () => flushOperationDraftSave("debounce")
@@ -4153,6 +4171,8 @@ function startNewCustomer() {
   ensureCurrentSessionCode();
   customerNameInput.value = "";
   customerPhoneInput.value = "";
+  duplicatePhoneMatches = [];
+  renderPhoneDuplicateNotice([]);
   consultDateInput.value = todayInputValue();
   ageGroupInput.value = "";
   customerNotesInput.value = "";
@@ -4183,6 +4203,17 @@ function startNewCustomer() {
 }
 
 function saveCurrentCustomer() {
+  const duplicateDecision = getDuplicateSaveDecision(loadCustomers(), {
+    phone: customerPhoneInput.value,
+    currentCustomerId: operationCustomerId || customerCodeInput.value,
+    allowDuplicate: allowDuplicateCustomerSaveOnce
+  });
+  if (duplicateDecision.shouldBlock) {
+    showDuplicateSaveDialog(duplicateDecision.matches);
+    return null;
+  }
+
+  allowDuplicateCustomerSaveOnce = false;
   updateAdvice();
   const persistableAnalysis = getPersistableVisionAnalysis();
   const customerDraft = {
@@ -4222,6 +4253,8 @@ function saveCurrentCustomer() {
   flushOperationDraftSave("customer-save");
   setOperationBaselineFromCurrent();
   setOperationSaveState("customer-saved", { customerSavedAt: lastCustomerSavedAt });
+  duplicatePhoneMatches = [];
+  renderPhoneDuplicateNotice([]);
   renderCustomers();
   statusText.textContent = "Đã lưu hồ sơ";
   updateWorkflowAssistant();
@@ -4240,18 +4273,22 @@ function hasVisionAnalysisConsent() {
 }
 
 function renderCustomers() {
-  const query = normalizeSearch(customerSearch.value);
-  const records = loadCustomers().filter((record) => customerMatches(record, query));
-  const total = loadCustomers().length;
-    customerCount.textContent = `${records.length}/${total} hồ sơ`;
+  const query = customerSearch.value;
+  const customers = loadCustomers();
+  const rankedRecords = rankCustomerMatches(customers, query, { limit: 8 });
+  const records = rankedRecords.map((match) => match.customer);
+  const total = customers.length;
+  customerCount.textContent = `${records.length}/${total} hồ sơ`;
 
   if (!records.length) {
-    customerList.innerHTML = `<p class="empty-state">${total ? "Không tìm thấy hồ sơ phù hợp." : "Chưa có hồ sơ nào."}</p>`;
+    customerList.innerHTML = query.trim()
+      ? renderNoCustomerMatches(query)
+      : `<p class="empty-state">${total ? "Không tìm thấy hồ sơ phù hợp." : "Chưa có hồ sơ nào."}</p>`;
     return;
   }
 
-  customerList.innerHTML = records
-    .map((record) => {
+  customerList.innerHTML = rankedRecords
+    .map(({ customer: record }) => {
       const label = record.faceShape_confirmed
         ? getFaceShapeLabel(record.faceShape_confirmed)
         : (record.analysis?.label || "Chưa phân tích");
@@ -4264,19 +4301,42 @@ function renderCustomers() {
       return `
         <article class="customer-card">
           <div>
-            <strong>${record.customer_name || "Chưa nhập"} - ${record.customer_code} <span class="status-chip">${status}</span></strong>
-            <span>${record.customer_phone || "Chưa có SĐT"} | ${consultDate} | ${ageGroup} | ${label} | ${purpose} | ${rxTag}</span>
-            <span class="customer-note">${record.customer_notes || "Chưa có ghi chú"}</span>
-            <span>Cập nhật: ${updatedAt}</span>
+            <strong>${escapeHtml(record.customer_name || "Chưa nhập")} - ${escapeHtml(record.customer_code)} <span class="status-chip">${escapeHtml(status)}</span></strong>
+            <span>${escapeHtml(record.customer_phone || "Chưa có SĐT")} | ${escapeHtml(consultDate)} | ${escapeHtml(ageGroup)} | ${escapeHtml(label)} | ${escapeHtml(purpose)} | ${escapeHtml(rxTag)}</span>
+            <span class="customer-note">${escapeHtml(record.customer_notes || "Chưa có ghi chú")}</span>
+            <span>Cập nhật: ${escapeHtml(updatedAt)}</span>
           </div>
           <div class="customer-actions">
-            <button type="button" data-load-customer="${record.customer_code}">Mở lại</button>
-            <button type="button" class="danger-action" data-delete-customer="${record.customer_code}">Xóa</button>
+            <button type="button" data-load-customer="${escapeHtml(record.customer_code)}">Tiếp tục tư vấn</button>
+            <button type="button" class="danger-action" data-delete-customer="${escapeHtml(record.customer_code)}">Xóa</button>
           </div>
         </article>
       `;
     })
     .join("");
+}
+
+function renderNoCustomerMatches(query) {
+  const prefill = createCustomerPrefillFromQuery(query);
+  const prefillPayload = encodeURIComponent(JSON.stringify(prefill));
+  return `
+    <div class="empty-state customer-search-empty">
+      <strong>Không tìm thấy khách hàng phù hợp.</strong>
+      <span>Tạo khách mới chỉ sau khi đã kiểm tra kỹ kết quả tìm kiếm.</span>
+      <div class="empty-search-actions">
+        <button type="button" data-create-customer-from-search="${prefillPayload}">Tạo khách hàng mới</button>
+      </div>
+    </div>
+  `;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function loadCustomerRecord(customerCode) {
@@ -4291,6 +4351,8 @@ function loadCustomerRecord(customerCode) {
   customerCodeInput.value = record.customer_code;
   customerNameInput.value = record.customer_name || "";
   customerPhoneInput.value = record.customer_phone || "";
+  duplicatePhoneMatches = [];
+  renderPhoneDuplicateNotice([]);
   consultDateInput.value = record.consult_date || todayInputValue();
   ageGroupInput.value = record.age_group || "";
   customerNotesInput.value = record.customer_notes || "";
@@ -4905,6 +4967,82 @@ function closeContextChangeDialog({ restoreFocus = true } = {}) {
   modalReturnFocusElement = null;
 }
 
+function requestOpenCustomer(customerId, source = "customer-list") {
+  if (!customerId) {
+    return;
+  }
+  requestCustomerContextChange(() => {
+    loadCustomerRecord(customerId);
+    operationDraftSource = "existing";
+    renderCustomerSessionHeader();
+    updateCameraDebug({ customerOpenSource: source });
+  });
+}
+
+function startNewFromSearchQuery(query) {
+  const prefill = createCustomerPrefillFromQuery(query);
+  requestCustomerContextChange(() => {
+    startNewOperationSession({ clearDraft: true });
+    if (prefill.customerName) {
+      customerNameInput.value = prefill.customerName;
+    }
+    if (prefill.customerPhone) {
+      customerPhoneInput.value = prefill.customerPhone;
+      checkPhoneDuplicate();
+    }
+    syncCurrentCustomer("customerUpdated");
+    renderCustomerSessionHeader();
+  });
+}
+
+function showDuplicateSaveDialog(matches = []) {
+  duplicatePhoneMatches = matches;
+  if (!duplicateCustomerDialog || !duplicateCustomerDialogPanel) {
+    renderPhoneDuplicateNotice(matches);
+    statusText.textContent = "Đã tồn tại hồ sơ có số điện thoại này.";
+    return;
+  }
+
+  modalReturnFocusElement = document.activeElement;
+  if (duplicateCustomerDialogSummary) {
+    const firstMatch = matches[0];
+    duplicateCustomerDialogSummary.textContent = matches.length > 1
+      ? `Có ${matches.length} hồ sơ dùng số này. Vui lòng chọn rõ hồ sơ cần mở hoặc xác nhận tạo hồ sơ riêng.`
+      : `${firstMatch?.customer_name || "Khách đã lưu"} đang dùng số ${firstMatch?.customer_phone || customerPhoneInput.value}.`;
+  }
+  if (duplicateCustomerDialogMatches) {
+    duplicateCustomerDialogMatches.innerHTML = matches.slice(0, 4).map(renderDuplicateMatchCard).join("");
+  }
+  if (openExistingDuplicateButton) {
+    openExistingDuplicateButton.disabled = matches.length !== 1;
+    openExistingDuplicateButton.textContent = matches.length === 1 ? "Mở hồ sơ đã có" : "Chọn một hồ sơ bên trên";
+  }
+  duplicateCustomerDialog.hidden = false;
+  trapDialogFocus(duplicateCustomerDialog, duplicateCustomerDialogPanel);
+}
+
+function closeDuplicateSaveDialog({ restoreFocus = true } = {}) {
+  if (duplicateCustomerDialog) {
+    duplicateCustomerDialog.hidden = true;
+  }
+  releaseDialogFocus();
+  if (restoreFocus) {
+    modalReturnFocusElement?.focus?.();
+  }
+  modalReturnFocusElement = null;
+}
+
+function renderDuplicateMatchCard(record) {
+  return `
+    <div class="duplicate-match-card">
+      <strong>${escapeHtml(record.customer_name || "Chưa nhập")}</strong>
+      <span>${escapeHtml(record.customer_phone || "Chưa có SĐT")} - ${escapeHtml(statusLabel(record.customer_status))}</span>
+      <span>${escapeHtml(record.customer_code)}</span>
+      <button type="button" data-dialog-open-duplicate="${escapeHtml(record.customer_code)}">Mở hồ sơ này</button>
+    </div>
+  `;
+}
+
 function maybeShowResumeDraftDialog() {
   const draft = readOperationDraft();
   if (!draft || !isMeaningfulOperationDraft(draft)) {
@@ -4949,6 +5087,8 @@ function trapDialogFocus(backdrop, panel) {
     if (event.key === "Escape") {
       if (backdrop === contextChangeDialog) {
         closeContextChangeDialog();
+      } else if (backdrop === duplicateCustomerDialog) {
+        closeDuplicateSaveDialog();
       } else {
         closeResumeDraftDialog();
       }
@@ -5656,65 +5796,56 @@ function purposeLabel(value) {
   return labels[value] || "Chưa chọn mục đích";
 }
 
-function normalizeSearch(value) {
-  return (value || "").trim().toLowerCase();
-}
-
-function customerMatches(record, query) {
-  if (!query) {
-    return true;
-  }
-
-  return [
-    record.customer_code,
-    record.customer_name,
-    record.customer_phone,
-    record.session_code,
-    statusLabel(record.customer_status),
-    record.analysis?.label,
-    record.customer_notes,
-    record.prescription?.pd,
-    record.prescription?.sph,
-    record.prescription?.cyl,
-    record.frame_width_mm
-  ]
-    .join(" ")
-    .toLowerCase()
-    .includes(query);
-}
-
 function schedulePhoneLookup() {
   window.clearTimeout(phoneLookupTimer);
-  phoneLookupTimer = window.setTimeout(autoFillFromPhone, 450);
+  phoneLookupTimer = window.setTimeout(checkPhoneDuplicate, 250);
 }
 
-function autoFillFromPhone() {
+function checkPhoneDuplicate() {
   if (isLoadingCustomer) {
     return;
   }
 
-  const phone = normalizePhone(customerPhoneInput.value);
-  if (phone.length < 8) {
+  duplicatePhoneMatches = getDuplicateMatchesForCurrentPhone();
+  renderPhoneDuplicateNotice(duplicatePhoneMatches);
+}
+
+function getDuplicateMatchesForCurrentPhone() {
+  const phone = customerPhoneInput.value;
+  if (!isPhoneLikeQuery(phone)) {
+    return [];
+  }
+
+  return findExactPhoneMatches(loadCustomers(), phone, {
+    excludeCustomerId: operationCustomerId || customerCodeInput.value
+  });
+}
+
+function renderPhoneDuplicateNotice(matches = []) {
+  if (!phoneDuplicateNotice) {
     return;
   }
 
-  const existingRecord = findLatestCustomerByPhone(phone);
-  if (!existingRecord || existingRecord.customer_code === customerCodeInput.value) {
+  if (!matches.length) {
+    phoneDuplicateNotice.hidden = true;
+    phoneDuplicateNotice.innerHTML = "";
     return;
   }
 
-  loadCustomerRecord(existingRecord.customer_code);
-  statusText.textContent = "Đã lấy dữ liệu từ đơn cũ";
-}
-
-function findLatestCustomerByPhone(phone) {
-  return loadCustomers()
-    .filter((record) => normalizePhone(record.customer_phone) === phone)
-    .sort((first, second) => new Date(second.updated_at) - new Date(first.updated_at))[0];
-}
-
-function normalizePhone(value) {
-  return (value || "").replace(/\D/g, "");
+  const [firstMatch] = matches;
+  const moreText = matches.length > 1 ? ` Có ${matches.length} hồ sơ dùng số này, vui lòng chọn rõ.` : "";
+  phoneDuplicateNotice.hidden = false;
+  phoneDuplicateNotice.innerHTML = `
+    <div>
+      <strong>Đã có khách hàng sử dụng số điện thoại này.</strong>
+      <span>${escapeHtml(firstMatch.customer_name || "Chưa nhập")} - ${escapeHtml(firstMatch.customer_phone || "Chưa có SĐT")}.${moreText}</span>
+    </div>
+    <div class="duplicate-notice-actions">
+      ${matches.slice(0, 3).map((match) => `
+        <button type="button" data-open-duplicate-customer="${escapeHtml(match.customer_code)}">Tiếp tục hồ sơ này</button>
+      `).join("")}
+    </div>
+  `;
 }
 
 function statusLabel(value) {
@@ -5775,7 +5906,7 @@ customerPhoneInput.addEventListener("input", () => {
   syncCurrentCustomer("customerUpdated");
   schedulePhoneLookup();
 });
-customerPhoneInput.addEventListener("change", autoFillFromPhone);
+customerPhoneInput.addEventListener("change", checkPhoneDuplicate);
 consultDateInput.addEventListener("change", () => {
   syncCurrentCustomer("customerUpdated");
   updateWorkflowAssistant();
@@ -6008,7 +6139,19 @@ newCustomerButton.addEventListener("click", () => {
   requestCustomerContextChange(() => startNewOperationSession({ clearDraft: true }));
 });
 saveCustomerButton.addEventListener("click", saveCurrentCustomer);
-customerSearch.addEventListener("input", renderCustomers);
+customerSearch.addEventListener("input", () => {
+  window.clearTimeout(customerSearchTimer);
+  customerSearchTimer = window.setTimeout(renderCustomers, 200);
+});
+customerSearch.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    customerSearch.value = "";
+    renderCustomers();
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+  }
+});
 preferenceForm.addEventListener("input", () => {
   syncCurrentCustomer("customerUpdated");
   updateAdvice();
@@ -6021,9 +6164,20 @@ preferenceForm.addEventListener("change", () => {
 customerList.addEventListener("click", (event) => {
   const loadButton = event.target.closest("[data-load-customer]");
   const deleteButton = event.target.closest("[data-delete-customer]");
+  const createFromSearchButton = event.target.closest("[data-create-customer-from-search]");
 
   if (loadButton) {
-    requestCustomerContextChange(() => loadCustomerRecord(loadButton.dataset.loadCustomer));
+    requestOpenCustomer(loadButton.dataset.loadCustomer, "customer-list");
+  }
+
+  if (createFromSearchButton) {
+    try {
+      const payload = JSON.parse(decodeURIComponent(createFromSearchButton.dataset.createCustomerFromSearch || ""));
+      const query = payload.customerPhone || payload.customerName || customerSearch.value;
+      startNewFromSearchQuery(query);
+    } catch {
+      startNewFromSearchQuery(customerSearch.value);
+    }
   }
 
   if (deleteButton) {
@@ -6073,6 +6227,52 @@ document.addEventListener("visibilitychange", () => {
     operationDraftSaver.flush();
   }
 });
+
+if (phoneDuplicateNotice) {
+  phoneDuplicateNotice.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-open-duplicate-customer]");
+    if (!button) {
+      return;
+    }
+    requestOpenCustomer(button.dataset.openDuplicateCustomer, "duplicate-warning");
+  });
+}
+
+if (openExistingDuplicateButton) {
+  openExistingDuplicateButton.addEventListener("click", () => {
+    const target = duplicatePhoneMatches[0];
+    closeDuplicateSaveDialog({ restoreFocus: false });
+    if (target?.customer_code) {
+      requestOpenCustomer(target.customer_code, "duplicate-save-blocker");
+    }
+  });
+}
+
+if (duplicateCustomerDialogMatches) {
+  duplicateCustomerDialogMatches.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-dialog-open-duplicate]");
+    if (!button) {
+      return;
+    }
+    closeDuplicateSaveDialog({ restoreFocus: false });
+    requestOpenCustomer(button.dataset.dialogOpenDuplicate, "duplicate-save-blocker");
+  });
+}
+
+if (reviewDuplicateButton) {
+  reviewDuplicateButton.addEventListener("click", () => {
+    closeDuplicateSaveDialog();
+  });
+}
+
+if (createSeparateDuplicateButton) {
+  createSeparateDuplicateButton.addEventListener("click", () => {
+    allowDuplicateCustomerSaveOnce = true;
+    closeDuplicateSaveDialog({ restoreFocus: false });
+    saveCurrentCustomer();
+    statusText.textContent = "Đã lưu hồ sơ riêng dùng chung số điện thoại.";
+  });
+}
 
 video?.addEventListener("loadedmetadata", () => {
   renderLifecycleCounts.loadedmetadata += 1;
