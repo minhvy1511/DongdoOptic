@@ -116,7 +116,7 @@ export function waitForVideoReady(videoElement, timeoutMs = 8000) {
       callback(value);
     };
     const handleReady = () => {
-      if (videoElement.readyState >= 1 && (videoElement.videoWidth > 0 || videoElement.videoHeight > 0)) {
+      if (videoElement.readyState >= 1 && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
         finish(resolve);
       }
     };

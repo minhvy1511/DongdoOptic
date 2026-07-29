@@ -1,5 +1,13 @@
 import { startUserCamera } from "./camera.js?v=20260729-82";
-import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-39";
+import {
+  clearCanvas,
+  drawCalibrationGuide,
+  drawLandmarkConnectors,
+  drawSafariRenderDiagnostic,
+  getRenderContext,
+  getRenderDiagnostics,
+  resizeCanvasToVideo
+} from "./drawing.js?v=20260729-83";
 import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-81";
 import {
   buildRecommendationDiagnostics,
@@ -142,6 +150,17 @@ let confirmedFaceShapeSource = "";
 let manualConsultationMode = false;
 let latestCameraDebug = {};
 let latestRecommendationDebug = null;
+let latestRenderDebug = {};
+let latestDebugLandmarks = null;
+let latestRenderContext = null;
+let renderDiagnosticOverlayUntil = 0;
+const renderLifecycleCounts = {
+  loadedmetadata: 0,
+  canplay: 0,
+  resize: 0,
+  orientationchange: 0,
+  visualViewportResize: 0
+};
 let autoScanState = createAutoScanState();
 
 const CONFIDENCE_THRESHOLDS = {
@@ -248,6 +267,7 @@ const FEEDBACK_API_URL = "/api/feedback";
 const VISION_DEBUG_ENABLED = new URLSearchParams(window.location.search).get("visionDebug") === "1";
 let visionDebugPanel = null;
 let visionDebugCameraButton = null;
+let visionDebugRenderButton = null;
 
 function createAutoScanState() {
   return {
@@ -1499,7 +1519,7 @@ async function openCameraFlow() {
       await initialize();
     }
 
-    resizeCanvasToVideo(canvas, video);
+    latestRenderContext = resizeCanvasToVideo(canvas, video, "camera-start");
     cameraPanel?.classList.add("camera-active");
     statusText.textContent = "Đang nhận diện";
     if (analyzeFaceButton) {
@@ -1632,7 +1652,7 @@ function detectFrame(sessionToken) {
     return;
   }
 
-  resizeCanvasToVideo(canvas, video);
+  latestRenderContext = resizeCanvasToVideo(canvas, video, "animation-frame") || latestRenderContext || getRenderContext(canvas, video);
 
   if (video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
@@ -1651,7 +1671,7 @@ function drawResults(results) {
 
   if (results.error) {
     updateAutoScanFlow(null, null, 0);
-    drawCalibrationGuide(canvas, null, getScanGuideState(), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL);
+    drawCalibrationGuide(canvas, null, getScanGuideState(), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL, latestRenderContext);
     faceShapeText.textContent = "Không đủ dữ liệu";
     renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "MediaPipe chưa xử lý được khung hình này.");
     updateCameraStatus(0, null);
@@ -1665,7 +1685,7 @@ function drawResults(results) {
 
   if (!faces.length) {
     updateAutoScanFlow(null, null, 0);
-    drawCalibrationGuide(canvas, null, getScanGuideState(), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL);
+    drawCalibrationGuide(canvas, null, getScanGuideState(), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL, latestRenderContext);
     if ((autoScanState.phase === "RESULT" || autoScanState.phase === "ERROR") && !isAnalyzingFace) {
       return;
     }
@@ -1687,35 +1707,59 @@ function drawResults(results) {
     headPoseLabel: formatPoseLabel(headPose)
   };
   updateAutoScanFlow(analysis, faces[0], faces.length);
-  drawCalibrationGuide(canvas, faces[0] || null, getScanGuideState(), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL);
+  latestDebugLandmarks = faces[0] || null;
+  latestRenderDebug = getRenderDiagnostics({
+    canvas,
+    video,
+    landmarks: latestDebugLandmarks || [],
+    renderContext: latestRenderContext
+  });
+  drawCalibrationGuide(canvas, faces[0] || null, getScanGuideState(), FaceLandmarkerApi.FACE_LANDMARKS_FACE_OVAL, latestRenderContext);
   renderAnalysis(analysis);
   recordAnalysisSnapshot(analysis, faces.length);
   updateCameraStatus(faces.length, analysis);
 
   for (const landmarks of faces) {
-    drawingUtils.drawConnectors(
+    drawLandmarkConnectors(
+      canvasContext,
       landmarks,
       FaceLandmarkerApi.FACE_LANDMARKS_TESSELATION,
+      latestRenderContext,
       { color: "rgba(32, 201, 151, 0.28)", lineWidth: 1 }
     );
 
-    drawingUtils.drawConnectors(
+    drawLandmarkConnectors(
+      canvasContext,
       landmarks,
       FaceLandmarkerApi.FACE_LANDMARKS_LEFT_EYE,
+      latestRenderContext,
       { color: "#4dabf7", lineWidth: 2 }
     );
 
-    drawingUtils.drawConnectors(
+    drawLandmarkConnectors(
+      canvasContext,
       landmarks,
       FaceLandmarkerApi.FACE_LANDMARKS_RIGHT_EYE,
+      latestRenderContext,
       { color: "#4dabf7", lineWidth: 2 }
     );
 
-    drawingUtils.drawConnectors(
+    drawLandmarkConnectors(
+      canvasContext,
       landmarks,
       FaceLandmarkerApi.FACE_LANDMARKS_LIPS,
+      latestRenderContext,
       { color: "#ff6b6b", lineWidth: 2 }
     );
+  }
+
+  if (VISION_DEBUG_ENABLED && performance.now() < renderDiagnosticOverlayUntil) {
+    const diagnostic = drawSafariRenderDiagnostic(canvasContext, latestDebugLandmarks || [], latestRenderContext);
+    latestRenderDebug = {
+      ...latestRenderDebug,
+      ...(diagnostic || {})
+    };
+    updateVisionDebugPanel({ renderDebug: latestRenderDebug });
   }
 }
 
@@ -2783,6 +2827,7 @@ function updateVisionDebugPanel(payload = {}) {
   const qualityGate = diagnostics.qualityGate || {};
   const cameraDebug = payload.cameraDebug || latestCameraDebug || {};
   const recommendationDebug = payload.recommendationDebug || latestRecommendationDebug || {};
+  const renderDebug = payload.renderDebug || latestRenderDebug || {};
   const formatMetric = (value, digits = 3) => Number.isFinite(Number(value))
     ? Number(value).toFixed(digits)
     : "-";
@@ -2870,7 +2915,61 @@ function updateVisionDebugPanel(payload = {}) {
     personalizedAdvice: recommendationDebug.personalizedAdvice?.join(" | ") || "-",
     genericAdvice: recommendationDebug.genericAdvice?.join(" | ") || "-",
     adviceSource: recommendationDebug.adviceSource || "-",
-    invalidRecommendationMetric: recommendationDebug.invalidRecommendationMetric || "-"
+    invalidRecommendationMetric: recommendationDebug.invalidRecommendationMetric || "-",
+    detectedBrowser: renderDebug.detectedBrowser || "-",
+    isSafari: renderDebug.isSafari ?? "-",
+    isIOS: renderDebug.isIOS ?? "-",
+    isIPadOS: renderDebug.isIPadOS ?? "-",
+    orientation: renderDebug.orientation || "-",
+    screenWidth: renderDebug.screenWidth ?? "-",
+    screenHeight: renderDebug.screenHeight ?? "-",
+    windowInnerWidth: renderDebug.windowInnerWidth ?? "-",
+    windowInnerHeight: renderDebug.windowInnerHeight ?? "-",
+    devicePixelRatio: renderDebug.devicePixelRatio ?? cameraDebug.devicePixelRatio ?? "-",
+    videoClientWidth: renderDebug.videoClientWidth ?? "-",
+    videoClientHeight: renderDebug.videoClientHeight ?? "-",
+    videoOffsetWidth: renderDebug.videoOffsetWidth ?? "-",
+    videoOffsetHeight: renderDebug.videoOffsetHeight ?? "-",
+    videoRectWidth: renderDebug.videoRectWidth ?? "-",
+    videoRectHeight: renderDebug.videoRectHeight ?? "-",
+    videoPlaysInline: renderDebug.videoPlaysInline ?? "-",
+    hasVideoSrcObject: renderDebug.hasVideoSrcObject ?? "-",
+    trackWidth: renderDebug.trackWidth ?? "-",
+    trackHeight: renderDebug.trackHeight ?? "-",
+    trackAspectRatio: formatMetric(renderDebug.trackAspectRatio),
+    trackFacingMode: renderDebug.trackFacingMode || "-",
+    canvasWidth: renderDebug.canvasWidth ?? "-",
+    canvasHeight: renderDebug.canvasHeight ?? "-",
+    canvasClientWidth: renderDebug.canvasClientWidth ?? "-",
+    canvasClientHeight: renderDebug.canvasClientHeight ?? "-",
+    canvasOffsetWidth: renderDebug.canvasOffsetWidth ?? "-",
+    canvasOffsetHeight: renderDebug.canvasOffsetHeight ?? "-",
+    canvasRectWidth: renderDebug.canvasRectWidth ?? "-",
+    canvasRectHeight: renderDebug.canvasRectHeight ?? "-",
+    selectedSourceWidth: renderDebug.selectedSourceWidth ?? "-",
+    selectedSourceHeight: renderDebug.selectedSourceHeight ?? "-",
+    selectedDestinationWidth: renderDebug.selectedDestinationWidth ?? "-",
+    selectedDestinationHeight: renderDebug.selectedDestinationHeight ?? "-",
+    sourceAspectRatio: formatMetric(renderDebug.sourceAspectRatio),
+    destinationAspectRatio: formatMetric(renderDebug.destinationAspectRatio),
+    objectFit: renderDebug.objectFit || "-",
+    renderScaleX: formatMetric(renderDebug.renderScaleX),
+    renderScaleY: formatMetric(renderDebug.renderScaleY),
+    uniformRenderScale: formatMetric(renderDebug.uniformRenderScale),
+    cropOffsetX: formatMetric(renderDebug.cropOffsetX),
+    cropOffsetY: formatMetric(renderDebug.cropOffsetY),
+    mirrored: renderDebug.mirrored ?? "-",
+    faceBoundingBoxRendered: renderDebug.faceBoundingBoxRendered ? JSON.stringify(renderDebug.faceBoundingBoxRendered) : "-",
+    renderedFaceWidth: formatMetric(renderDebug.renderedFaceWidth),
+    renderedFaceHeight: formatMetric(renderDebug.renderedFaceHeight),
+    renderedFaceAspectRatio: formatMetric(renderDebug.renderedFaceAspectRatio),
+    loadedmetadataCount: renderLifecycleCounts.loadedmetadata,
+    canplayCount: renderLifecycleCounts.canplay,
+    resizeEventCount: renderLifecycleCounts.resize,
+    orientationchangeCount: renderLifecycleCounts.orientationchange,
+    visualViewportResizeCount: renderLifecycleCounts.visualViewportResize,
+    canvasResizeCount: renderDebug.canvasResizeCount ?? "-",
+    lastCanvasResizeReason: renderDebug.lastCanvasResizeReason || "-"
   };
 
   visionDebugPanel.textContent = Object.entries(debugData)
@@ -2879,17 +2978,31 @@ function updateVisionDebugPanel(payload = {}) {
 }
 
 function ensureVisionDebugCameraButton() {
-  if (!VISION_DEBUG_ENABLED || visionDebugCameraButton) {
+  if (!VISION_DEBUG_ENABLED) {
     return;
   }
 
-  visionDebugCameraButton = document.createElement("button");
-  visionDebugCameraButton.type = "button";
-  visionDebugCameraButton.textContent = "Kiểm tra camera";
-  visionDebugCameraButton.style.cssText = [
+  if (!visionDebugCameraButton) {
+    visionDebugCameraButton = createVisionDebugButton("Kiểm tra camera", "calc(45vh + 28px)");
+    visionDebugCameraButton.addEventListener("click", runVisionDebugCameraCheck);
+    document.body.appendChild(visionDebugCameraButton);
+  }
+
+  if (!visionDebugRenderButton) {
+    visionDebugRenderButton = createVisionDebugButton("Kiểm tra lớp quét", "calc(45vh + 70px)");
+    visionDebugRenderButton.addEventListener("click", runVisionDebugRenderCheck);
+    document.body.appendChild(visionDebugRenderButton);
+  }
+}
+
+function createVisionDebugButton(label, bottom) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.style.cssText = [
     "position:fixed",
     "right:12px",
-    "bottom:calc(45vh + 28px)",
+    `bottom:${bottom}`,
     "z-index:10000",
     "min-height:36px",
     "padding:8px 12px",
@@ -2900,8 +3013,7 @@ function ensureVisionDebugCameraButton() {
     "font:600 12px system-ui,sans-serif",
     "box-shadow:0 8px 24px rgba(0,0,0,0.22)"
   ].join(";");
-  visionDebugCameraButton.addEventListener("click", runVisionDebugCameraCheck);
-  document.body.appendChild(visionDebugCameraButton);
+  return button;
 }
 
 async function runVisionDebugCameraCheck() {
@@ -2932,6 +3044,25 @@ async function runVisionDebugCameraCheck() {
     visionDebugCameraButton.disabled = false;
     visionDebugCameraButton.textContent = "Kiểm tra camera";
   }
+}
+
+function runVisionDebugRenderCheck() {
+  if (!VISION_DEBUG_ENABLED) {
+    return;
+  }
+
+  latestRenderContext = getRenderContext(canvas, video);
+  latestRenderDebug = getRenderDiagnostics({
+    canvas,
+    video,
+    landmarks: latestDebugLandmarks || [],
+    renderContext: latestRenderContext
+  });
+  renderDiagnosticOverlayUntil = performance.now() + 3500;
+  updateVisionDebugPanel({
+    renderDebug: latestRenderDebug,
+    pageLifecycleEvent: "debug-render-check"
+  });
 }
 
 function getCameraStabilityV2() {
@@ -4841,6 +4972,42 @@ window.addEventListener("customerUpdated", (event) => {
 
 document.addEventListener("visibilitychange", () => {
   updateCameraDebug({ pageLifecycleEvent: `visibility:${document.visibilityState}` });
+});
+
+video?.addEventListener("loadedmetadata", () => {
+  renderLifecycleCounts.loadedmetadata += 1;
+  latestRenderContext = resizeCanvasToVideo(canvas, video, "loadedmetadata") || latestRenderContext;
+  latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
+  updateVisionDebugPanel({ renderDebug: latestRenderDebug });
+});
+
+video?.addEventListener("canplay", () => {
+  renderLifecycleCounts.canplay += 1;
+  latestRenderContext = resizeCanvasToVideo(canvas, video, "canplay") || latestRenderContext;
+  latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
+  updateVisionDebugPanel({ renderDebug: latestRenderDebug });
+});
+
+window.addEventListener("resize", () => {
+  renderLifecycleCounts.resize += 1;
+  latestRenderContext = resizeCanvasToVideo(canvas, video, "window-resize") || latestRenderContext;
+  latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
+  updateVisionDebugPanel({ renderDebug: latestRenderDebug });
+});
+
+window.addEventListener("orientationchange", () => {
+  renderLifecycleCounts.orientationchange += 1;
+  requestAnimationFrame(() => {
+    latestRenderContext = resizeCanvasToVideo(canvas, video, "orientationchange") || latestRenderContext;
+    latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
+    updateVisionDebugPanel({ renderDebug: latestRenderDebug });
+  });
+});
+
+window.visualViewport?.addEventListener("resize", () => {
+  renderLifecycleCounts.visualViewportResize += 1;
+  latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
+  updateVisionDebugPanel({ renderDebug: latestRenderDebug });
 });
 
 window.addEventListener("pagehide", () => {
