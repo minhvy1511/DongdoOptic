@@ -1,4 +1,4 @@
-import { startUserCamera } from "./camera.js?v=20260720-39";
+import { startUserCamera } from "./camera.js?v=20260729-79";
 import { clearCanvas, drawCalibrationGuide, resizeCanvasToVideo } from "./drawing.js?v=20260720-39";
 import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260722-62";
 import {
@@ -1379,23 +1379,79 @@ function updateCameraStartButton({ active = false, loading = false } = {}) {
 async function enableCamera() {
   updateCameraStartButton({ loading: true });
 
-  if (!faceLandmarker) {
-    await initialize();
-  }
+  try {
+    if (!faceLandmarker) {
+      await initialize();
+    }
 
-  statusText.textContent = "Đang mở camera";
-  stopCurrentCameraStream({ silent: true });
-  const sessionToken = ++cameraSessionToken;
-  currentCameraStream = await startUserCamera(video, { facingMode: currentCameraMode });
-  resizeCanvasToVideo(canvas, video);
-  cameraPanel?.classList.add("camera-active");
-  statusText.textContent = "Đang nhận diện";
-  if (analyzeFaceButton) {
-    analyzeFaceButton.disabled = false;
+    statusText.textContent = "Đang mở camera";
+    stopCurrentCameraStream({ silent: true });
+    const sessionToken = ++cameraSessionToken;
+    currentCameraStream = await startUserCamera(video, { facingMode: currentCameraMode });
+    resizeCanvasToVideo(canvas, video);
+    cameraPanel?.classList.add("camera-active");
+    statusText.textContent = "Đang nhận diện";
+    if (analyzeFaceButton) {
+      analyzeFaceButton.disabled = false;
+    }
+    updateCameraStartButton({ active: true });
+    startAutoScanFlow("camera-start");
+    requestAnimationFrame(() => detectFrame(sessionToken));
+  } catch (error) {
+    handleCameraOpenError(error);
+    throw error;
   }
-  updateCameraStartButton({ active: true });
-  startAutoScanFlow("camera-start");
-  requestAnimationFrame(() => detectFrame(sessionToken));
+}
+
+function handleCameraOpenError(error) {
+  console.error(error);
+  stopCurrentCameraStream({ silent: true });
+  updateCameraStartButton({ active: false });
+  if (analyzeFaceButton) {
+    analyzeFaceButton.disabled = true;
+  }
+  statusText.textContent = getCameraErrorMessage(error);
+  if (cameraGuidance) {
+    cameraGuidance.textContent = getCameraErrorGuidance(error);
+  }
+  updateVisionDebugPanel({
+    reasonCode: error?.code || error?.name || "CAMERA_OPEN_ERROR",
+    mediaPipeError: error?.message || "camera open failed"
+  });
+}
+
+function getCameraErrorMessage(error) {
+  const code = error?.code || error?.name || "";
+  if (code === "NotAllowedError" || code === "PermissionDeniedError") {
+    return "Chưa được cấp quyền camera";
+  }
+  if (code === "NotFoundError" || code === "DevicesNotFoundError") {
+    return "Không tìm thấy camera";
+  }
+  if (code === "NotReadableError" || code === "TrackStartError") {
+    return "Camera đang bị ứng dụng khác sử dụng";
+  }
+  if (code === "CAMERA_OPEN_TIMEOUT" || code === "CAMERA_READY_TIMEOUT") {
+    return "Camera mở quá lâu";
+  }
+  return "Không thể bật camera";
+}
+
+function getCameraErrorGuidance(error) {
+  const code = error?.code || error?.name || "";
+  if (code === "NotAllowedError" || code === "PermissionDeniedError") {
+    return "Vào cài đặt trang web và cho phép quyền Camera, sau đó tải lại trang.";
+  }
+  if (code === "NotFoundError" || code === "DevicesNotFoundError") {
+    return "Kiểm tra thiết bị có camera hoặc thử đổi sang camera khác.";
+  }
+  if (code === "NotReadableError" || code === "TrackStartError") {
+    return "Đóng ứng dụng đang dùng camera như Zalo, Meet hoặc Camera rồi thử lại.";
+  }
+  if (code === "CAMERA_OPEN_TIMEOUT" || code === "CAMERA_READY_TIMEOUT") {
+    return "Tải lại trang, mở bằng Chrome/Safari thật và cấp quyền camera khi được hỏi.";
+  }
+  return "Mở bằng Chrome/Safari, kiểm tra quyền Camera và thử lại.";
 }
 
 function stopCurrentCameraStream(options = {}) {
@@ -2928,9 +2984,7 @@ function toggleCameraMode() {
   updateCameraModeButton();
   if (video.srcObject) {
     enableCamera().catch((error) => {
-      console.error(error);
-      statusText.textContent = "Không thể đổi camera";
-      startButton.disabled = false;
+      console.debug("[VisionID] Camera switch failed", error?.code || error?.name || error?.message);
     });
   }
 }
@@ -4400,8 +4454,7 @@ if (mobileScanButton) {
     }
 
     enableCamera().catch((error) => {
-      console.error(error);
-      statusText.textContent = "Không thể bật camera";
+      console.debug("[VisionID] Mobile camera start failed", error?.code || error?.name || error?.message);
     });
   });
 }
@@ -4421,9 +4474,7 @@ startButton.addEventListener("click", async () => {
 
     await enableCamera();
   } catch (error) {
-    console.error(error);
-    statusText.textContent = "Không thể khởi tạo";
-    updateCameraStartButton({ active: Boolean(video?.srcObject) });
+    console.debug("[VisionID] Camera start failed", error?.code || error?.name || error?.message);
   }
 });
 
