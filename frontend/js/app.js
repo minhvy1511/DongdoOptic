@@ -292,6 +292,7 @@ let operationSaveState = "idle";
 let lastDraftSavedAt = null;
 let lastCustomerSavedAt = null;
 let suppressOperationDraftTracking = false;
+let operationCompletedContext = null;
 let pendingContextChangeAction = null;
 let latestResultContext = null;
 let latestRecommendationContext = null;
@@ -1259,9 +1260,7 @@ function failIncompleteScan(step, message) {
     confirmedFaceShapeInput.value = "";
     confirmedFaceShapeInput.disabled = true;
   }
-  if (markMeasuredButton) {
-    markMeasuredButton.disabled = true;
-  }
+  syncMarkMeasuredButtonState();
   frameList.innerHTML = `<p class="empty-state">VisionID chưa lấy được ảnh thẳng đủ rõ. Hãy quét lại để nhận gợi ý gọng.</p>`;
   renderConsultationSummary();
   updateScanHud();
@@ -1747,9 +1746,35 @@ function completeCurrentOperationDraft(savedAt) {
   const completedDraft = buildOperationDraftFromForm({ completedAt: savedAt });
   const completed = writeCompletedOperationDraft(completedDraft);
   if (completed.ok) {
+    setCompletedOperationContext(completedDraft, savedAt);
+    operationDraftSaver.cancel();
     clearOperationDraft();
   }
   return completed;
+}
+
+function setCompletedOperationContext(draft, completedAt) {
+  operationCompletedContext = {
+    draftId: draft.draftId,
+    sessionCode: draft.sessionCode,
+    customerId: draft.customerId,
+    completedAt
+  };
+}
+
+function isCurrentCompletedOperationContext() {
+  if (!operationCompletedContext) {
+    return false;
+  }
+  return operationCompletedContext.draftId === operationDraftId
+    && operationCompletedContext.sessionCode === ensureCurrentSessionCode()
+    && (operationCompletedContext.customerId || null) === (operationCustomerId || null);
+}
+
+function startNewDraftAfterCompletedOperation() {
+  operationCompletedContext = null;
+  operationDraftId = createOperationDraftId();
+  operationDraftCreatedAt = new Date().toISOString();
 }
 
 function writeCompletedOperationDraft(draft) {
@@ -2740,9 +2765,7 @@ function applyAnalysisConfidence(analysis, shouldDefaultConfirmed) {
 
   renderConfidenceNotice(analysis, confidenceState, autoConfirmed || confirmedFaceShapeSource === "manual");
   renderCustomerResult();
-  if (markMeasuredButton) {
-    markMeasuredButton.disabled = !confirmedFaceShape && !manualConsultationMode;
-  }
+  syncMarkMeasuredButtonState();
   updateAdvice();
 }
 
@@ -3597,9 +3620,7 @@ function updateCameraStatus(faceCount, analysis) {
       : getCameraGuidanceV2(faceCount, stability, quality, ready, diagnostics);
   }
 
-  if (markMeasuredButton) {
-    markMeasuredButton.disabled = !confirmedFaceShape;
-  }
+  syncMarkMeasuredButtonState();
 }
 
 function updateVisionDebugPanel(payload = {}) {
@@ -4663,6 +4684,7 @@ function loadCustomerRecord(customerCode) {
 
   isLoadingCustomer = true;
   suppressOperationDraftTracking = true;
+  operationCompletedContext = null;
   analysisHistory = [];
   customerCodeInput.value = record.customer_code;
   customerNameInput.value = record.customer_name || "";
@@ -5241,6 +5263,18 @@ function scheduleOperationDraftSave(reason = "change") {
     return;
   }
 
+  if (operationCompletedContext && !isCurrentCompletedOperationContext()) {
+    operationCompletedContext = null;
+  }
+
+  if (operationCompletedContext) {
+    if (!hasUnsavedOperationChanges()) {
+      updateCameraDebug({ operationDraftSaveSkipped: "completed-operation", operationDraftSaveScheduled: reason });
+      return;
+    }
+    startNewDraftAfterCompletedOperation();
+  }
+
   const draft = buildOperationDraftFromForm();
   if (!isMeaningfulOperationDraft(draft)) {
     renderCustomerSessionHeader();
@@ -5257,6 +5291,18 @@ function scheduleOperationDraftSave(reason = "change") {
 function flushOperationDraftSave(reason = "manual") {
   if (suppressOperationDraftTracking) {
     return { ok: false, reason: "SUPPRESSED" };
+  }
+
+  if (operationCompletedContext && !isCurrentCompletedOperationContext()) {
+    operationCompletedContext = null;
+  }
+
+  if (operationCompletedContext) {
+    if (!hasUnsavedOperationChanges()) {
+      updateCameraDebug({ operationDraftLastFlush: reason, operationDraftSaved: false, operationDraftSkipReason: "completed-operation" });
+      return { ok: false, reason: "COMPLETED_OPERATION" };
+    }
+    startNewDraftAfterCompletedOperation();
   }
 
   const draft = buildOperationDraftFromForm();
@@ -5341,6 +5387,7 @@ function hydrateOperationDraft(draft) {
   if (!normalized) {
     return;
   }
+  operationCompletedContext = null;
   suppressOperationDraftTracking = true;
   clearUploadedImagePreview({ revoke: true, clearOverlay: true, reason: "resume-draft" });
   operationDraftId = normalized.draftId;
@@ -5396,6 +5443,7 @@ function hydrateOperationDraft(draft) {
 function startNewOperationSession({ clearDraft = false } = {}) {
   operationDraftSaver.cancel();
   suppressOperationDraftTracking = true;
+  operationCompletedContext = null;
   startNewCustomer();
   operationDraftId = createOperationDraftId();
   operationDraftCreatedAt = new Date().toISOString();
@@ -5884,6 +5932,7 @@ function renderConsultationActions() {
   if (startNextCustomerButton) {
     startNextCustomerButton.hidden = saveState.state !== "saved" && saveState.state !== "measured";
   }
+  syncMarkMeasuredButtonState(saveState);
   if (consultationActionPanel) {
     consultationActionPanel.dataset.saveState = saveState.state;
   }
@@ -5896,6 +5945,14 @@ function updateMobileConsultationCta(saveState, canSave) {
   }
   mobileConsultButton.textContent = canSave ? saveState.actionLabel : "Tư vấn";
   mobileConsultButton.disabled = !canSave && !getCurrentDetailedConsultationSource().valid;
+}
+
+function syncMarkMeasuredButtonState(saveState = null) {
+  if (!markMeasuredButton) {
+    return;
+  }
+  const state = saveState || getCurrentConsultationSaveState();
+  markMeasuredButton.disabled = state.state !== "saved" && state.state !== "measured";
 }
 
 function renderConsultationSummary() {
@@ -6289,9 +6346,20 @@ function markCustomerAsMeasuredSafely() {
   persistedConsultationContext = persistedConsultationResult ? getCurrentConsultationContext() : persistedConsultationContext;
   renderCustomers();
   renderConsultationActions();
+  const measuredAt = updatedRecord.updated_at || new Date().toISOString();
+  setCompletedOperationContext(buildOperationDraftFromForm({ completedAt: measuredAt }), measuredAt);
+  const wasSuppressingDraftTracking = suppressOperationDraftTracking;
+  suppressOperationDraftTracking = true;
   syncCurrentCustomer("customerUpdated", updatedRecord);
+  suppressOperationDraftTracking = wasSuppressingDraftTracking;
+  operationDraftSaver.cancel();
+  clearOperationDraft();
+  setOperationBaselineFromCurrent();
   statusText.textContent = "Da chuyen sang trang thai da do";
   showTab("tab-4");
+  operationDraftSaver.cancel();
+  clearOperationDraft();
+  setOperationBaselineFromCurrent();
   updateWorkflowAssistant();
 }
 
@@ -6327,9 +6395,7 @@ function enableManualConsultation() {
     confirmedFaceShapeInput.value = "";
     confirmedFaceShapeInput.disabled = true;
   }
-  if (markMeasuredButton) {
-    markMeasuredButton.disabled = false;
-  }
+  syncMarkMeasuredButtonState();
   renderConfidenceNotice(null, { level: "medium", percent: 0 }, false, "\u0110\u00e3 b\u1ecf qua VisionID. H\u00e3y th\u1eed g\u1ecdng th\u1eadt v\u00e0 l\u01b0u g\u00f3p \u00fd sau t\u01b0 v\u1ea5n.");
   renderCustomerResult();
   updateAdvice();
@@ -6615,9 +6681,7 @@ if (confirmedFaceShapeInput) {
     renderCameraConfidenceOverlay(latestAnalysis, latestAnalysis ? getConfidenceState(latestAnalysis) : { level: "low", percent: 0 });
     updateAdvice();
     syncCurrentCustomer("customerUpdated");
-    if (markMeasuredButton) {
-      markMeasuredButton.disabled = !confirmedFaceShape;
-    }
+    syncMarkMeasuredButtonState();
     updateWorkflowAssistant();
   });
 }

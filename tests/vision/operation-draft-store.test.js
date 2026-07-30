@@ -130,6 +130,24 @@ test("read ignores malformed schema and completed drafts safely", () => {
   assert.equal(isMeaningfulOperationDraft(readOperationDraft(storage)), false);
 });
 
+test("completed measured draft is never resume-worthy", () => {
+  const completedMeasuredDraft = createOperationDraft({
+    draftId: "OD-measured",
+    customerId: "KH-measured",
+    sessionCode: "PC-measured",
+    currentStep: "consultation",
+    customer: {
+      name: "Measured Customer",
+      phone: "0900000000",
+      status: "measured"
+    },
+    consultation: { manualMode: true },
+    completedAt: "2026-07-29T10:00:00.000Z"
+  });
+
+  assert.equal(isMeaningfulOperationDraft(completedMeasuredDraft), false);
+});
+
 test("business state normalization preserves negative prescription strings", () => {
   const state = normalizeOperationBusinessState(createOperationDraft({
     customer: {
@@ -193,6 +211,38 @@ test("autosave debounce writes once and flushes synchronously", () => {
   saver.schedule();
   assert.equal(saver.flush(), 2);
   assert.equal(saveCount, 2);
+});
+
+test("autosave debounce cancel prevents stale draft writes after completion", () => {
+  let timeoutCallback = null;
+  let timerCleared = false;
+  let saveCount = 0;
+  let clearCount = 0;
+  const saver = createDebouncedDraftSaver({
+    delayMs: 700,
+    saveFn: () => {
+      saveCount += 1;
+      return saveCount;
+    },
+    setTimeoutFn: (callback) => {
+      timeoutCallback = callback;
+      timerCleared = false;
+      return { id: "timer" };
+    },
+    clearTimeoutFn: () => {
+      clearCount += 1;
+      timerCleared = true;
+    }
+  });
+
+  saver.schedule();
+  saver.cancel();
+  if (!timerCleared) {
+    timeoutCallback();
+  }
+
+  assert.equal(clearCount, 1);
+  assert.equal(saveCount, 0);
 });
 
 test("step mapping is stable for resume", () => {

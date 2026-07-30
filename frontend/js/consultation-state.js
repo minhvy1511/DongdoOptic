@@ -195,7 +195,7 @@ export function getConsultationSignature(payload) {
   if (!payload) {
     return "";
   }
-  return stableStringify(payload);
+  return stableStringify(stripSignatureVolatileFields(payload));
 }
 
 export function getCustomerOperationalStatus(customer = {}, activeDraft = null) {
@@ -336,6 +336,22 @@ function sortValue(value) {
   }
   return Object.keys(value).sort().reduce((result, key) => {
     result[key] = sortValue(value[key]);
+    return result;
+  }, {});
+}
+
+function stripSignatureVolatileFields(value) {
+  if (Array.isArray(value)) {
+    return value.map(stripSignatureVolatileFields);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.entries(value).reduce((result, [key, item]) => {
+    if (key === "savedAt") {
+      return result;
+    }
+    result[key] = stripSignatureVolatileFields(item);
     return result;
   }, {});
 }

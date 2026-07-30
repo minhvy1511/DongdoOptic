@@ -225,3 +225,105 @@ test("consultation signature changes when recommendation changes", () => {
 
   assert.notEqual(getConsultationSignature(first), getConsultationSignature(second));
 });
+
+test("consultation signature ignores savedAt so freshly saved result stays saved", () => {
+  const source = { valid: true, source: CONSULTATION_SOURCES.MANUAL };
+  const first = buildConsultationResultPayload({
+    source,
+    recommendations: [{ name: "Oval can bang" }],
+    needsSnapshot: { purpose: "screen" },
+    savedAt: "2026-07-30T01:00:00.000Z"
+  });
+  const second = buildConsultationResultPayload({
+    source,
+    recommendations: [{ name: "Oval can bang" }],
+    needsSnapshot: { purpose: "screen" },
+    savedAt: "2026-07-30T01:05:00.000Z"
+  });
+
+  assert.equal(getConsultationSignature(first), getConsultationSignature(second));
+});
+
+test("consultation signature changes for business result edits only", () => {
+  const source = { valid: true, source: CONSULTATION_SOURCES.CAMERA };
+  const base = buildConsultationResultPayload({
+    source,
+    confirmedFaceShape: "oval",
+    recommendations: [
+      { name: "Oval can bang", reason: "Can bang ti le" },
+      { name: "Browline mem", reason: "Nang duong chan may" }
+    ],
+    lensRecommendations: [{ name: "1.67", reason: "Don cao" }],
+    needsSnapshot: { purpose: "daily", budget: "medium" },
+    prescriptionSnapshot: { pd: "62", sph: "-3.00", cyl: "-0.50" },
+    savedAt: "2026-07-30T01:00:00.000Z"
+  });
+  const baseSignature = getConsultationSignature(base);
+
+  const variants = [
+    buildConsultationResultPayload({
+      source,
+      confirmedFaceShape: "oval",
+      recommendations: [
+        { name: "Oval can bang", reason: "Can bang ti le" },
+        { name: "Cat-eye nhe", reason: "Mo rong diem nhan" }
+      ],
+      lensRecommendations: [{ name: "1.67", reason: "Don cao" }],
+      needsSnapshot: { purpose: "daily", budget: "medium" },
+      prescriptionSnapshot: { pd: "62", sph: "-3.00", cyl: "-0.50" },
+      savedAt: "2026-07-30T01:00:00.000Z"
+    }),
+    buildConsultationResultPayload({
+      source,
+      confirmedFaceShape: "oval",
+      recommendations: [
+        { name: "Oval can bang", reason: "Can bang ti le" },
+        { name: "Browline mem", reason: "Nang duong chan may" }
+      ],
+      lensRecommendations: [{ name: "1.60", reason: "Don vua" }],
+      needsSnapshot: { purpose: "daily", budget: "medium" },
+      prescriptionSnapshot: { pd: "62", sph: "-3.00", cyl: "-0.50" },
+      savedAt: "2026-07-30T01:00:00.000Z"
+    }),
+    buildConsultationResultPayload({
+      source: { valid: true, source: CONSULTATION_SOURCES.MANUAL },
+      confirmedFaceShape: "oval",
+      recommendations: [
+        { name: "Oval can bang", reason: "Can bang ti le" },
+        { name: "Browline mem", reason: "Nang duong chan may" }
+      ],
+      lensRecommendations: [{ name: "1.67", reason: "Don cao" }],
+      needsSnapshot: { purpose: "daily", budget: "medium" },
+      prescriptionSnapshot: { pd: "62", sph: "-3.00", cyl: "-0.50" },
+      savedAt: "2026-07-30T01:00:00.000Z"
+    }),
+    buildConsultationResultPayload({
+      source,
+      confirmedFaceShape: "oval",
+      recommendations: [
+        { name: "Oval can bang", reason: "Can bang ti le" },
+        { name: "Browline mem", reason: "Nang duong chan may" }
+      ],
+      lensRecommendations: [{ name: "1.67", reason: "Don cao" }],
+      needsSnapshot: { purpose: "screen", budget: "medium" },
+      prescriptionSnapshot: { pd: "62", sph: "-3.00", cyl: "-0.50" },
+      savedAt: "2026-07-30T01:00:00.000Z"
+    }),
+    buildConsultationResultPayload({
+      source,
+      confirmedFaceShape: "oval",
+      recommendations: [
+        { name: "Oval can bang", reason: "Can bang ti le" },
+        { name: "Browline mem", reason: "Nang duong chan may" }
+      ],
+      lensRecommendations: [{ name: "1.67", reason: "Don cao" }],
+      needsSnapshot: { purpose: "daily", budget: "medium" },
+      prescriptionSnapshot: { pd: "64", sph: "-3.00", cyl: "-0.50" },
+      savedAt: "2026-07-30T01:00:00.000Z"
+    })
+  ];
+
+  for (const variant of variants) {
+    assert.notEqual(getConsultationSignature(variant), baseSignature);
+  }
+});
