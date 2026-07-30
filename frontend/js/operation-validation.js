@@ -64,6 +64,13 @@ export function validateProfileState(state = {}) {
   return createResult(errors.length === 0, errors);
 }
 
+export function validateProfileSaveState(state = {}) {
+  return validateProfileState({
+    ...state,
+    duplicateBlocked: false
+  });
+}
+
 export function validateNeedsState(state = {}) {
   const errors = [];
   if (!String(state.budget ?? "").trim()) {

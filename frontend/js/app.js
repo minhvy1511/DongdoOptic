@@ -68,6 +68,7 @@ import {
 import {
   getFirstValidationError,
   validateNeedsState,
+  validateProfileSaveState,
   validateProfileState
 } from "./operation-validation.js?v=20260729-87";
 import {
@@ -4853,8 +4854,10 @@ function getCurrentVisionAnalysisState() {
   return visionExperienceState || "idle";
 }
 
-function getProfileValidation() {
-  const duplicateBlocked = Boolean((duplicatePhoneMatches.length ? duplicatePhoneMatches : getDuplicateMatchesForCurrentPhone()).length)
+function getProfileValidation(options = {}) {
+  const includeDuplicateBlock = options.includeDuplicateBlock !== false;
+  const duplicateBlocked = includeDuplicateBlock
+    && Boolean((duplicatePhoneMatches.length ? duplicatePhoneMatches : getDuplicateMatchesForCurrentPhone()).length)
     && !allowDuplicateCustomerSaveOnce;
   return validateProfileState({
     customerName: customerNameInput.value,
@@ -4940,7 +4943,14 @@ function saveCurrentCustomerWithLock() {
   saveCustomerInFlight = true;
   saveCustomerButton.disabled = true;
   try {
-    const validation = getProfileValidation();
+    const validation = validateProfileSaveState({
+      customerName: customerNameInput.value,
+      customerPhone: customerPhoneInput.value,
+      hasPrescription: hasPrescriptionInput.checked,
+      prescriptionPd: prescriptionPdInput.value,
+      prescriptionSph: prescriptionSphInput.value,
+      prescriptionCyl: prescriptionCylInput.value
+    });
     if (!validation.valid) {
       showInlineValidationErrors(validation);
       return null;

@@ -5,6 +5,7 @@ import {
   parseOptionalFiniteNumber,
   validateNeedsState,
   validatePrescriptionState,
+  validateProfileSaveState,
   validateProfileState
 } from "../../frontend/js/operation-validation.js";
 
@@ -33,6 +34,11 @@ test("duplicate blocker prevents profile from passing", () => {
   const result = validateProfileState({ customerName: "Bui Dang Toan", duplicateBlocked: true });
   assert.equal(result.valid, false);
   assert.equal(result.errors[0].code, "DUPLICATE_PHONE_BLOCKED");
+});
+
+test("explicit profile save leaves duplicate handling to save dialog", () => {
+  const result = validateProfileSaveState({ customerName: "Bui Dang Toan", duplicateBlocked: true });
+  assert.equal(result.valid, true);
 });
 
 test("needs requires the three quick selections", () => {
