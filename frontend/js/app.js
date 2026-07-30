@@ -57,20 +57,20 @@ import {
   readOperationDraft,
   tabIdToOperationStep,
   writeOperationDraft
-} from "./operation-draft-store.js?v=20260729-85";
+} from "./operation-draft-store.js?v=20260731-qa1";
 import {
   createCustomerPrefillFromQuery,
   findExactPhoneMatches,
   getDuplicateSaveDecision,
   isPhoneLikeQuery,
   rankCustomerMatches
-} from "./customer-lookup.js?v=20260729-87";
+} from "./customer-lookup.js?v=20260731-qa1";
 import {
   getFirstValidationError,
   validateNeedsState,
   validateProfileSaveState,
   validateProfileState
-} from "./operation-validation.js?v=20260729-87";
+} from "./operation-validation.js?v=20260731-qa1";
 import {
   STEP_TO_TAB_ID,
   canEnterStep,
@@ -78,7 +78,7 @@ import {
   getNextWorkflowAction,
   getWorkflowStepState,
   normalizeWorkflowStep
-} from "./workflow-state.js?v=20260729-87";
+} from "./workflow-state.js?v=20260731-qa1";
 import {
   buildConsultationResultPayload,
   canCompleteOperation,
@@ -92,7 +92,7 @@ import {
   getCustomerOperationalStatus,
   getCustomerPrimaryAction,
   isConsultationResultCurrent
-} from "./consultation-state.js?v=20260729-87";
+} from "./consultation-state.js?v=20260731-qa1";
 import {
   createCustomerCode,
   createSessionCode,
@@ -102,7 +102,7 @@ import {
   loadCurrentCustomer,
   saveCustomer,
   todayInputValue
-} from "./customer-store.js?v=20260729-85";
+} from "./customer-store.js?v=20260731-qa1";
 
 const video = document.getElementById("webcam");
 const uploadedFaceImage = document.getElementById("uploadedFaceImage");
