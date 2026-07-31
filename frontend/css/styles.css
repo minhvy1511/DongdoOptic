@@ -8,6 +8,16 @@
   --color-primary-600: #0b8c85;
   --color-primary-100: #dff5f2;
   --color-primary-50: #f1fbf9;
+  --bg-app: #f6f8fa;
+  --bg-subtle: #eef4f3;
+  --primary-900: #064d4b;
+  --primary-700: #087f79;
+  --primary-600: #0f958d;
+  --primary-500: #16a59c;
+  --primary-100: #ddf7f1;
+  --primary-50: #effbf8;
+  --accent-violet: #6865f2;
+  --accent-violet-soft: #eeedff;
   --color-bg: #f5f8f8;
   --color-surface: #ffffff;
   --color-border: #dce7e6;
@@ -21,8 +31,11 @@
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
+  --radius-pill: 999px;
   --shadow-sm: 0 2px 8px rgba(15, 48, 50, 0.05);
   --shadow-md: 0 10px 30px rgba(15, 48, 50, 0.08);
+  --shadow-soft: 0 16px 50px rgba(20, 54, 58, 0.08);
+  --shadow-focus: 0 0 0 4px rgba(15, 149, 141, 0.16);
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -3453,5 +3466,1149 @@ h1 {
 
   .sidebar-art {
     min-height: 220px;
+  }
+}
+
+/* Modern optical studio refresh v2: visual-only overrides. */
+body {
+  background:
+    linear-gradient(180deg, #fbfdfd 0%, var(--bg-app) 44%, #eef5f4 100%);
+}
+
+body::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 34%),
+    linear-gradient(90deg, rgba(8, 127, 121, 0.014) 0 1px, transparent 1px 0) 0 0 / 150px 150px;
+  opacity: 0.58;
+}
+
+.app-shell {
+  grid-template-columns: minmax(214px, 260px) minmax(0, 1fr);
+}
+
+.sidebar {
+  gap: 14px;
+  padding: 14px;
+  border-right: 1px solid rgba(206, 221, 219, 0.65);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 251, 248, 0.92));
+  color: var(--text-strong, var(--ink));
+  box-shadow: 10px 0 36px rgba(20, 54, 58, 0.05);
+}
+
+.brand-block,
+.tab-button,
+.sidebar-logout,
+.sidebar-art {
+  border-color: rgba(8, 127, 121, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text-strong, var(--ink));
+}
+
+.brand-block {
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.brand-mark {
+  width: 48px;
+  height: 48px;
+  border-color: rgba(22, 165, 156, 0.34);
+  border-radius: 16px;
+  background: linear-gradient(145deg, #effbf8, #ddf7f1);
+  box-shadow: 0 12px 28px rgba(8, 127, 121, 0.12);
+}
+
+.brand-block span,
+.sidebar-footer span {
+  color: var(--text-muted, var(--muted));
+}
+
+.brand-block strong,
+.sidebar-footer strong {
+  color: var(--text-strong, var(--ink));
+}
+
+.sidebar-nav {
+  gap: 10px;
+}
+
+.sidebar-nav::before {
+  background: rgba(8, 127, 121, 0.12);
+}
+
+.tab-button {
+  min-height: 60px;
+  border-radius: 18px;
+  color: var(--text, var(--ink));
+  box-shadow: none;
+  transition: background var(--motion-fast, 150ms) ease, border-color var(--motion-fast, 150ms) ease, transform var(--motion-fast, 150ms) ease, box-shadow var(--motion-fast, 150ms) ease;
+}
+
+.tab-button::before {
+  border-color: rgba(8, 127, 121, 0.16);
+  background: var(--primary-50);
+  color: var(--primary-700);
+}
+
+.tab-button::after {
+  background: rgba(112, 129, 135, 0.09);
+  color: var(--text-muted, var(--muted));
+}
+
+.tab-button em {
+  color: var(--text-muted, var(--muted));
+}
+
+.tab-button:hover {
+  background: #fff;
+  border-color: rgba(8, 127, 121, 0.22);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(20, 54, 58, 0.07);
+}
+
+.tab-button.active {
+  border-color: rgba(15, 149, 141, 0.28);
+  background:
+    linear-gradient(135deg, var(--primary-700), var(--primary-900));
+  color: #fff;
+  box-shadow: 0 18px 34px rgba(6, 77, 75, 0.18);
+}
+
+.tab-button.active em,
+.tab-button.active::after {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.tab-button.active::before {
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.tab-button.is-complete::before {
+  border-color: rgba(21, 134, 111, 0.28);
+  background: #e6f7f2;
+  color: var(--success);
+}
+
+.tab-button.is-complete::after {
+  background: #e6f7f2;
+  color: var(--success);
+}
+
+.sidebar-art {
+  min-height: 230px;
+  align-items: start;
+  border-radius: 24px;
+  background:
+    linear-gradient(150deg, #ffffff 0%, #eefbf8 58%, #eeedff 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+.sidebar-art-inner {
+  color: var(--text-strong, var(--ink));
+}
+
+.sidebar-art-kicker {
+  color: var(--primary-700);
+}
+
+.sidebar-footer {
+  color: var(--text-muted, var(--muted));
+}
+
+.content {
+  padding: 18px 22px 28px;
+  gap: 18px;
+}
+
+.content-header,
+.panel,
+.inspector,
+.customer-panel,
+.metrics-panel,
+.recommendation-panel,
+.consultation-summary-panel,
+.feedback-panel,
+.lens-preview,
+.prescription-section,
+.current-customer-summary,
+.technical-details,
+.customer-card,
+.frame-card,
+.lens-card {
+  border-color: rgba(206, 221, 219, 0.78);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-soft);
+}
+
+.content-header {
+  padding: 22px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 251, 248, 0.86));
+}
+
+.content-title h1 {
+  font-size: clamp(27px, 2vw, 36px);
+  letter-spacing: 0;
+}
+
+.content-title .summary,
+.summary {
+  color: var(--text-muted, var(--muted));
+}
+
+.content-chips span,
+.status-chip,
+.customer-session-meta span,
+.lens-meta span,
+.summary-picks span {
+  border: 1px solid rgba(8, 127, 121, 0.1);
+  border-radius: var(--radius-pill);
+  background: var(--primary-50);
+  color: var(--primary-900);
+}
+
+.workflow-assistant,
+.customer-session {
+  border-color: rgba(8, 127, 121, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.workflow-assistant button,
+#cameraStartButton,
+#saveConsultationButton,
+#workflowNextButton {
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--primary-600), var(--primary-900));
+  box-shadow: 0 14px 28px rgba(6, 77, 75, 0.18);
+}
+
+.secondary-action,
+.new-customer-action,
+.camera-mode-button,
+.customer-actions button,
+.dialog-actions button,
+.code-row button {
+  border-color: rgba(8, 127, 121, 0.24);
+  border-radius: 16px;
+  background: rgba(239, 251, 248, 0.92);
+  color: var(--primary-900);
+  font-weight: 800;
+}
+
+.secondary-action:hover,
+.new-customer-action:hover,
+.customer-actions button:hover,
+.dialog-actions button:hover,
+.code-row button:hover {
+  background: var(--primary-700);
+  color: #fff;
+}
+
+input,
+select,
+textarea,
+.customer-form input,
+.customer-form select,
+.customer-form textarea,
+.customer-toolbar input,
+.preference-form select,
+.feedback-form select,
+.feedback-form textarea,
+.confirm-shape-control select {
+  border-color: rgba(206, 221, 219, 0.95);
+  border-radius: 16px;
+  background: #fff;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--primary-500);
+  box-shadow: var(--shadow-focus);
+}
+
+.section-heading h2 {
+  color: var(--text-strong, var(--ink));
+  font-size: 21px;
+}
+
+.eyebrow {
+  color: var(--primary-700);
+  letter-spacing: 0.02em;
+}
+
+.two-column,
+.advice-grid,
+.workspace {
+  gap: 18px;
+}
+
+.camera-panel {
+  border: 0;
+  border-radius: 26px;
+  background: linear-gradient(180deg, #111b24, #0d151d);
+  box-shadow: 0 24px 60px rgba(11, 24, 31, 0.18);
+}
+
+.camera-panel::before,
+.camera-panel::after {
+  border-color: rgba(22, 165, 156, 0.72);
+}
+
+.camera-placeholder {
+  background:
+    linear-gradient(180deg, rgba(17, 27, 36, 0.78), rgba(13, 21, 29, 0.94));
+}
+
+.camera-actions {
+  gap: 10px;
+  padding: 10px;
+  border-color: rgba(206, 221, 219, 0.78);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--shadow-soft);
+}
+
+.camera-confidence-overlay,
+.scan-hud,
+.privacy-note {
+  border-radius: 16px;
+  background: rgba(13, 21, 29, 0.74);
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.16);
+}
+
+.inspector {
+  padding: 20px;
+}
+
+.customer-result-card {
+  border-color: rgba(8, 127, 121, 0.16);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, #ffffff, var(--primary-50));
+}
+
+.face-icon {
+  border-color: rgba(8, 127, 121, 0.42);
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(8, 127, 121, 0.09);
+}
+
+.camera-guidance,
+.confidence-notice,
+.capture-quality-gate,
+.shape-candidate,
+.shape-reference,
+.shape-reference-item,
+.status-grid div,
+.camera-status-card,
+.camera-signal-list div,
+.consult-command-strip div,
+.summary-grid div,
+.aesthetic-advice div,
+.material-advice,
+.material-grid article,
+.fit-checklist span,
+.frame-details span {
+  border-color: rgba(206, 221, 219, 0.78);
+  border-radius: 18px;
+  background: rgba(248, 251, 251, 0.88);
+  box-shadow: none;
+}
+
+.consultation-action-panel {
+  border-color: rgba(8, 127, 121, 0.12);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, #ffffff, rgba(239, 251, 248, 0.78));
+}
+
+.summary-showcase,
+.summary-hero,
+.trial-plan {
+  border-color: rgba(8, 127, 121, 0.14);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, #ffffff 0%, #f7fbfb 58%, #f1fbf9 100%);
+  box-shadow: var(--shadow-soft);
+}
+
+.summary-showcase::after {
+  display: none;
+}
+
+.summary-frame-visuals article,
+.summary-highlights li {
+  border-color: rgba(206, 221, 219, 0.78);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.empty-state {
+  min-height: 180px;
+  border-color: rgba(8, 127, 121, 0.16);
+  border-radius: 22px;
+  background: rgba(248, 251, 251, 0.72);
+}
+
+.mobile-action-bar {
+  border-radius: 24px;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 12px 30px rgba(20, 54, 58, 0.08);
+  }
+
+  .content {
+    padding: 10px;
+  }
+
+  .content-header,
+  .panel,
+  .inspector,
+  .consultation-summary-panel,
+  .feedback-panel {
+    border-radius: 20px;
+  }
+
+  .camera-panel {
+    border-radius: 24px;
+  }
+
+  .camera-actions {
+    border-radius: 22px;
+    bottom: 10px;
+  }
+
+  .mobile-action-bar {
+    left: 10px;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    padding: 6px;
+    border-color: rgba(206, 221, 219, 0.82);
+    border-radius: 24px;
+  }
+
+  .mobile-action-bar button {
+    border-radius: 18px;
+  }
+}
+
+/* Mobile VisionID focused pass: keep the camera in the first viewport. */
+@media (max-width: 767px) {
+  body:has(#tab-3.active) {
+    padding-bottom: 18px;
+  }
+
+  body:has(#tab-3.active) .sidebar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  body:has(#tab-3.active) .brand-block {
+    min-height: 52px;
+    padding: 6px 8px;
+    border-radius: 18px;
+  }
+
+  body:has(#tab-3.active) .brand-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
+  }
+
+  body:has(#tab-3.active) .brand-block strong {
+    font-size: 13px;
+    line-height: 1.1;
+  }
+
+  body:has(#tab-3.active) .brand-block span {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .sidebar-nav {
+    display: flex;
+    min-height: 48px;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  body:has(#tab-3.active) .tab-button {
+    flex: 0 0 48px;
+    min-height: 46px;
+    padding: 5px;
+    border-radius: 16px;
+  }
+
+  body:has(#tab-3.active) .tab-button.active {
+    flex-basis: min(144px, 38vw);
+    grid-template-columns: 30px minmax(0, 1fr);
+    justify-items: start;
+    text-align: left;
+  }
+
+  body:has(#tab-3.active) .tab-button::before {
+    width: 26px;
+    height: 26px;
+    font-size: 11px;
+  }
+
+  body:has(#tab-3.active) .tab-button span {
+    display: none;
+    font-size: 14px;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  body:has(#tab-3.active) .tab-button.active span {
+    display: block;
+  }
+
+  body:has(#tab-3.active) .content {
+    padding: 8px 10px 18px;
+    gap: 8px;
+  }
+
+  body:has(#tab-3.active) .content-header {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body:has(#tab-3.active) .content-title,
+  body:has(#tab-3.active) .workflow-assistant,
+  body:has(#tab-3.active) .content-chips {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .customer-session {
+    min-height: 56px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 8px 10px;
+    border-radius: 18px;
+  }
+
+  body:has(#tab-3.active) .customer-session-main {
+    min-width: 0;
+  }
+
+  body:has(#tab-3.active) .customer-session-main .eyebrow {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .customer-session-main strong {
+    overflow: hidden;
+    font-size: 15px;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body:has(#tab-3.active) .customer-session-main span:last-child {
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body:has(#tab-3.active) .customer-session-meta {
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  body:has(#tab-3.active) .customer-session-meta span {
+    max-width: 112px;
+    min-height: 28px;
+    padding: 5px 8px;
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body:has(#tab-3.active) .customer-session-meta span:not(:last-child),
+  body:has(#tab-3.active) .customer-session-actions {
+    display: none;
+  }
+
+  body:has(#tab-3.active) #tab-3 {
+    margin-top: 0;
+  }
+
+  body:has(#tab-3.active) #tab-3 .workspace {
+    gap: 10px;
+  }
+
+  body:has(#tab-3.active) .camera-stage {
+    gap: 8px;
+  }
+
+  body:has(#tab-3.active) .camera-panel {
+    height: min(54dvh, 430px);
+    min-height: 300px;
+    max-height: 430px;
+    border-radius: 22px;
+  }
+
+  body:has(#tab-3.active) .scan-hud {
+    bottom: 72px;
+    width: min(88%, 310px);
+    padding: 7px 9px;
+  }
+
+  body:has(#tab-3.active) .privacy-note {
+    bottom: 8px;
+    max-width: calc(100% - 16px);
+  }
+
+  body:has(#tab-3.active) .camera-actions {
+    position: static;
+    z-index: 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 8px;
+    border-radius: 18px;
+    backdrop-filter: none;
+  }
+
+  body:has(#tab-3.active) .camera-actions button {
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+
+  body:has(#tab-3.active) .camera-actions #cameraStartButton {
+    grid-column: 1 / -1;
+  }
+
+  body:has(#tab-3.active) .inspector {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  body:has(#tab-3.active) .mobile-action-bar {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 900px) and (orientation: portrait) {
+  .content-title h1 {
+    line-height: 1.18;
+  }
+
+  body:has(#tab-3.active) {
+    padding-bottom: 18px;
+  }
+
+  body:has(#tab-3.active) .content {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  body:has(#tab-3.active) .content-header {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body:has(#tab-3.active) .content-title,
+  body:has(#tab-3.active) .workflow-assistant,
+  body:has(#tab-3.active) .content-chips {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .customer-session {
+    min-height: 58px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 9px 12px;
+    border-radius: 20px;
+  }
+
+  body:has(#tab-3.active) .customer-session-main .eyebrow,
+  body:has(#tab-3.active) .customer-session-meta span:not(:last-child),
+  body:has(#tab-3.active) .customer-session-actions {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .customer-session-main strong,
+  body:has(#tab-3.active) .customer-session-main span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body:has(#tab-3.active) .camera-panel {
+    height: min(56dvh, 520px);
+    min-height: 420px;
+    max-height: 520px;
+  }
+
+  body:has(#tab-3.active) .camera-actions {
+    position: static;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    padding: 10px;
+    border-radius: 20px;
+    backdrop-filter: none;
+  }
+
+  body:has(#tab-3.active) .camera-actions #cameraStartButton {
+    grid-column: 1 / -1;
+    min-height: 52px;
+  }
+
+  body:has(#tab-3.active) .camera-actions button:not(#cameraStartButton) {
+    min-height: 46px;
+    white-space: normal;
+  }
+
+  body:has(#tab-3.active) .mobile-action-bar {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) and (orientation: landscape) {
+  body:has(#tab-3.active) .sidebar {
+    position: relative;
+    grid-template-columns: 180px 1fr;
+    align-items: center;
+  }
+
+  body:has(#tab-3.active) .content {
+    padding-top: 6px;
+  }
+
+  body:has(#tab-3.active) #tab-3 .workspace {
+    grid-template-columns: minmax(0, 1.18fr) minmax(250px, 0.82fr);
+    align-items: start;
+  }
+
+  body:has(#tab-3.active) .customer-session {
+    min-height: 48px;
+  }
+
+  body:has(#tab-3.active) .camera-panel {
+    height: min(64dvh, 330px);
+    min-height: 230px;
+  }
+
+  body:has(#tab-3.active) .camera-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+  body:has(#tab-3.active) {
+    padding-bottom: 10px;
+  }
+
+  body:has(#tab-3.active) .sidebar {
+    position: relative;
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr);
+    align-items: center;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+
+  body:has(#tab-3.active) .brand-block {
+    min-height: 48px;
+    padding: 5px 8px;
+  }
+
+  body:has(#tab-3.active) .brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  body:has(#tab-3.active) .brand-block span {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .sidebar-nav {
+    display: flex;
+    gap: 6px;
+  }
+
+  body:has(#tab-3.active) .tab-button {
+    flex: 0 0 46px;
+    min-height: 44px;
+    padding: 4px;
+    border-radius: 15px;
+  }
+
+  body:has(#tab-3.active) .tab-button.active {
+    flex-basis: 132px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    justify-items: start;
+  }
+
+  body:has(#tab-3.active) .tab-button span {
+    display: none;
+    font-size: 13px;
+  }
+
+  body:has(#tab-3.active) .tab-button.active span {
+    display: block;
+  }
+
+  body:has(#tab-3.active) .content {
+    padding: 6px 10px 10px;
+    gap: 6px;
+  }
+
+  body:has(#tab-3.active) .content-header {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body:has(#tab-3.active) .content-title,
+  body:has(#tab-3.active) .workflow-assistant,
+  body:has(#tab-3.active) .content-chips {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .customer-session {
+    min-height: 48px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 16px;
+  }
+
+  body:has(#tab-3.active) .customer-session-main .eyebrow,
+  body:has(#tab-3.active) .customer-session-meta span:not(:last-child),
+  body:has(#tab-3.active) .customer-session-actions {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .customer-session-main strong,
+  body:has(#tab-3.active) .customer-session-main span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body:has(#tab-3.active) #tab-3 .workspace {
+    grid-template-columns: minmax(0, 1.1fr) minmax(250px, 0.9fr);
+    gap: 10px;
+    align-items: start;
+  }
+
+  body:has(#tab-3.active) .camera-panel {
+    height: min(58dvh, 270px);
+    min-height: 220px;
+    max-height: 270px;
+  }
+
+  body:has(#tab-3.active) .camera-actions {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 8px;
+    backdrop-filter: none;
+  }
+
+  body:has(#tab-3.active) .camera-actions #cameraStartButton {
+    grid-column: 1 / -1;
+  }
+
+  body:has(#tab-3.active) .inspector {
+    max-height: calc(100dvh - 122px);
+    overflow: auto;
+    padding: 12px;
+  }
+
+  body:has(#tab-3.active) .mobile-action-bar {
+    display: none;
+  }
+}
+
+/* Final visual polish pass: compact header rhythm and improve mobile touch ergonomics. */
+@media (min-width: 1025px) {
+  .content {
+    gap: 14px;
+  }
+
+  .content-header {
+    padding: 18px 20px;
+    gap: 14px;
+  }
+
+  .content-title {
+    gap: 7px;
+  }
+
+  .content-title .eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    opacity: 0.82;
+  }
+
+  .content-title h1 {
+    font-size: clamp(28px, 2.1vw, 34px);
+    line-height: 1.08;
+  }
+
+  .content-title p {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .workflow-assistant {
+    min-height: 54px;
+    padding: 10px 12px;
+  }
+
+  .customer-session {
+    min-height: 64px;
+    padding: 8px 12px;
+    gap: 10px;
+  }
+
+  .customer-session-main {
+    gap: 1px;
+  }
+
+  .customer-session-meta {
+    max-width: min(44vw, 520px);
+  }
+
+  .customer-session-meta span {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+
+  .customer-session-actions button {
+    min-height: 40px;
+  }
+
+  body:has(#tab-3.active) .content {
+    gap: 12px;
+  }
+
+  body:has(#tab-3.active) .content-header {
+    padding: 12px 16px;
+    gap: 8px 14px;
+  }
+
+  body:has(#tab-3.active) .content-title .eyebrow {
+    margin-bottom: 2px;
+  }
+
+  body:has(#tab-3.active) .content-title h1 {
+    margin-bottom: 4px;
+    font-size: clamp(25px, 1.85vw, 30px);
+  }
+
+  body:has(#tab-3.active) .content-title .summary {
+    font-size: 13px;
+  }
+
+  body:has(#tab-3.active) .content-chips {
+    gap: 6px;
+  }
+
+  body:has(#tab-3.active) .content-chips span {
+    padding: 4px 9px;
+    font-size: 11px;
+  }
+
+  body:has(#tab-3.active) .workflow-assistant {
+    min-height: 46px;
+    padding: 7px 10px 7px 12px;
+  }
+
+  body:has(#tab-3.active) .workflow-assistant button {
+    min-height: 36px;
+  }
+
+  body:has(#tab-3.active) .customer-session {
+    min-height: 56px;
+    padding: 7px 10px;
+  }
+
+  body:has(#tab-3.active) .customer-session-actions button {
+    min-height: 36px;
+  }
+}
+
+.recommendation-panel,
+.inspector,
+.consultation-summary-panel {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.58;
+}
+
+.recommendation-panel p,
+.recommendation-panel li,
+.inspector p,
+.inspector li,
+.consultation-summary-panel p,
+.consultation-summary-panel li {
+  line-height: 1.58;
+}
+
+.recommendation-panel .eyebrow,
+.inspector .eyebrow,
+.consultation-summary-panel .eyebrow,
+.consult-command-strip span {
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.consult-command-strip {
+  gap: 12px;
+}
+
+.consult-command-strip div {
+  gap: 8px;
+  padding: 14px 15px;
+}
+
+.consult-command-strip strong {
+  font-size: 15px;
+  line-height: 1.42;
+}
+
+.consultation-action-panel {
+  gap: 14px;
+}
+
+.consultation-action-status {
+  gap: 10px;
+}
+
+.status-chip,
+.customer-session-meta span,
+.content-chips span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+button:disabled,
+.mobile-action-bar button:disabled,
+.camera-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  box-shadow: none;
+}
+
+@media (max-width: 767px) {
+  .content-title h1,
+  .content-title p,
+  .customer-session-main strong,
+  .customer-session-main span,
+  .customer-session-meta span,
+  .customer-card strong,
+  .customer-card span,
+  .status-chip,
+  .mobile-action-bar button {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .content-title h1 {
+    line-height: 1.18;
+  }
+
+  .mobile-action-bar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    padding: 5px;
+  }
+
+  .mobile-action-bar button {
+    min-height: 46px;
+    padding: 6px 4px;
+    font-size: clamp(11px, 3.1vw, 13px);
+    line-height: 1.12;
+  }
+
+  .customer-session-meta span,
+  .status-chip {
+    line-height: 1.25;
+  }
+}
+
+@media (max-width: 767px) {
+  body:has(#tab-3.active) .camera-panel {
+    padding-bottom: 4px;
+  }
+
+  body:has(#tab-3.active) .privacy-note {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    padding: 8px 10px;
+    line-height: 1.38;
+  }
+
+  body:has(#tab-3.active) .scan-hud {
+    bottom: 78px;
+    line-height: 1.35;
+  }
+
+  body:has(#tab-3.active) .camera-confidence-overlay {
+    top: 10px;
+    left: 10px;
+    max-width: calc(100% - 20px);
+    padding: 8px 10px;
+  }
+
+  body:has(#tab-3.active) .camera-confidence-overlay em {
+    white-space: normal;
+  }
+
+  body:has(#tab-3.active) .camera-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  body:has(#tab-3.active) .camera-actions #cameraStartButton {
+    grid-column: 1 / -1;
+    min-height: 50px;
+    font-size: 16px;
+  }
+
+  body:has(#tab-3.active) .camera-actions button:not(#cameraStartButton) {
+    min-height: 46px;
+    padding-inline: 6px;
+    font-size: clamp(11px, 3vw, 13px);
+    line-height: 1.15;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 374px) {
+  body:has(#tab-3.active) .camera-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body:has(#tab-3.active) .camera-actions button:not(#cameraStartButton) {
+    font-size: 12px;
   }
 }
