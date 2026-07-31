@@ -35,6 +35,7 @@ import {
   shouldUseUploadFallback,
   withCameraStartupStatus
 } from "./vision/device-profile.js?v=20260729-85";
+import { createLiveScanCoordinator } from "./vision/live-scan-coordinator.js?v=20260731-qa2";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
@@ -257,6 +258,8 @@ let currentCameraStream = null;
 let cameraRequestInFlight = null;
 let cameraSessionToken = 0;
 let isAnalyzingFace = false;
+const liveScanCoordinator = createLiveScanCoordinator();
+let liveScanAnimationFrameId = 0;
 let confirmedFaceShapeSource = "";
 let manualConsultationMode = false;
 let latestCameraDebug = {};
@@ -504,6 +507,7 @@ function startAutoScanFlow(reason = "auto") {
 }
 
 function stopAutoScanFlow() {
+  cancelLiveScanLoop();
   autoScanState = createAutoScanState();
   isAnalyzingFace = false;
   setAnalyzingState(false);
@@ -1796,9 +1800,12 @@ async function initialize() {
     drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
     FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
     activeLandmarkerMode = "VIDEO";
+    maybeStartLiveScan("model-ready");
     statusText.textContent = "Sẵn sàng";
   } finally {
     landmarkerModeSwitchInFlight = false;
+    refreshLiveScanReadiness();
+    maybeStartLiveScan("model-ready");
   }
 }
 
@@ -1971,6 +1978,8 @@ async function openCameraFlow() {
   updateCameraStartButton({ loading: true });
   setVisionExperienceState("starting_camera");
   const sessionToken = ++cameraSessionToken;
+  liveScanCoordinator.reset();
+  liveScanCoordinator.setCameraRequested(true);
   updateCameraDebug({
     permissionRequestPhase: "before-request",
     requestedFacingMode: currentCameraMode,
@@ -1999,11 +2008,6 @@ async function openCameraFlow() {
       fallbackConstraintsUsed: Boolean(currentCameraStream?.visionCameraDiagnostics?.fallbackConstraintsUsed)
     });
 
-    if (!faceLandmarker) {
-      await initialize();
-    }
-    activeLandmarkerMode = "VIDEO";
-
     latestRenderContext = resizeCanvasToVideo(canvas, video, "camera-start");
     cameraPanel?.classList.add("camera-active");
     statusText.textContent = "Đang nhận diện";
@@ -2012,8 +2016,23 @@ async function openCameraFlow() {
     }
     updateCameraStartButton({ active: true });
     setVisionExperienceState("camera_ready");
-    startAutoScanFlow("camera-start");
-    requestAnimationFrame(() => detectFrame(sessionToken));
+    maybeStartLiveScan("camera-ready");
+
+    if (!faceLandmarker) {
+      initialize().catch((error) => {
+        console.error(error);
+        cancelLiveScanLoop();
+        setVisionExperienceState("analysis_error", { message: "Không thể tải bộ phân tích khuôn mặt." });
+        statusText.textContent = "Không thể tải bộ phân tích";
+        updateVisionDebugPanel({
+          reasonCode: error?.code || error?.name || "MODEL_LOAD_ERROR",
+          mediaPipeError: error?.message || "model load failed"
+        });
+      });
+    } else {
+      activeLandmarkerMode = "VIDEO";
+      maybeStartLiveScan("camera-ready-model-cached");
+    }
   } catch (error) {
     handleCameraOpenError(error);
     const latestProfile = refreshDeviceProfile();
@@ -2084,6 +2103,118 @@ function updateCameraDebug(details = {}) {
   updateVisionDebugPanel({ cameraDebug: latestCameraDebug });
 }
 
+function hasActiveLiveCameraStream() {
+  const stream = currentCameraStream || video?.srcObject;
+  const tracks = stream?.getVideoTracks?.() || [];
+  return tracks.some((track) => track.readyState === "live" && track.enabled !== false);
+}
+
+function isVideoReadyForLiveScan() {
+  return Boolean(video?.srcObject)
+    && video.readyState >= 2
+    && Number(video.videoWidth) > 0
+    && Number(video.videoHeight) > 0
+    && video.paused !== true
+    && video.ended !== true;
+}
+
+function isVideoLandmarkerReady() {
+  return Boolean(faceLandmarker) && activeLandmarkerMode === "VIDEO" && !landmarkerModeSwitchInFlight;
+}
+
+function refreshLiveScanReadiness() {
+  liveScanCoordinator.updateReadiness({
+    streamActive: hasActiveLiveCameraStream(),
+    videoReady: isVideoReadyForLiveScan(),
+    modelReady: isVideoLandmarkerReady()
+  });
+  const state = liveScanCoordinator.getState();
+  updateCameraDebug({
+    scanLoopRunning: state.loopRunning,
+    activeScanSessionId: state.activeSessionId || "",
+    modelReady: state.modelReady,
+    visionExperienceState
+  });
+  return state;
+}
+
+function queueLiveScanFrame(sessionToken) {
+  if (liveScanAnimationFrameId) {
+    return;
+  }
+  liveScanAnimationFrameId = requestAnimationFrame(() => {
+    liveScanAnimationFrameId = 0;
+    detectFrame(sessionToken);
+  });
+}
+
+function cancelLiveScanLoop() {
+  if (liveScanAnimationFrameId) {
+    cancelAnimationFrame(liveScanAnimationFrameId);
+    liveScanAnimationFrameId = 0;
+  }
+  liveScanCoordinator.stop();
+  updateCameraDebug({
+    scanLoopRunning: false,
+    activeScanSessionId: "",
+    visionExperienceState
+  });
+}
+
+function maybeStartLiveScan(reason = "readiness") {
+  const readiness = refreshLiveScanReadiness();
+
+  if (!readiness.cameraRequested) {
+    return false;
+  }
+
+  if (!readiness.streamActive || !readiness.videoReady) {
+    setVisionExperienceState("starting_camera", { message: "Camera chưa sẵn sàng." });
+    statusText.textContent = "Đang chuẩn bị camera";
+    if (scanPromptLabel) {
+      scanPromptLabel.textContent = "Đang chuẩn bị camera";
+    }
+    if (scanSubLabel) {
+      scanSubLabel.textContent = "Chờ video sẵn sàng trước khi quét.";
+    }
+    return false;
+  }
+
+  if (!readiness.modelReady) {
+    setVisionExperienceState("camera_ready", { message: "Đang tải bộ phân tích khuôn mặt." });
+    statusText.textContent = "Đang tải bộ phân tích";
+    if (scanHud) {
+      scanHud.classList.remove("is-idle");
+    }
+    if (scanStepLabel) {
+      scanStepLabel.textContent = "VisionID";
+    }
+    if (scanPromptLabel) {
+      scanPromptLabel.textContent = "Giữ khuôn mặt chính diện trong khung.";
+    }
+    if (scanSubLabel) {
+      scanSubLabel.textContent = "Camera đã sẵn sàng, đang tải bộ phân tích.";
+    }
+    updateWorkflowAssistant();
+    return false;
+  }
+
+  if (!liveScanCoordinator.start(cameraSessionToken)) {
+    return false;
+  }
+
+  setVisionExperienceState("scanning");
+  statusText.textContent = "Đang kiểm tra độ ổn định khuôn mặt";
+  startAutoScanFlow(reason);
+  queueLiveScanFrame(cameraSessionToken);
+  updateCameraDebug({
+    scanLoopRunning: true,
+    activeScanSessionId: cameraSessionToken,
+    visionExperienceState: "scanning"
+  });
+  return true;
+}
+
 function getCameraErrorMessage(error) {
   const code = error?.code || error?.name || "";
   if (code === "NotAllowedError" || code === "PermissionDeniedError") {
@@ -2121,6 +2252,7 @@ function getCameraErrorGuidance(error) {
 function stopCurrentCameraStream(options = {}) {
   const stream = currentCameraStream || video?.srcObject;
   if (!stream) {
+    cancelLiveScanLoop();
     if (!options.silent) {
       updateCameraStartButton({ active: false });
     }
@@ -2134,6 +2266,7 @@ function stopCurrentCameraStream(options = {}) {
   video.srcObject = null;
   currentCameraStream = null;
   cameraPanel?.classList.remove("camera-active");
+  cancelLiveScanLoop();
   stopAutoScanFlow();
   if (analyzeFaceButton) {
     analyzeFaceButton.disabled = true;
@@ -2485,7 +2618,19 @@ function getImageFrameSize() {
   };
 }
 function detectFrame(sessionToken) {
-  if (sessionToken !== cameraSessionToken) {
+  const liveScanState = liveScanCoordinator.getState();
+  if (sessionToken !== cameraSessionToken || !liveScanState.loopRunning || liveScanState.activeSessionId !== sessionToken) {
+    return;
+  }
+
+  if (!hasActiveLiveCameraStream() || !isVideoReadyForLiveScan() || !isVideoLandmarkerReady()) {
+    cancelLiveScanLoop();
+    setVisionExperienceState("analysis_error", { message: "Camera hoặc bộ phân tích chưa sẵn sàng." });
+    statusText.textContent = "Cần thử lại camera";
+    updateVisionDebugPanel({
+      reasonCode: "LIVE_SCAN_NOT_READY",
+      mediaPipeError: "live scan prerequisites lost"
+    });
     return;
   }
 
@@ -2497,7 +2642,12 @@ function detectFrame(sessionToken) {
     drawResults(results);
   }
 
-  requestAnimationFrame(() => detectFrame(sessionToken));
+  updateCameraDebug({
+    lastDetectTimestamp: performance.now(),
+    scanLoopRunning: true,
+    activeScanSessionId: sessionToken
+  });
+  queueLiveScanFrame(sessionToken);
 }
 
 function drawResults(results) {
@@ -3690,6 +3840,11 @@ function updateVisionDebugPanel(payload = {}) {
       : "-",
     limitation: payload.limitation || (Array.isArray(diagnostics.limitations) ? diagnostics.limitations.join(" | ") : ""),
     mediaPipeError: payload.mediaPipeError || "",
+    visionExperienceState: cameraDebug.visionExperienceState || visionExperienceState || "-",
+    scanLoopRunning: cameraDebug.scanLoopRunning ?? false,
+    activeScanSessionId: cameraDebug.activeScanSessionId || "-",
+    modelReady: cameraDebug.modelReady ?? isVideoLandmarkerReady(),
+    lastDetectTimestamp: cameraDebug.lastDetectTimestamp ? Math.round(cameraDebug.lastDetectTimestamp) : "-",
     detectedProfile: deviceDebug.deviceProfile || "-",
     effectiveProfile: deviceDebug.overrideActive ? deviceDebug.overrideProfile || deviceDebug.deviceProfile || "-" : deviceDebug.deviceProfile || "-",
     deviceProfile: deviceDebug.deviceProfile || "-",
