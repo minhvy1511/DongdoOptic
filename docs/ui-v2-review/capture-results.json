@@ -1,0 +1,1009 @@
+{
+  "files": [
+    "desktop-profile.png",
+    "desktop-search.png",
+    "desktop-visionid.png",
+    "desktop-consultation.png",
+    "mobile-profile.png",
+    "mobile-visionid.png",
+    "mobile-consultation.png",
+    "mobile-visionid-scanning.png",
+    "mobile-visionid-landscape.png",
+    "before-desktop-profile.png",
+    "after-desktop-profile.png"
+  ],
+  "metrics": {
+    "desktopProfile": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-0",
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "devicePixelRatio": 1
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 1425,
+      "documentWidth": 1425,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 260,
+        "height": 1088.828125,
+        "bottom": 1088.828125,
+        "right": 260
+      },
+      "contentHeader": {
+        "x": 282,
+        "y": 18,
+        "width": 1121,
+        "height": 291.828125,
+        "bottom": 309.828125,
+        "right": 1403
+      },
+      "customerSession": {
+        "x": 303,
+        "y": 209.828125,
+        "width": 1079,
+        "height": 81,
+        "bottom": 290.828125,
+        "right": 1382
+      },
+      "cameraPanel": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cameraActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "desktopSearch": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-0",
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "devicePixelRatio": 1
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 1425,
+      "documentWidth": 1425,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 260,
+        "height": 1042.671875,
+        "bottom": 1042.671875,
+        "right": 260
+      },
+      "contentHeader": {
+        "x": 282,
+        "y": 18,
+        "width": 1121,
+        "height": 291.828125,
+        "bottom": 309.828125,
+        "right": 1403
+      },
+      "customerSession": {
+        "x": 303,
+        "y": 209.828125,
+        "width": 1079,
+        "height": 81,
+        "bottom": 290.828125,
+        "right": 1382
+      },
+      "cameraPanel": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cameraActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "desktopVisionid": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-3",
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "devicePixelRatio": 1
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 1425,
+      "documentWidth": 1425,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 260,
+        "height": 1347.953125,
+        "bottom": 1347.953125,
+        "right": 260
+      },
+      "contentHeader": {
+        "x": 282,
+        "y": 18,
+        "width": 1121,
+        "height": 241.25,
+        "bottom": 259.25,
+        "right": 1403
+      },
+      "customerSession": {
+        "x": 299,
+        "y": 167.25,
+        "width": 1087,
+        "height": 79,
+        "bottom": 246.25,
+        "right": 1386
+      },
+      "cameraPanel": {
+        "x": 282,
+        "y": 271.25,
+        "width": 713,
+        "height": 445.625,
+        "bottom": 716.875,
+        "right": 995
+      },
+      "cameraActions": {
+        "x": 282,
+        "y": 728.875,
+        "width": 713,
+        "height": 66,
+        "bottom": 794.875,
+        "right": 995
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "desktopConsultation": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-4",
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "devicePixelRatio": 1
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 1425,
+      "documentWidth": 1425,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 260,
+        "height": 4945.453125,
+        "bottom": 4945.453125,
+        "right": 260
+      },
+      "contentHeader": {
+        "x": 282,
+        "y": 18,
+        "width": 1121,
+        "height": 291.828125,
+        "bottom": 309.828125,
+        "right": 1403
+      },
+      "customerSession": {
+        "x": 303,
+        "y": 209.828125,
+        "width": 1079,
+        "height": 81,
+        "bottom": 290.828125,
+        "right": 1382
+      },
+      "cameraPanel": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cameraActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "desktop1366Visionid": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-3",
+      "viewport": {
+        "width": 1366,
+        "height": 768,
+        "devicePixelRatio": 1
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 1351,
+      "documentWidth": 1351,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 260,
+        "height": 1346.46875,
+        "bottom": 1346.46875,
+        "right": 260
+      },
+      "contentHeader": {
+        "x": 282,
+        "y": 18,
+        "width": 1047,
+        "height": 239.765625,
+        "bottom": 257.765625,
+        "right": 1329
+      },
+      "customerSession": {
+        "x": 299,
+        "y": 165.765625,
+        "width": 1013,
+        "height": 79,
+        "bottom": 244.765625,
+        "right": 1312
+      },
+      "cameraPanel": {
+        "x": 282,
+        "y": 269.765625,
+        "width": 672,
+        "height": 420,
+        "bottom": 689.765625,
+        "right": 954
+      },
+      "cameraActions": {
+        "x": 282,
+        "y": 701.765625,
+        "width": 639,
+        "height": 66,
+        "bottom": 767.765625,
+        "right": 921
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 672,
+        "height": 420
+      }
+    },
+    "zoom200Approximation": {
+      "horizontalOverflow": false,
+      "canReachPrimaryCta": true
+    },
+    "mobileConsultation": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-4",
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "devicePixelRatio": 2
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 390,
+      "documentWidth": 390,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 211,
+        "bottom": 211,
+        "right": 390
+      },
+      "contentHeader": {
+        "x": 10,
+        "y": 221,
+        "width": 370,
+        "height": 374.21875,
+        "bottom": 595.21875,
+        "right": 380
+      },
+      "customerSession": {
+        "x": 33,
+        "y": 393.21875,
+        "width": 324,
+        "height": 179,
+        "bottom": 572.21875,
+        "right": 357
+      },
+      "cameraPanel": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cameraActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "mobileActionBar": {
+        "x": 10,
+        "y": 776,
+        "width": 370,
+        "height": 58,
+        "bottom": 834,
+        "right": 380
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "mobileProfile": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-0",
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "devicePixelRatio": 2
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 390,
+      "documentWidth": 390,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 211,
+        "bottom": 211,
+        "right": 390
+      },
+      "contentHeader": {
+        "x": 10,
+        "y": 221,
+        "width": 370,
+        "height": 408.21875,
+        "bottom": 629.21875,
+        "right": 380
+      },
+      "customerSession": {
+        "x": 33,
+        "y": 393.21875,
+        "width": 324,
+        "height": 213,
+        "bottom": 606.21875,
+        "right": 357
+      },
+      "cameraPanel": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cameraActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "mobileActionBar": {
+        "x": 10,
+        "y": 776,
+        "width": 370,
+        "height": 58,
+        "bottom": 834,
+        "right": 380
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "mobileVisionid": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-3",
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "devicePixelRatio": 2
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 390,
+      "documentWidth": 390,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 141,
+        "bottom": 141,
+        "right": 390
+      },
+      "contentHeader": {
+        "x": 10,
+        "y": 149,
+        "width": 370,
+        "height": 56,
+        "bottom": 205,
+        "right": 380
+      },
+      "customerSession": {
+        "x": 10,
+        "y": 149,
+        "width": 370,
+        "height": 56,
+        "bottom": 205,
+        "right": 380
+      },
+      "cameraPanel": {
+        "x": 10,
+        "y": 213,
+        "width": 370,
+        "height": 430,
+        "bottom": 643,
+        "right": 380
+      },
+      "cameraActions": {
+        "x": 10,
+        "y": 651,
+        "width": 370,
+        "height": 122,
+        "bottom": 773,
+        "right": 380
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "mobileVisionidScanning": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-3",
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "devicePixelRatio": 2
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 390,
+      "documentWidth": 390,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 141,
+        "bottom": 141,
+        "right": 390
+      },
+      "contentHeader": {
+        "x": 10,
+        "y": 149,
+        "width": 370,
+        "height": 56,
+        "bottom": 205,
+        "right": 380
+      },
+      "customerSession": {
+        "x": 10,
+        "y": 149,
+        "width": 370,
+        "height": 56,
+        "bottom": 205,
+        "right": 380
+      },
+      "cameraPanel": {
+        "x": 10,
+        "y": 213,
+        "width": 370,
+        "height": 430,
+        "bottom": 643,
+        "right": 380
+      },
+      "cameraActions": {
+        "x": 10,
+        "y": 884,
+        "width": 370,
+        "height": 122,
+        "bottom": 1006,
+        "right": 380
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "mobileVisionidLandscape": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-3",
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "devicePixelRatio": 2
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 829,
+      "documentWidth": 829,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 829,
+        "height": 93,
+        "bottom": 93,
+        "right": 829
+      },
+      "contentHeader": {
+        "x": 10,
+        "y": 99,
+        "width": 809,
+        "height": 52,
+        "bottom": 151,
+        "right": 819
+      },
+      "customerSession": {
+        "x": 10,
+        "y": 99,
+        "width": 809,
+        "height": 52,
+        "bottom": 151,
+        "right": 819
+      },
+      "cameraPanel": {
+        "x": 10,
+        "y": 157,
+        "width": 439.4375,
+        "height": 226.1875,
+        "bottom": 383.1875,
+        "right": 449.4375
+      },
+      "cameraActions": {
+        "x": 10,
+        "y": 391.1875,
+        "width": 439.4375,
+        "height": 166,
+        "bottom": 557.1875,
+        "right": 449.4375
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "mobile360Profile": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-0",
+      "viewport": {
+        "width": 360,
+        "height": 800,
+        "devicePixelRatio": 2
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 360,
+      "documentWidth": 360,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 211,
+        "bottom": 211,
+        "right": 360
+      },
+      "contentHeader": {
+        "x": 10,
+        "y": 221,
+        "width": 340,
+        "height": 408.21875,
+        "bottom": 629.21875,
+        "right": 350
+      },
+      "customerSession": {
+        "x": 33,
+        "y": 393.21875,
+        "width": 294,
+        "height": 213,
+        "bottom": 606.21875,
+        "right": 327
+      },
+      "cameraPanel": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cameraActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "mobileActionBar": {
+        "x": 10,
+        "y": 732,
+        "width": 340,
+        "height": 58,
+        "bottom": 790,
+        "right": 350
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "mobile360Visionid": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-3",
+      "viewport": {
+        "width": 360,
+        "height": 800,
+        "devicePixelRatio": 2
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 360,
+      "documentWidth": 360,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 141,
+        "bottom": 141,
+        "right": 360
+      },
+      "contentHeader": {
+        "x": 10,
+        "y": 149,
+        "width": 340,
+        "height": 56,
+        "bottom": 205,
+        "right": 350
+      },
+      "customerSession": {
+        "x": 10,
+        "y": 149,
+        "width": 340,
+        "height": 56,
+        "bottom": 205,
+        "right": 350
+      },
+      "cameraPanel": {
+        "x": 10,
+        "y": 213,
+        "width": 340,
+        "height": 430,
+        "bottom": 643,
+        "right": 350
+      },
+      "cameraActions": {
+        "x": 10,
+        "y": 651,
+        "width": 340,
+        "height": 176,
+        "bottom": 827,
+        "right": 350
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "mobile360Consultation": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-3",
+      "viewport": {
+        "width": 360,
+        "height": 800,
+        "devicePixelRatio": 2
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 360,
+      "documentWidth": 360,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 141,
+        "bottom": 141,
+        "right": 360
+      },
+      "contentHeader": {
+        "x": 10,
+        "y": 149,
+        "width": 340,
+        "height": 56,
+        "bottom": 205,
+        "right": 350
+      },
+      "customerSession": {
+        "x": 10,
+        "y": 149,
+        "width": 340,
+        "height": 56,
+        "bottom": 205,
+        "right": 350
+      },
+      "cameraPanel": {
+        "x": 10,
+        "y": 213,
+        "width": 340,
+        "height": 430,
+        "bottom": 643,
+        "right": 350
+      },
+      "cameraActions": {
+        "x": 10,
+        "y": 651,
+        "width": 340,
+        "height": 176,
+        "bottom": 827,
+        "right": 350
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    },
+    "ipadPortraitVisionid": {
+      "url": "http://127.0.0.1:5173/frontend/",
+      "activeTab": "tab-3",
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "devicePixelRatio": 2
+      },
+      "horizontalOverflow": false,
+      "bodyScrollWidth": 753,
+      "documentWidth": 753,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 753,
+        "height": 211,
+        "bottom": 211,
+        "right": 753
+      },
+      "contentHeader": {
+        "x": 10,
+        "y": 221,
+        "width": 733,
+        "height": 58,
+        "bottom": 279,
+        "right": 743
+      },
+      "customerSession": {
+        "x": 10,
+        "y": 221,
+        "width": 733,
+        "height": 58,
+        "bottom": 279,
+        "right": 743
+      },
+      "cameraPanel": {
+        "x": 10,
+        "y": 289,
+        "width": 733,
+        "height": 520,
+        "bottom": 809,
+        "right": 743
+      },
+      "cameraActions": {
+        "x": 10,
+        "y": 817,
+        "width": 733,
+        "height": 130,
+        "bottom": 947,
+        "right": 743
+      },
+      "mobileActionBar": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "modal": null,
+      "cutTextCount": 0,
+      "cutTextElements": [],
+      "videoCanvasSameCssBox": true,
+      "videoReady": false,
+      "canvasIntrinsic": {
+        "width": 300,
+        "height": 150
+      }
+    }
+  },
+  "checks": {
+    "focusVisible": {
+      "activeTag": "BUTTON",
+      "activeId": "",
+      "outlineStyle": "solid",
+      "outlineWidth": "3px",
+      "boxShadow": "none"
+    },
+    "prefersReducedMotion": true
+  },
+  "consoleErrors": [
+    {
+      "entry": {
+        "source": "network",
+        "level": "error",
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "timestamp": 1785508704771.219,
+        "url": "http://127.0.0.1:5173/favicon.ico",
+        "networkRequestId": "11824.74"
+      }
+    }
+  ]
+}
