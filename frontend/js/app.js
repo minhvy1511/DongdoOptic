@@ -38,6 +38,11 @@ import {
 import { createLiveScanCoordinator } from "./vision/live-scan-coordinator.js?v=20260810-android1";
 import { MODEL_LOAD_STATES, createVisionModelLoader } from "./vision/model-loader.js?v=20260810-android1";
 import {
+  createAutoConsultationTransition,
+  getScanHudView,
+  isCanonicalVisionSuccess
+} from "./vision/scan-ux-controller.js?v=20260810-scanux1";
+import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
   evaluateScanFrameQuality,
@@ -263,6 +268,7 @@ let cameraSessionToken = 0;
 let isAnalyzingFace = false;
 const liveScanCoordinator = createLiveScanCoordinator();
 let liveScanAnimationFrameId = 0;
+const autoConsultationTransition = createAutoConsultationTransition();
 let confirmedFaceShapeSource = "";
 let manualConsultationMode = false;
 let latestCameraDebug = {};
@@ -491,6 +497,7 @@ function startAutoScanFlow(reason = "auto") {
     return;
   }
 
+  resetAutoConsultationTransition("start-scan");
   const token = autoScanState.token + 1;
   autoScanState = createAutoScanState();
   autoScanState.active = true;
@@ -517,6 +524,7 @@ function startAutoScanFlow(reason = "auto") {
 }
 
 function stopAutoScanFlow() {
+  cancelAutoConsultationTransition("stop-scan");
   cancelLiveScanLoop();
   autoScanState = createAutoScanState();
   isAnalyzingFace = false;
@@ -1623,6 +1631,17 @@ function updateScanHud() {
         : autoScanState.status === "near"
           ? "#f59f00"
           : "linear-gradient(90deg, #74c0fc, #20c997)";
+  const confidenceState = latestAnalysis ? getConfidenceState(latestAnalysis) : { percent: 0 };
+  const hudView = getScanHudView({
+    autoScanState,
+    confidencePercent: confidenceState.percent ? `${confidenceState.percent}%` : "--",
+    isComplete: autoScanState.phase === "RESULT" && autoScanState.status === "captured"
+  });
+  scanHud.classList.toggle("is-complete", hudView.complete);
+  scanStepLabel.textContent = hudView.status || scanStepLabel.textContent;
+  scanPromptLabel.textContent = hudView.complete ? hudView.confidence : hudView.guidance;
+  scanSubLabel.textContent = hudView.complete ? hudView.guidance : "";
+  maybeScheduleAutoConsultationTransition("scan-hud-result");
 }
 
 function ensureCurrentSessionCode() {
@@ -1652,6 +1671,65 @@ function stampCurrentResultContext() {
   if (consultationSaveStateIsSaved()) {
     savedConsultationSignature = "";
   }
+}
+
+function getAutoConsultationContextKey() {
+  const context = getCurrentConsultationContext();
+  const shape = confirmedFaceShape || "";
+  const confidence = Math.round(Number(latestAnalysis?.quality?.confidence || 0) * 100);
+  return [
+    context.customerId || "draft-customer",
+    context.draftId || "draft",
+    context.sessionCode || "session",
+    shape,
+    confidence
+  ].join("|");
+}
+
+function cancelAutoConsultationTransition(reason = "cancel") {
+  autoConsultationTransition.cancel();
+  updateVisionDebugPanel({
+    autoConsultationTransition: "cancelled",
+    autoConsultationReason: reason
+  });
+}
+
+function resetAutoConsultationTransition(reason = "reset") {
+  autoConsultationTransition.reset();
+  updateVisionDebugPanel({
+    autoConsultationTransition: "reset",
+    autoConsultationReason: reason
+  });
+}
+
+function maybeScheduleAutoConsultationTransition(reason = "analysis-result") {
+  const success = isCanonicalVisionSuccess({
+    latestAnalysis,
+    confirmedFaceShape,
+    confirmedFaceShapeSource,
+    autoScanState
+  });
+  if (!success || manualConsultationMode) {
+    return false;
+  }
+
+  const contextKey = getAutoConsultationContextKey();
+  const scheduled = autoConsultationTransition.schedule({
+    contextKey,
+    onTransition: (scheduledContextKey) => {
+      if (scheduledContextKey !== getAutoConsultationContextKey()) {
+        return;
+      }
+      requestWorkflowNavigation("consultation", "visionid-auto-open", { skipLock: true });
+    }
+  });
+  if (scheduled) {
+    updateVisionDebugPanel({
+      autoConsultationTransition: "scheduled",
+      autoConsultationReason: reason
+    });
+  }
+  return scheduled;
 }
 
 function consultationSaveStateIsSaved() {
@@ -2934,13 +3012,14 @@ function drawResults(results) {
   recordAnalysisSnapshot(analysis, faces.length);
   updateCameraStatus(faces.length, analysis);
 
+  const compactOverlay = window.matchMedia?.("(max-width: 767px)")?.matches;
   for (const landmarks of faces) {
     drawLandmarkConnectors(
       canvasContext,
       landmarks,
       FaceLandmarkerApi.FACE_LANDMARKS_TESSELATION,
       latestRenderContext,
-      { color: "rgba(32, 201, 151, 0.28)", lineWidth: 1 }
+      { color: compactOverlay ? "rgba(32, 201, 151, 0.14)" : "rgba(32, 201, 151, 0.28)", lineWidth: compactOverlay ? 0.65 : 1 }
     );
 
     drawLandmarkConnectors(
@@ -2948,7 +3027,7 @@ function drawResults(results) {
       landmarks,
       FaceLandmarkerApi.FACE_LANDMARKS_LEFT_EYE,
       latestRenderContext,
-      { color: "#4dabf7", lineWidth: 2 }
+      { color: compactOverlay ? "rgba(77, 171, 247, 0.72)" : "#4dabf7", lineWidth: compactOverlay ? 1.2 : 2 }
     );
 
     drawLandmarkConnectors(
@@ -2956,7 +3035,7 @@ function drawResults(results) {
       landmarks,
       FaceLandmarkerApi.FACE_LANDMARKS_RIGHT_EYE,
       latestRenderContext,
-      { color: "#4dabf7", lineWidth: 2 }
+      { color: compactOverlay ? "rgba(77, 171, 247, 0.72)" : "#4dabf7", lineWidth: compactOverlay ? 1.2 : 2 }
     );
 
     drawLandmarkConnectors(
@@ -2964,7 +3043,7 @@ function drawResults(results) {
       landmarks,
       FaceLandmarkerApi.FACE_LANDMARKS_LIPS,
       latestRenderContext,
-      { color: "#ff6b6b", lineWidth: 2 }
+      { color: compactOverlay ? "rgba(255, 107, 107, 0.72)" : "#ff6b6b", lineWidth: compactOverlay ? 1.2 : 2 }
     );
   }
 
@@ -3238,6 +3317,14 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
     <span>Độ tin cậy</span>
     <strong>${percentLabel}</strong>
     <em>${[statusTextValue, sampleLabel, consistencyLabel, partialLabel, limitationLabel].filter(Boolean).join(" · ")}</em>
+  `;
+  const hudStatus = autoScanState.active && autoScanState.phase !== "RESULT"
+    ? "\u0110ang qu\u00e9t"
+    : statusTextValue;
+  cameraConfidenceOverlay.innerHTML = `
+    <span>${escapeHtml(hudStatus)}</span>
+    <strong>${percentLabel}</strong>
+    <em>${autoScanState.phase === "RESULT" ? "\u0110ang m\u1edf t\u01b0 v\u1ea5n..." : ""}</em>
   `;
 }
 
@@ -3931,6 +4018,7 @@ function buildFrameTrialPlan(directAdvice = {}, topFrames = [], publicEvidence =
 }
 
 function clearConfirmedFaceShape() {
+  cancelAutoConsultationTransition("clear-confirmed-shape");
   confirmedFaceShape = "";
   confirmedFaceShapeSource = "";
   if (confirmedFaceShapeInput) {
@@ -4799,6 +4887,7 @@ function getConfidenceBandLabel(confidence = 0) {
 }
 
 function startNewCustomer() {
+  resetAutoConsultationTransition("new-customer");
   clearUploadedImagePreview({ revoke: true, clearOverlay: true, reason: "new-customer" });
   customerCodeInput.value = createCustomerCode();
   currentSessionCode = createSessionCode();
@@ -5081,6 +5170,7 @@ function loadCustomerRecord(customerCode) {
     return false;
   }
 
+  resetAutoConsultationTransition("load-customer");
   isLoadingCustomer = true;
   suppressOperationDraftTracking = true;
   operationCompletedContext = null;
@@ -6714,6 +6804,7 @@ function enrichFrameRecommendations(frames, preferences) {
 }
 
 function resetAdviceState() {
+  resetAutoConsultationTransition("reset-advice");
   clearUploadedImagePreview({ revoke: true, clearOverlay: true, reason: "reset-advice" });
   resetVolatileConsultationState({ keepPersisted: true });
   lastRenderedShape = "";
@@ -6814,6 +6905,7 @@ function closeManualConsultationDialog({ restoreFocus = true } = {}) {
 }
 
 function enableManualConsultation() {
+  resetAutoConsultationTransition("manual-consultation");
   manualConsultationMode = true;
   latestAnalysis = null;
   latestAiFaceShape = "";

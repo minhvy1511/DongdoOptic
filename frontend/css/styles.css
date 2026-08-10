@@ -4612,3 +4612,108 @@ button:disabled,
     font-size: 12px;
   }
 }
+
+/* VisionID focused scan HUD: keep the camera clear during live analysis. */
+.camera-confidence-overlay {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 42px;
+  max-width: min(280px, calc(100% - 24px));
+  padding: 8px 11px;
+}
+
+.camera-confidence-overlay em:empty {
+  display: none;
+}
+
+.scan-hud {
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  transform: none;
+  width: auto;
+  min-height: 42px;
+  padding: 9px 12px;
+  gap: 2px;
+  justify-items: center;
+  text-align: center;
+}
+
+.scan-hud span {
+  display: none;
+}
+
+.scan-hud strong {
+  font-size: 14px;
+}
+
+.scan-hud em:empty {
+  display: none;
+}
+
+.scan-hud .scan-progress-track {
+  width: min(220px, 78%);
+  height: 4px;
+  margin-top: 4px;
+}
+
+.scan-hud.is-complete {
+  border-color: rgba(47, 158, 68, 0.38);
+  background: rgba(8, 39, 33, 0.78);
+}
+
+@media (max-width: 767px) {
+  body:has(#tab-3.active) .camera-confidence-overlay {
+    top: 8px;
+    left: 8px;
+    max-width: min(190px, 46vw);
+    min-height: 40px;
+    padding: 7px 9px;
+    border-left-width: 3px;
+  }
+
+  body:has(#tab-3.active) .camera-confidence-overlay span {
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  body:has(#tab-3.active) .camera-confidence-overlay strong {
+    font-size: 18px;
+  }
+
+  body:has(#tab-3.active) .camera-confidence-overlay em {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .scan-hud {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  body:has(#tab-3.active) .scan-hud strong {
+    font-size: 13px;
+    line-height: 1.25;
+  }
+
+  body:has(#tab-3.active) .scan-hud em {
+    display: none;
+  }
+
+  body:has(#tab-3.active) .privacy-note {
+    position: absolute;
+    left: 10px;
+    right: auto;
+    bottom: 58px;
+    max-width: min(178px, 48vw);
+    margin: 0;
+    padding: 6px 8px;
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(12, 18, 24, 0.5);
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 11px;
+    line-height: 1.25;
+    backdrop-filter: blur(8px);
+  }
+}
