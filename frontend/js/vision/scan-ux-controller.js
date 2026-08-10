@@ -105,12 +105,16 @@ export function isCanonicalVisionSuccess({
   confirmedFaceShapeSource = "",
   autoScanState = {}
 } = {}) {
+  const finalConfirmedShape = confirmedFaceShape || latestAnalysis?.faceShape_confirmed || "";
+  const isManualOverride = confirmedFaceShapeSource === "manual";
+  const hasAutoReadyResult = latestAnalysis?.diagnostics?.autoConfirmed === true
+    && (confirmedFaceShapeSource === "auto" || Boolean(latestAnalysis?.faceShape_confirmed));
   return Boolean(
     latestAnalysis?.metrics
     && latestAnalysis?.diagnostics
-    && confirmedFaceShape
-    && confirmedFaceShapeSource === "auto"
-    && latestAnalysis.diagnostics.autoConfirmed === true
+    && finalConfirmedShape
+    && !isManualOverride
+    && hasAutoReadyResult
     && autoScanState.phase === "RESULT"
     && autoScanState.status === "captured"
     && !autoScanState.errorReason

@@ -63,6 +63,13 @@ test("canonical success requires current auto-confirmed final result", () => {
     confirmedFaceShapeSource: "auto",
     autoScanState: resultState
   }), true);
+
+  assert.equal(isCanonicalVisionSuccess({
+    latestAnalysis: { ...validAnalysis, faceShape_confirmed: "oval" },
+    confirmedFaceShape: "",
+    confirmedFaceShapeSource: "",
+    autoScanState: resultState
+  }), true);
 });
 
 test("invalid, incomplete, rejected, or manual states do not auto navigate", () => {

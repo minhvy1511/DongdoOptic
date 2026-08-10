@@ -41,7 +41,7 @@ import {
   createAutoConsultationTransition,
   getScanHudView,
   isCanonicalVisionSuccess
-} from "./vision/scan-ux-controller.js?v=20260810-scanux1";
+} from "./vision/scan-ux-controller.js?v=20260810-scanux2";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
@@ -3318,9 +3318,11 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
     <strong>${percentLabel}</strong>
     <em>${[statusTextValue, sampleLabel, consistencyLabel, partialLabel, limitationLabel].filter(Boolean).join(" · ")}</em>
   `;
-  const hudStatus = autoScanState.active && autoScanState.phase !== "RESULT"
-    ? "\u0110ang qu\u00e9t"
-    : statusTextValue;
+  const hudStatus = autoScanState.phase === "RESULT"
+    ? "\u0110\u00e3 xong"
+    : autoScanState.active
+      ? "\u0110ang qu\u00e9t"
+      : "\u0110\u1ed9 tin c\u1eady";
   cameraConfidenceOverlay.innerHTML = `
     <span>${escapeHtml(hudStatus)}</span>
     <strong>${percentLabel}</strong>
