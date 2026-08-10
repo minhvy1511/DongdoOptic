@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 
 import {
   buildCameraConstraints,
+  isMediaStreamActive,
+  isVideoElementUsable,
   prepareVideoForInlinePlayback,
   startUserCamera,
+  waitForFirstVideoFrame,
   waitForVideoReady
 } from "../../frontend/js/camera.js";
 
@@ -18,6 +21,8 @@ function createFakeVideo({ readyState = 0, videoWidth = 0, videoHeight = 0 } = {
     muted: false,
     playsInline: false,
     autoplay: false,
+    paused: false,
+    ended: false,
     attributes: new Map(),
     play: () => Promise.resolve(),
     setAttribute(name, value) {
@@ -45,6 +50,44 @@ test("waitForVideoReady resolves when video metadata is available", async () => 
   video.emit("loadedmetadata");
 
   await ready;
+});
+
+test("waitForVideoReady resolves when video is already usable before listeners attach", async () => {
+  const video = createFakeVideo({ readyState: 2, videoWidth: 640, videoHeight: 480 });
+
+  await waitForVideoReady(video, 10);
+});
+
+test("waitForFirstVideoFrame uses requestVideoFrameCallback when available", async () => {
+  const video = createFakeVideo({ readyState: 2, videoWidth: 640, videoHeight: 480 });
+  let requested = false;
+  video.requestVideoFrameCallback = (callback) => {
+    requested = true;
+    callback();
+  };
+
+  const result = await waitForFirstVideoFrame(video, 50);
+
+  assert.equal(result, true);
+  assert.equal(requested, true);
+});
+
+test("video and stream usability helpers reject paused video and muted tracks", () => {
+  const usableVideo = createFakeVideo({ readyState: 2, videoWidth: 640, videoHeight: 480 });
+  assert.equal(isVideoElementUsable(usableVideo), true);
+
+  usableVideo.paused = true;
+  assert.equal(isVideoElementUsable(usableVideo), false);
+  assert.equal(isVideoElementUsable(usableVideo, { allowPaused: true }), true);
+
+  const activeStream = {
+    getVideoTracks: () => [{ readyState: "live", enabled: true, muted: false }]
+  };
+  const mutedStream = {
+    getVideoTracks: () => [{ readyState: "live", enabled: true, muted: true }]
+  };
+  assert.equal(isMediaStreamActive(activeStream), true);
+  assert.equal(isMediaStreamActive(mutedStream), false);
 });
 
 test("startUserCamera stops stream and rejects when video never becomes ready", async () => {

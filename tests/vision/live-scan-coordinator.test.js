@@ -15,6 +15,9 @@ test("live scan does not start before the user requests camera", () => {
     streamActive: true,
     videoReady: true,
     modelReady: true,
+    documentVisible: true,
+    runningMode: "VIDEO",
+    sessionValid: true,
     loopRunning: false,
     activeSessionId: null
   });
@@ -80,7 +83,47 @@ test("stop and reset allow a clean retry session", () => {
     streamActive: false,
     videoReady: false,
     modelReady: false,
+    documentVisible: true,
+    runningMode: "VIDEO",
+    sessionValid: true,
     loopRunning: false,
     activeSessionId: null
   });
+});
+
+test("hidden document or non-video mode blocks live scan", () => {
+  const coordinator = createLiveScanCoordinator();
+
+  coordinator.setCameraRequested(true);
+  coordinator.updateReadiness({
+    streamActive: true,
+    videoReady: true,
+    modelReady: true,
+    documentVisible: false,
+    runningMode: "VIDEO"
+  });
+  assert.equal(coordinator.start(40), false);
+
+  coordinator.updateReadiness({ documentVisible: true, runningMode: "IMAGE" });
+  assert.equal(coordinator.start(40), false);
+
+  coordinator.updateReadiness({ runningMode: "VIDEO" });
+  assert.equal(coordinator.start(40), true);
+});
+
+test("invalid session blocks live scan until session is valid again", () => {
+  const coordinator = createLiveScanCoordinator();
+
+  coordinator.setCameraRequested(true);
+  coordinator.updateReadiness({
+    streamActive: true,
+    videoReady: true,
+    modelReady: true,
+    sessionValid: false
+  });
+
+  assert.equal(coordinator.start(50), false);
+
+  coordinator.updateReadiness({ sessionValid: true });
+  assert.equal(coordinator.start(50), true);
 });

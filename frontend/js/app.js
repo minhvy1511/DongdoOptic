@@ -1,4 +1,4 @@
-import { startUserCamera } from "./camera.js?v=20260729-86";
+import { isMediaStreamActive, isVideoElementUsable, startUserCamera } from "./camera.js?v=20260810-android1";
 import {
   clearCanvas,
   drawCalibrationGuide,
@@ -35,7 +35,8 @@ import {
   shouldUseUploadFallback,
   withCameraStartupStatus
 } from "./vision/device-profile.js?v=20260729-85";
-import { createLiveScanCoordinator } from "./vision/live-scan-coordinator.js?v=20260731-qa2";
+import { createLiveScanCoordinator } from "./vision/live-scan-coordinator.js?v=20260810-android1";
+import { MODEL_LOAD_STATES, createVisionModelLoader } from "./vision/model-loader.js?v=20260810-android1";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
@@ -236,6 +237,8 @@ const saveFeedbackButton = document.getElementById("saveFeedbackButton");
 const feedbackStatus = document.getElementById("feedbackStatus");
 
 const canvasContext = canvas.getContext("2d");
+const FACE_LANDMARKER_MODULE_URL = "./face-landmarker.js?v=20260810-android1";
+const MODEL_LOAD_TIMEOUT_MS = 15000;
 
 let faceLandmarker;
 let imageFaceLandmarker;
@@ -263,6 +266,7 @@ let liveScanAnimationFrameId = 0;
 let confirmedFaceShapeSource = "";
 let manualConsultationMode = false;
 let latestCameraDebug = {};
+let latestModelDebug = {};
 let latestRecommendationDebug = null;
 let latestRenderDebug = {};
 let latestDebugLandmarks = null;
@@ -278,6 +282,12 @@ let renderDiagnosticOverlayUntil = 0;
 let workflowNavigationInFlight = false;
 let saveCustomerInFlight = false;
 let manualConsultationDialogTrigger = null;
+const videoModelLoader = createVisionModelLoader({
+  importLandmarkerModule: () => import(FACE_LANDMARKER_MODULE_URL),
+  runningMode: "VIDEO",
+  timeoutMs: MODEL_LOAD_TIMEOUT_MS,
+  onStateChange: handleVideoModelStateChange
+});
 let visionExperienceState = "idle";
 const renderLifecycleCounts = {
   loadedmetadata: 0,
@@ -1791,10 +1801,90 @@ function writeCompletedOperationDraft(draft) {
   }
 }
 
-async function initialize() {
+function handleVideoModelStateChange(snapshot = {}) {
+  latestModelDebug = {
+    ...latestModelDebug,
+    ...snapshot
+  };
+  updateCameraDebug({
+    modelLoadState: snapshot.modelLoadState || MODEL_LOAD_STATES.IDLE,
+    modelLoadStartedAt: snapshot.modelLoadStartedAt || 0,
+    modelLoadDurationMs: snapshot.modelLoadDurationMs || 0,
+    modelReady: Boolean(snapshot.modelReady),
+    modelInitInFlight: Boolean(snapshot.modelInitInFlight),
+    modelInitAttempt: snapshot.modelInitAttempt || 0,
+    modelInitError: snapshot.modelInitError || "",
+    wasmReady: Boolean(snapshot.wasmReady),
+    modelAssetReady: Boolean(snapshot.modelAssetReady),
+    runningMode: snapshot.runningMode || activeLandmarkerMode || "none",
+    lastModelReadyAt: snapshot.lastModelReadyAt || 0
+  });
+
+  if (snapshot.modelLoadState === MODEL_LOAD_STATES.READY) {
+    maybeStartLiveScan("model-ready-callback");
+    return;
+  }
+
+  if (snapshot.modelLoadState === MODEL_LOAD_STATES.ERROR && video?.srcObject) {
+    setVisionExperienceState("analysis_error", { message: "Không tải được bộ phân tích khuôn mặt." });
+    statusText.textContent = "Không tải được bộ phân tích";
+  }
+}
+
+async function initializeVideoLandmarker(options = {}) {
+  const currentState = videoModelLoader.getState();
+  if (currentState.modelReady && faceLandmarker && !options.retry) {
+    activeLandmarkerMode = "VIDEO";
+    refreshLiveScanReadiness();
+    maybeStartLiveScan("model-already-ready");
+    return faceLandmarker;
+  }
+
+  if (currentState.modelLoadState === MODEL_LOAD_STATES.ERROR && options.retry) {
+    videoModelLoader.resetAfterError();
+  }
+
   statusText.textContent = "Đang tải mô hình";
   landmarkerModeSwitchInFlight = true;
-  const landmarkerModule = await import("./face-landmarker.js?v=20260729-85");
+  try {
+    const result = await videoModelLoader.initialize({ retry: options.retry === true });
+    faceLandmarker = result.landmarker;
+    drawingUtils = result.module.createDrawingUtils(canvasContext);
+    FaceLandmarkerApi = result.module.FaceLandmarker;
+    activeLandmarkerMode = "VIDEO";
+    latestModelDebug = {
+      ...latestModelDebug,
+      delegate: faceLandmarker?.visionDelegate || "-"
+    };
+    updateCameraDebug({ delegate: latestModelDebug.delegate });
+    statusText.textContent = "Sẵn sàng";
+    return faceLandmarker;
+  } catch (error) {
+    faceLandmarker = null;
+    activeLandmarkerMode = "none";
+    latestModelDebug = {
+      ...latestModelDebug,
+      ...videoModelLoader.getState(),
+      modelInitError: error?.message || "model load failed"
+    };
+    updateVisionDebugPanel({
+      reasonCode: error?.code || error?.name || "MODEL_LOAD_ERROR",
+      mediaPipeError: error?.message || "model load failed",
+      cameraDebug: latestCameraDebug
+    });
+    throw error;
+  } finally {
+    landmarkerModeSwitchInFlight = false;
+    refreshLiveScanReadiness();
+    maybeStartLiveScan("model-ready");
+  }
+}
+
+async function initialize() {
+  return initializeVideoLandmarker();
+  statusText.textContent = "Đang tải mô hình";
+  landmarkerModeSwitchInFlight = true;
+  const landmarkerModule = await import(FACE_LANDMARKER_MODULE_URL);
   try {
     faceLandmarker = await landmarkerModule.createFaceLandmarker();
     drawingUtils = landmarkerModule.createDrawingUtils(canvasContext);
@@ -1817,7 +1907,7 @@ async function initializeImageLandmarker() {
 
   statusText.textContent = "Đang tải mô hình ảnh";
   landmarkerModeSwitchInFlight = true;
-  const landmarkerModule = await import("./face-landmarker.js?v=20260729-85");
+  const landmarkerModule = await import(FACE_LANDMARKER_MODULE_URL);
   try {
     imageFaceLandmarker = await landmarkerModule.createFaceLandmarker({ runningMode: "IMAGE" });
     FaceLandmarkerApi = landmarkerModule.FaceLandmarker;
@@ -1994,6 +2084,7 @@ async function openCameraFlow() {
       video.hidden = false;
     }
     currentCameraStream = await startUserCamera(video, { facingMode: currentCameraMode });
+    attachCameraStreamLifecycle(currentCameraStream);
     currentDeviceContext = withCameraStartupStatus(refreshDeviceProfile({ stream: currentCameraStream }), "camera_opened", {
       compatibilityFallbackUsed: false,
       videoWidth: video?.videoWidth || 0,
@@ -2019,7 +2110,7 @@ async function openCameraFlow() {
     maybeStartLiveScan("camera-ready");
 
     if (!faceLandmarker) {
-      initialize().catch((error) => {
+      initializeVideoLandmarker().catch((error) => {
         console.error(error);
         cancelLiveScanLoop();
         setVisionExperienceState("analysis_error", { message: "Không thể tải bộ phân tích khuôn mặt." });
@@ -2098,24 +2189,90 @@ function updateCameraDebug(details = {}) {
     videoWidth: video?.videoWidth || 0,
     videoHeight: video?.videoHeight || 0,
     videoPaused: video?.paused ?? null,
-    videoEnded: video?.ended ?? null
+    videoEnded: video?.ended ?? null,
+    modelLoadState: latestModelDebug.modelLoadState || MODEL_LOAD_STATES.IDLE,
+    modelLoadStartedAt: latestModelDebug.modelLoadStartedAt || 0,
+    modelLoadDurationMs: latestModelDebug.modelLoadDurationMs || 0,
+    modelReady: latestModelDebug.modelReady ?? isVideoLandmarkerReady(),
+    modelInitInFlight: latestModelDebug.modelInitInFlight ?? false,
+    modelInitAttempt: latestModelDebug.modelInitAttempt || 0,
+    modelInitError: latestModelDebug.modelInitError || "",
+    wasmReady: latestModelDebug.wasmReady ?? false,
+    modelAssetReady: latestModelDebug.modelAssetReady ?? false,
+    runningMode: latestModelDebug.runningMode || activeLandmarkerMode || "none",
+    delegate: latestModelDebug.delegate || faceLandmarker?.visionDelegate || "-",
+    lastModelReadyAt: latestModelDebug.lastModelReadyAt || 0,
+    visibilityState: document.visibilityState || "",
+    orientation: screen.orientation?.type || (window.innerWidth >= window.innerHeight ? "landscape" : "portrait")
   };
   updateVisionDebugPanel({ cameraDebug: latestCameraDebug });
 }
 
+function attachCameraStreamLifecycle(stream) {
+  const tracks = stream?.getVideoTracks?.() || [];
+  tracks.forEach((track) => {
+    track.addEventListener?.("ended", () => {
+      updateCameraDebug({
+        pageLifecycleEvent: "track-ended",
+        currentTrackReadyState: track.readyState || "ended"
+      });
+      cancelLiveScanLoop();
+      setVisionExperienceState("camera_unavailable", { message: "Camera đã ngắt, vui lòng bật lại." });
+      updateCameraStartButton({ active: false });
+    });
+    track.addEventListener?.("mute", () => {
+      updateCameraDebug({
+        pageLifecycleEvent: "track-muted",
+        currentTrackMuted: true
+      });
+      cancelLiveScanLoop();
+    });
+    track.addEventListener?.("unmute", () => {
+      updateCameraDebug({
+        pageLifecycleEvent: "track-unmuted",
+        currentTrackMuted: false
+      });
+      maybeStartLiveScan("track-unmuted");
+    });
+  });
+}
+
+async function recoverLiveCameraAfterResume(reason = "resume") {
+  updateCameraDebug({ pageLifecycleEvent: reason });
+  if (!currentCameraStream && !video?.srcObject) {
+    return;
+  }
+
+  if (!hasActiveLiveCameraStream()) {
+    cancelLiveScanLoop();
+    setVisionExperienceState("camera_unavailable", { message: "Camera đã ngắt, vui lòng bật lại." });
+    updateCameraStartButton({ active: false });
+    return;
+  }
+
+  try {
+    if (video?.paused && typeof video.play === "function") {
+      await video.play();
+    }
+  } catch (error) {
+    updateCameraDebug({
+      playPromiseError: error?.message || "video resume play failed",
+      lastDetectError: error?.message || "video resume play failed"
+    });
+  }
+
+  refreshDeviceProfile({ stream: currentCameraStream || video?.srcObject });
+  refreshLiveScanReadiness();
+  maybeStartLiveScan(reason);
+}
+
 function hasActiveLiveCameraStream() {
   const stream = currentCameraStream || video?.srcObject;
-  const tracks = stream?.getVideoTracks?.() || [];
-  return tracks.some((track) => track.readyState === "live" && track.enabled !== false);
+  return isMediaStreamActive(stream);
 }
 
 function isVideoReadyForLiveScan() {
-  return Boolean(video?.srcObject)
-    && video.readyState >= 2
-    && Number(video.videoWidth) > 0
-    && Number(video.videoHeight) > 0
-    && video.paused !== true
-    && video.ended !== true;
+  return Boolean(video?.srcObject) && isVideoElementUsable(video);
 }
 
 function isVideoLandmarkerReady() {
@@ -2126,7 +2283,10 @@ function refreshLiveScanReadiness() {
   liveScanCoordinator.updateReadiness({
     streamActive: hasActiveLiveCameraStream(),
     videoReady: isVideoReadyForLiveScan(),
-    modelReady: isVideoLandmarkerReady()
+    modelReady: isVideoLandmarkerReady(),
+    documentVisible: document.visibilityState !== "hidden",
+    runningMode: activeLandmarkerMode,
+    sessionValid: Boolean(cameraSessionToken)
   });
   const state = liveScanCoordinator.getState();
   updateCameraDebug({
@@ -2144,7 +2304,7 @@ function queueLiveScanFrame(sessionToken) {
   }
   liveScanAnimationFrameId = requestAnimationFrame(() => {
     liveScanAnimationFrameId = 0;
-    detectFrame(sessionToken);
+    detectFrameStable(sessionToken);
   });
 }
 
@@ -2617,6 +2777,74 @@ function getImageFrameSize() {
     height: uploadedFaceImage?.naturalHeight || uploadedFaceImage?.height || 0
   };
 }
+
+function detectFrameStable(sessionToken) {
+  const liveScanState = liveScanCoordinator.getState();
+  if (sessionToken !== cameraSessionToken || !liveScanState.loopRunning || liveScanState.activeSessionId !== sessionToken) {
+    return;
+  }
+
+  if (!hasActiveLiveCameraStream() || !isVideoReadyForLiveScan() || !isVideoLandmarkerReady()) {
+    cancelLiveScanLoop();
+    setVisionExperienceState("analysis_error", { message: "Camera hoặc bộ phân tích chưa sẵn sàng." });
+    statusText.textContent = "Cần thử lại camera";
+    updateCameraDebug({
+      scanLoopRunning: false,
+      activeScanSessionId: "",
+      lastDetectError: "live scan prerequisites lost"
+    });
+    updateVisionDebugPanel({
+      reasonCode: "LIVE_SCAN_NOT_READY",
+      mediaPipeError: "live scan prerequisites lost"
+    });
+    return;
+  }
+
+  try {
+    latestRenderContext = resizeCanvasToVideo(canvas, video, "animation-frame") || latestRenderContext || getRenderContext(canvas, video);
+
+    if (video.currentTime !== lastVideoTime) {
+      lastVideoTime = video.currentTime;
+      const startedAt = performance.now();
+      updateCameraDebug({
+        lastDetectStartedAt: startedAt,
+        lastDetectError: ""
+      });
+      const results = detectFaceLandmarksForVideo(faceLandmarker, video, startedAt);
+      drawResults(results);
+      const completedAt = performance.now();
+      updateCameraDebug({
+        lastDetectTimestamp: completedAt,
+        lastDetectCompletedAt: completedAt,
+        lastFaceCount: results.faceCount ?? results.faces?.length ?? 0,
+        lastDetectError: results.error?.message || "",
+        scanLoopRunning: true,
+        activeScanSessionId: sessionToken
+      });
+    } else {
+      updateCameraDebug({
+        scanLoopRunning: true,
+        activeScanSessionId: sessionToken
+      });
+    }
+
+    queueLiveScanFrame(sessionToken);
+  } catch (error) {
+    cancelLiveScanLoop();
+    setVisionExperienceState("analysis_error", { message: "Bộ phân tích bị gián đoạn, vui lòng thử lại." });
+    statusText.textContent = "Cần thử lại phân tích";
+    updateCameraDebug({
+      scanLoopRunning: false,
+      activeScanSessionId: "",
+      lastDetectError: error?.message || "detect loop failed"
+    });
+    updateVisionDebugPanel({
+      reasonCode: error?.code || error?.name || "DETECT_LOOP_ERROR",
+      mediaPipeError: error?.message || "detect loop failed"
+    });
+  }
+}
+
 function detectFrame(sessionToken) {
   const liveScanState = liveScanCoordinator.getState();
   if (sessionToken !== cameraSessionToken || !liveScanState.loopRunning || liveScanState.activeSessionId !== sessionToken) {
@@ -3843,8 +4071,23 @@ function updateVisionDebugPanel(payload = {}) {
     visionExperienceState: cameraDebug.visionExperienceState || visionExperienceState || "-",
     scanLoopRunning: cameraDebug.scanLoopRunning ?? false,
     activeScanSessionId: cameraDebug.activeScanSessionId || "-",
-    modelReady: cameraDebug.modelReady ?? isVideoLandmarkerReady(),
+    modelLoadState: cameraDebug.modelLoadState || latestModelDebug.modelLoadState || MODEL_LOAD_STATES.IDLE,
+    modelLoadStartedAt: cameraDebug.modelLoadStartedAt || latestModelDebug.modelLoadStartedAt || "-",
+    modelLoadDurationMs: cameraDebug.modelLoadDurationMs || latestModelDebug.modelLoadDurationMs || "-",
+    modelReady: cameraDebug.modelReady ?? latestModelDebug.modelReady ?? isVideoLandmarkerReady(),
+    modelInitInFlight: cameraDebug.modelInitInFlight ?? latestModelDebug.modelInitInFlight ?? false,
+    modelInitAttempt: cameraDebug.modelInitAttempt ?? latestModelDebug.modelInitAttempt ?? "-",
+    modelInitError: cameraDebug.modelInitError || latestModelDebug.modelInitError || "-",
+    wasmReady: cameraDebug.wasmReady ?? latestModelDebug.wasmReady ?? false,
+    modelAssetReady: cameraDebug.modelAssetReady ?? latestModelDebug.modelAssetReady ?? false,
+    runningMode: cameraDebug.runningMode || latestModelDebug.runningMode || activeLandmarkerMode || "-",
+    delegate: cameraDebug.delegate || latestModelDebug.delegate || faceLandmarker?.visionDelegate || "-",
+    lastModelReadyAt: cameraDebug.lastModelReadyAt || latestModelDebug.lastModelReadyAt || "-",
     lastDetectTimestamp: cameraDebug.lastDetectTimestamp ? Math.round(cameraDebug.lastDetectTimestamp) : "-",
+    lastDetectStartedAt: cameraDebug.lastDetectStartedAt ? Math.round(cameraDebug.lastDetectStartedAt) : "-",
+    lastDetectCompletedAt: cameraDebug.lastDetectCompletedAt ? Math.round(cameraDebug.lastDetectCompletedAt) : "-",
+    lastDetectError: cameraDebug.lastDetectError || "-",
+    lastFaceCount: cameraDebug.lastFaceCount ?? "-",
     detectedProfile: deviceDebug.deviceProfile || "-",
     effectiveProfile: deviceDebug.overrideActive ? deviceDebug.overrideProfile || deviceDebug.deviceProfile || "-" : deviceDebug.deviceProfile || "-",
     deviceProfile: deviceDebug.deviceProfile || "-",
@@ -4987,6 +5230,29 @@ function showTab(tabId) {
   }
   updateWorkflowAssistant();
   renderCustomerSessionHeader();
+  if (normalizeWorkflowStep(tabId) === "visionid") {
+    preloadVisionAnalyzer("enter-visionid");
+  }
+}
+
+function preloadVisionAnalyzer(reason = "preload") {
+  const profileContext = refreshDeviceProfile();
+  if (shouldUseUploadFallback(profileContext)) {
+    updateVisionDebugPanel({
+      pageLifecycleEvent: `${reason}:upload-profile`,
+      cameraDebug: latestCameraDebug
+    });
+    return;
+  }
+
+  const state = videoModelLoader.getState();
+  if (state.modelReady || state.modelInitInFlight) {
+    return;
+  }
+
+  initializeVideoLandmarker().catch((error) => {
+    console.debug("[VisionID] Model preload failed", error?.code || error?.name || error?.message);
+  });
 }
 
 function getActiveTabId() {
@@ -7145,6 +7411,9 @@ document.addEventListener("visibilitychange", () => {
   updateCameraDebug({ pageLifecycleEvent: `visibility:${document.visibilityState}` });
   if (document.visibilityState === "hidden") {
     operationDraftSaver.flush();
+    cancelLiveScanLoop();
+  } else {
+    recoverLiveCameraAfterResume("visibility-visible");
   }
 });
 
@@ -7199,6 +7468,7 @@ video?.addEventListener("loadedmetadata", () => {
   latestRenderContext = resizeCanvasToVideo(canvas, video, "loadedmetadata") || latestRenderContext;
   latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
   updateVisionDebugPanel({ renderDebug: latestRenderDebug });
+  maybeStartLiveScan("video-loadedmetadata");
 });
 
 video?.addEventListener("canplay", () => {
@@ -7206,6 +7476,12 @@ video?.addEventListener("canplay", () => {
   latestRenderContext = resizeCanvasToVideo(canvas, video, "canplay") || latestRenderContext;
   latestRenderDebug = getRenderDiagnostics({ canvas, video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
   updateVisionDebugPanel({ renderDebug: latestRenderDebug });
+  maybeStartLiveScan("video-canplay");
+});
+
+video?.addEventListener("playing", () => {
+  updateCameraDebug({ pageLifecycleEvent: "video-playing" });
+  maybeStartLiveScan("video-playing");
 });
 
 window.addEventListener("resize", () => {
@@ -7227,6 +7503,7 @@ window.addEventListener("orientationchange", () => {
       : resizeCanvasToVideo(canvas, video, "orientationchange") || latestRenderContext;
     latestRenderDebug = getRenderDiagnostics({ canvas, video: uploadedFaceImage && !uploadedFaceImage.hidden ? uploadedFaceImage : video, landmarks: latestDebugLandmarks || [], renderContext: latestRenderContext });
     updateVisionDebugPanel({ renderDebug: latestRenderDebug });
+    recoverLiveCameraAfterResume("orientationchange");
   });
 });
 
@@ -7248,4 +7525,5 @@ window.addEventListener("pagehide", () => {
 
 window.addEventListener("pageshow", () => {
   updateCameraDebug({ pageLifecycleEvent: "pageshow" });
+  recoverLiveCameraAfterResume("pageshow");
 });

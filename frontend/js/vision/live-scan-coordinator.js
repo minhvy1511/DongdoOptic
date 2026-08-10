@@ -3,6 +3,9 @@ export function createLiveScanCoordinator() {
   let streamActive = false;
   let videoReady = false;
   let modelReady = false;
+  let documentVisible = true;
+  let runningMode = "VIDEO";
+  let sessionValid = true;
   let loopRunning = false;
   let activeSessionId = null;
 
@@ -20,10 +23,26 @@ export function createLiveScanCoordinator() {
     if (Object.prototype.hasOwnProperty.call(next, "modelReady")) {
       modelReady = Boolean(next.modelReady);
     }
+    if (Object.prototype.hasOwnProperty.call(next, "documentVisible")) {
+      documentVisible = Boolean(next.documentVisible);
+    }
+    if (Object.prototype.hasOwnProperty.call(next, "runningMode")) {
+      runningMode = next.runningMode || "";
+    }
+    if (Object.prototype.hasOwnProperty.call(next, "sessionValid")) {
+      sessionValid = Boolean(next.sessionValid);
+    }
   }
 
   function canStart() {
-    return cameraRequested && streamActive && videoReady && modelReady && !loopRunning;
+    return cameraRequested
+      && documentVisible
+      && streamActive
+      && videoReady
+      && modelReady
+      && runningMode === "VIDEO"
+      && sessionValid
+      && !loopRunning;
   }
 
   function start(sessionId) {
@@ -54,6 +73,9 @@ export function createLiveScanCoordinator() {
       streamActive,
       videoReady,
       modelReady,
+      documentVisible,
+      runningMode,
+      sessionValid,
       loopRunning,
       activeSessionId
     };

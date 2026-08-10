@@ -95,7 +95,7 @@ export function stopStreamTracks(stream) {
 }
 
 export function waitForVideoReady(videoElement, timeoutMs = 8000) {
-  if (videoElement?.readyState >= 2 && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+  if (hasVideoDimensions(videoElement)) {
     return Promise.resolve();
   }
 
@@ -105,6 +105,7 @@ export function waitForVideoReady(videoElement, timeoutMs = 8000) {
       videoElement?.removeEventListener?.("loadedmetadata", handleReady);
       videoElement?.removeEventListener?.("loadeddata", handleReady);
       videoElement?.removeEventListener?.("canplay", handleReady);
+      videoElement?.removeEventListener?.("playing", handleReady);
       clearTimeout(timer);
     };
     const finish = (callback, value) => {
@@ -116,7 +117,7 @@ export function waitForVideoReady(videoElement, timeoutMs = 8000) {
       callback(value);
     };
     const handleReady = () => {
-      if (videoElement.readyState >= 1 && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+      if (hasVideoDimensions(videoElement)) {
         finish(resolve);
       }
     };
@@ -129,7 +130,62 @@ export function waitForVideoReady(videoElement, timeoutMs = 8000) {
     videoElement?.addEventListener?.("loadedmetadata", handleReady, { once: true });
     videoElement?.addEventListener?.("loadeddata", handleReady, { once: true });
     videoElement?.addEventListener?.("canplay", handleReady, { once: true });
+    videoElement?.addEventListener?.("playing", handleReady, { once: true });
+
+    waitForFirstVideoFrame(videoElement, timeoutMs)
+      .then(handleReady)
+      .catch(() => {
+        handleReady();
+      });
   });
+}
+
+export function waitForFirstVideoFrame(videoElement, timeoutMs = 8000) {
+  if (typeof videoElement?.requestVideoFrameCallback !== "function") {
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      callback(value);
+    };
+    const timer = setTimeout(() => {
+      finish(reject, new Error("Timed out waiting for first video frame."));
+    }, timeoutMs);
+
+    videoElement.requestVideoFrameCallback(() => {
+      finish(resolve, true);
+    });
+  });
+}
+
+export function isVideoElementUsable(videoElement, options = {}) {
+  if (!videoElement) {
+    return false;
+  }
+  const allowPaused = options.allowPaused === true;
+  return Number(videoElement.readyState || 0) >= 2
+    && Number(videoElement.videoWidth || 0) > 0
+    && Number(videoElement.videoHeight || 0) > 0
+    && (allowPaused || videoElement.paused !== true)
+    && videoElement.ended !== true;
+}
+
+function hasVideoDimensions(videoElement) {
+  return Number(videoElement?.readyState || 0) >= 1
+    && Number(videoElement?.videoWidth || 0) > 0
+    && Number(videoElement?.videoHeight || 0) > 0;
+}
+
+export function isMediaStreamActive(stream) {
+  const tracks = stream?.getVideoTracks?.() || [];
+  return tracks.some((track) => track.readyState === "live" && track.enabled !== false && track.muted !== true);
 }
 
 async function requestCamera(mediaDevices, constraints, timeoutMs) {
