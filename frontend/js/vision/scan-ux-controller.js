@@ -1,4 +1,27 @@
-export const AUTO_CONSULTATION_DELAY_MS = 800;
+export const AUTO_CONSULTATION_DELAY_MS = 300;
+
+export function createAcceptedScanCommit() {
+  let committed = false;
+
+  return {
+    commit({ accepted = false, stopScan, saveResult, navigate } = {}) {
+      if (!accepted || committed) {
+        return false;
+      }
+      committed = true;
+      stopScan?.();
+      saveResult?.();
+      navigate?.();
+      return true;
+    },
+    reset() {
+      committed = false;
+    },
+    isCommitted() {
+      return committed;
+    }
+  };
+}
 
 export function createAutoConsultationTransition() {
   let scheduled = false;

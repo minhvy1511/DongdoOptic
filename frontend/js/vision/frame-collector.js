@@ -11,19 +11,21 @@ export async function collectFrameBurst({
   detectFrame,
   analyzeLandmarks,
   estimatePose,
+  shouldStopEarly,
   delayFn = delay
 } = {}) {
   const samples = [];
   const frameCount = Math.max(1, Number(targetFrames || 1));
   const delayMs = Math.max(60, Math.round(Number(durationMs || 0) / frameCount));
   const captureStats = {
-    attemptedFrames: frameCount,
+    attemptedFrames: 0,
     acceptedFrames: 0,
     rejectedFrames: 0,
     rejectionReasons: {}
   };
 
   for (let index = 0; index < frameCount; index += 1) {
+    captureStats.attemptedFrames += 1;
     const frame = await detectFrame?.();
     const faces = Array.isArray(frame?.faces) ? frame.faces : [];
 
@@ -42,6 +44,11 @@ export async function collectFrameBurst({
       const reason = getFrameDetectionRejectionReason(frame, faces);
       captureStats.rejectedFrames += 1;
       captureStats.rejectionReasons[reason] = (captureStats.rejectionReasons[reason] || 0) + 1;
+    }
+
+    if (shouldStopEarly?.(samples, captureStats) === true) {
+      captureStats.endedEarly = true;
+      break;
     }
 
     if (index < frameCount - 1) {

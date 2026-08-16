@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   computeObjectFitTransform,
+  getRenderContext,
   getRenderContextForImage,
   mapNormalizedPointToRenderedVideo,
   resizeCanvasToVideo
@@ -63,7 +64,7 @@ function withWindow({ dpr = 1, objectFit = "cover" } = {}, callback) {
     configurable: true,
     value: {
       devicePixelRatio: dpr,
-      getComputedStyle: (element) => ({ objectFit: element?._objectFit || objectFit, transform: "none" })
+      getComputedStyle: (element) => ({ objectFit: element?._objectFit || objectFit, transform: element?._transform || "none" })
     }
   });
 
@@ -178,6 +179,21 @@ test("mirror maps x once and does not affect y", () => {
 
   assert.equal(point.x, 200 - (transform.cropOffsetX + 0.2 * transform.renderWidth));
   assert.equal(point.y, transform.cropOffsetY + 0.7 * transform.renderHeight);
+});
+
+test("mirrored preview changes render mapping without changing analysis coordinates", () => {
+  withWindow({}, () => {
+    const canvas = makeCanvas({ rectWidth: 200, rectHeight: 100 });
+    const video = makeVideo({ videoWidth: 100, videoHeight: 100, rectWidth: 200, rectHeight: 100 });
+    video._transform = "matrix(-1, 0, 0, 1, 0, 0)";
+    const landmark = Object.freeze({ x: 0.2, y: 0.7, z: 0.1 });
+    const context = getRenderContext(canvas, video);
+    const rendered = mapNormalizedPointToRenderedVideo(landmark, context);
+
+    assert.equal(context.mirrored, true);
+    assert.equal(rendered.x, 200 - (context.cropOffsetX + landmark.x * context.renderWidth));
+    assert.deepEqual(landmark, { x: 0.2, y: 0.7, z: 0.1 });
+  });
 });
 
 test("render mapping does not mutate raw landmarks", () => {

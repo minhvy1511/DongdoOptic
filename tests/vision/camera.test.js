@@ -6,6 +6,7 @@ import {
   isMediaStreamActive,
   isVideoElementUsable,
   prepareVideoForInlinePlayback,
+  setCameraPreviewFacingMode,
   startUserCamera,
   waitForFirstVideoFrame,
   waitForVideoReady
@@ -144,6 +145,23 @@ test("prepareVideoForInlinePlayback sets iOS-friendly playback flags", () => {
   assert.equal(video.playsInline, true);
   assert.equal(video.attributes.has("playsinline"), true);
   assert.equal(video.attributes.has("webkit-playsinline"), true);
+});
+
+test("front camera mirrors preview while rear camera stays unmirrored", () => {
+  const classes = new Set();
+  const video = {
+    classList: {
+      toggle(name, enabled) {
+        if (enabled) classes.add(name);
+        else classes.delete(name);
+      }
+    }
+  };
+
+  assert.equal(setCameraPreviewFacingMode(video, "user"), true);
+  assert.equal(classes.has("is-front-camera-preview"), true);
+  assert.equal(setCameraPreviewFacingMode(video, "environment"), false);
+  assert.equal(classes.has("is-front-camera-preview"), false);
 });
 
 test("startUserCamera falls back to loose video constraint when ideal constraints fail", async () => {

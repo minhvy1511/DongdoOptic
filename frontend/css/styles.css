@@ -993,6 +993,10 @@ input[type="number"],
   object-fit: cover;
 }
 
+#webcam.is-front-camera-preview {
+  transform: scaleX(-1);
+}
+
 #uploadedFaceImage[hidden] {
   display: none;
 }

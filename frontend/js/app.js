@@ -1,4 +1,4 @@
-import { isMediaStreamActive, isVideoElementUsable, startUserCamera } from "./camera.js?v=20260810-android1";
+import { isMediaStreamActive, isVideoElementUsable, setCameraPreviewFacingMode, startUserCamera } from "./camera.js?v=20260816-scanux3";
 import {
   clearCanvas,
   drawCalibrationGuide,
@@ -22,7 +22,7 @@ import {
 } from "./recommendations.js?v=20260729-85";
 import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260729-85";
 import { detectFaceLandmarksForImage, detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js?v=20260729-85";
-import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js?v=20260729-85";
+import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js?v=20260816-scanux3";
 import { DISTANCE_LANDMARKS as VISION_DISTANCE_LANDMARKS } from "./vision/landmark-map.js?v=20260729-85";
 import {
   getFaceShapeV3ShadowScans,
@@ -46,10 +46,11 @@ import {
 import { createLiveScanCoordinator } from "./vision/live-scan-coordinator.js?v=20260810-android1";
 import { MODEL_LOAD_STATES, createVisionModelLoader } from "./vision/model-loader.js?v=20260810-android1";
 import {
+  createAcceptedScanCommit,
   createAutoConsultationTransition,
   getScanHudView,
   isCanonicalVisionSuccess
-} from "./vision/scan-ux-controller.js?v=20260810-scanux2";
+} from "./vision/scan-ux-controller.js?v=20260816-scanux3";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
@@ -280,6 +281,7 @@ let isAnalyzingFace = false;
 const liveScanCoordinator = createLiveScanCoordinator();
 let liveScanAnimationFrameId = 0;
 const autoConsultationTransition = createAutoConsultationTransition();
+const acceptedScanCommit = createAcceptedScanCommit();
 let confirmedFaceShapeSource = "";
 let manualConsultationMode = false;
 let latestCameraDebug = {};
@@ -353,9 +355,10 @@ const SCAN_CONFIG = {
   CENTER_YAW_TOLERANCE_DEG: 8,
   ROLL_TOLERANCE_DEG: 12,
   HOLD_DURATION_MS: 320,
-  CENTER_BURST_FRAMES: 24,
-  CENTER_BURST_DURATION_MS: 2200,
-  CENTER_BURST_MIN_SAMPLES: 8,
+  CENTER_BURST_FRAMES: 12,
+  CENTER_BURST_DURATION_MS: 1200,
+  CENTER_BURST_MIN_SAMPLES: 6,
+  CENTER_BURST_EARLY_STOP_SAMPLES: 8,
   CENTER_BURST_MIN_CONFIDENCE: 0.25,
   STEP_TIMEOUT_MS: 5200,
   TIMEOUT_EXTENSION_MS: 5000,
@@ -510,6 +513,7 @@ function startAutoScanFlow(reason = "auto") {
   }
 
   resetAutoConsultationTransition("start-scan");
+  acceptedScanCommit.reset();
   const token = autoScanState.token + 1;
   autoScanState = createAutoScanState();
   autoScanState.active = true;
@@ -988,8 +992,35 @@ async function captureCenterBurstSamples(targetFrames, durationMs) {
     detectFrame: () => detectFaceLandmarksForVideo(faceLandmarker, video, performance.now()),
     analyzeLandmarks: (landmarks) => attachFrameImageQuality(analyzeFaceShape(landmarks, getVideoFrameSize()), video, SCAN_QUALITY_CONFIG),
     estimatePose: (landmarks) => estimateHeadPose(landmarks),
+    shouldStopEarly: (samples) => isCenterBurstReadyForEarlyCompletion(samples),
     delayFn: delay
   });
+}
+
+function isCenterBurstReadyForEarlyCompletion(samples) {
+  if (samples.length < SCAN_CONFIG.CENTER_BURST_EARLY_STOP_SAMPLES) {
+    return false;
+  }
+
+  const { usableSamples, selectedSamples, fallbackUsed } = selectBurstSamples({
+    samples,
+    minSamples: SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
+    config: SCAN_QUALITY_CONFIG
+  });
+  if (fallbackUsed || usableSamples.length < SCAN_CONFIG.CENTER_BURST_EARLY_STOP_SAMPLES) {
+    return false;
+  }
+
+  return buildCaptureQualityGate({
+    selectedSamples,
+    allSamples: samples,
+    quality: averageQuality(selectedSamples.map((sample) => sample.analysis.quality)),
+    pose: averagePose(selectedSamples.map((sample) => sample.pose)),
+    fallbackUsed,
+    config: SCAN_QUALITY_CONFIG,
+    formatPercent,
+    getDistanceLabel
+  }).passed;
 }
 
 function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
@@ -1194,6 +1225,11 @@ function captureScanStep(step, analysis, pose, options = {}) {
   });
   updateScanHud();
 
+  if (autoScanState.captureList.length >= SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES) {
+    finalizeMultiAngleScan();
+    return;
+  }
+
   const token = autoScanState.token;
   window.setTimeout(() => {
     if (autoScanState.token !== token) {
@@ -1231,6 +1267,9 @@ function getNextMissingStepIndex() {
 }
 
 function finalizeMultiAngleScan() {
+  if (autoScanState.phase === "AGGREGATING" || autoScanState.phase === "RESULT") {
+    return;
+  }
   const capturedCount = autoScanState.captureList.length;
   if (capturedCount < SCAN_CONFIG.REQUIRED_CAPTURED_FRAMES) {
     failIncompleteScan(SCAN_STEPS[autoScanState.stepIndex], "Chưa lấy được ảnh thẳng đủ rõ, vui lòng quét lại.");
@@ -1265,13 +1304,39 @@ function finalizeMultiAngleScan() {
   stampCurrentResultContext();
   renderMetricsV2(finalAnalysis.metrics, finalAnalysis.quality, finalAnalysis.diagnostics);
   applyAnalysisConfidence(finalAnalysis, true);
-  syncCurrentCustomer("customerUpdated");
   autoScanState.phase = "RESULT";
   autoScanState.status = "captured";
   autoScanState.prompt = "Đã quét xong";
   autoScanState.detail = "Kiểm tra kết quả và xác nhận dạng mặt trước khi tư vấn.";
+  const accepted = isCanonicalVisionSuccess({
+    latestAnalysis,
+    confirmedFaceShape,
+    confirmedFaceShapeSource,
+    autoScanState
+  });
+  const committed = acceptedScanCommit.commit({
+    accepted,
+    stopScan: stopCameraAfterAcceptedScan,
+    saveResult: () => syncCurrentCustomer("customerUpdated"),
+    navigate: () => maybeScheduleAutoConsultationTransition("accepted-final-result")
+  });
+  if (!committed) {
+    syncCurrentCustomer("customerUpdated");
+  }
   updateScanHud();
   updateWorkflowAssistant();
+}
+
+function stopCameraAfterAcceptedScan() {
+  const stream = currentCameraStream || video?.srcObject;
+  stream?.getTracks?.().forEach((track) => track.stop());
+  if (video) {
+    video.srcObject = null;
+  }
+  currentCameraStream = null;
+  cameraPanel?.classList.remove("camera-active");
+  cancelLiveScanLoop();
+  updateCameraStartButton({ active: false });
 }
 
 function recordCompletedV3ShadowScan(finalAnalysis, captures) {
@@ -2247,6 +2312,10 @@ async function openCameraFlow() {
     }
     currentCameraStream = await startUserCamera(video, { facingMode: currentCameraMode });
     attachCameraStreamLifecycle(currentCameraStream);
+    setCameraPreviewFacingMode(
+      video,
+      currentCameraStream?.getVideoTracks?.()[0]?.getSettings?.().facingMode || currentCameraMode
+    );
     currentDeviceContext = withCameraStartupStatus(refreshDeviceProfile({ stream: currentCameraStream }), "camera_opened", {
       compatibilityFallbackUsed: false,
       videoWidth: video?.videoWidth || 0,
@@ -4475,6 +4544,10 @@ async function runVisionDebugCameraCheck() {
 
   try {
     stream = await startUserCamera(video, { facingMode: currentCameraMode, readyTimeoutMs: 5000 });
+    setCameraPreviewFacingMode(
+      video,
+      stream?.getVideoTracks?.()[0]?.getSettings?.().facingMode || currentCameraMode
+    );
     currentCameraStream = stream;
     updateCameraDebug({
       permissionRequestPhase: "debug-check-ok",
@@ -4839,6 +4912,7 @@ function getDefaultCameraMode() {
 }
 
 function updateCameraModeButton() {
+  setCameraPreviewFacingMode(video, currentCameraMode);
   if (!cameraModeButton) {
     return;
   }

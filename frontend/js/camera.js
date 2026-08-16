@@ -90,6 +90,12 @@ export function prepareVideoForInlinePlayback(videoElement) {
   videoElement.setAttribute?.("webkit-playsinline", "");
 }
 
+export function setCameraPreviewFacingMode(videoElement, facingMode = "user") {
+  const mirrored = facingMode !== "environment";
+  videoElement?.classList?.toggle("is-front-camera-preview", mirrored);
+  return mirrored;
+}
+
 export function stopStreamTracks(stream) {
   stream?.getTracks?.().forEach((track) => track.stop());
 }

@@ -52,6 +52,39 @@ test("collects only single-face frames", async () => {
   assert.equal(collected.captureStats.rejectionReasons.MULTIPLE_FACES, 1);
 });
 
+test("stable burst can complete early after enough accepted samples", async () => {
+  let delays = 0;
+  const collected = await collectFrameBurst({
+    targetFrames: 12,
+    durationMs: 1200,
+    detectFrame: () => ({ faces: [[{ x: 0.5, y: 0.5 }]] }),
+    analyzeLandmarks: () => sample(0.8).analysis,
+    estimatePose: () => sample(0.8).pose,
+    shouldStopEarly: (samples) => samples.length >= 8,
+    delayFn: () => { delays += 1; return Promise.resolve(); }
+  });
+
+  assert.equal(collected.length, 8);
+  assert.equal(collected.captureStats.attemptedFrames, 8);
+  assert.equal(collected.captureStats.endedEarly, true);
+  assert.equal(delays, 7);
+});
+
+test("unstable burst does not use early completion", async () => {
+  const collected = await collectFrameBurst({
+    targetFrames: 12,
+    durationMs: 1200,
+    detectFrame: () => ({ faces: [[{ x: 0.5, y: 0.5 }]] }),
+    analyzeLandmarks: () => sample(0.8).analysis,
+    estimatePose: () => sample(0.8).pose,
+    shouldStopEarly: () => false,
+    delayFn: () => Promise.resolve()
+  });
+
+  assert.equal(collected.captureStats.attemptedFrames, 12);
+  assert.equal(collected.captureStats.endedEarly, undefined);
+});
+
 test("selects usable burst samples and removes pose outliers", () => {
   const samples = [
     sample(0.7),

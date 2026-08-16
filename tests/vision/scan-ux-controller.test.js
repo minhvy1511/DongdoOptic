@@ -1,11 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  createAcceptedScanCommit,
   createAutoConsultationTransition,
   getScanGuidanceMessage,
   getScanHudView,
   isCanonicalVisionSuccess
 } from "../../frontend/js/vision/scan-ux-controller.js";
+
+test("accepted scan commits stop, save, and navigation exactly once", () => {
+  const completion = createAcceptedScanCommit();
+  const calls = [];
+
+  assert.equal(completion.commit({
+    accepted: true,
+    stopScan: () => calls.push("stop"),
+    saveResult: () => calls.push("save"),
+    navigate: () => calls.push("navigate")
+  }), true);
+  assert.equal(completion.commit({ accepted: true, navigate: () => calls.push("duplicate") }), false);
+  assert.deepEqual(calls, ["stop", "save", "navigate"]);
+});
+
+test("rejected scan does not commit or navigate", () => {
+  const completion = createAcceptedScanCommit();
+  let navigated = false;
+
+  assert.equal(completion.commit({ accepted: false, navigate: () => { navigated = true; } }), false);
+  assert.equal(navigated, false);
+  assert.equal(completion.isCommitted(), false);
+});
 
 const validAnalysis = {
   metrics: { lengthToWidth: 1.35 },
