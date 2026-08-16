@@ -5639,6 +5639,9 @@ async function requestWorkflowNavigation(targetStep, source = "unknown", options
     const context = buildWorkflowContext();
     const targetOrder = Object.keys(STEP_TO_TAB_ID);
     const movingForward = targetOrder.indexOf(normalizedTarget) > targetOrder.indexOf(context.currentStep);
+    if (movingForward && context.currentStep === "profile" && normalizedTarget === "needs") {
+      context.profileValidation = getProfileValidation({ includeDuplicateBlock: false });
+    }
 
     if (movingForward || normalizedTarget !== "profile") {
       const gate = canEnterStep(normalizedTarget, context);
