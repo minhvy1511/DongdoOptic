@@ -118,6 +118,28 @@ test("canonical success requires current auto-confirmed final result", () => {
   }), true);
 });
 
+test("completed quality-approved scan navigates even below auto-confirm confidence", () => {
+  const acceptedAnalysis = {
+    metrics: { lengthToWidth: 1.35 },
+    shape: "oval",
+    faceShape_ai: "oval",
+    quality: { confidence: 0.64 },
+    diagnostics: {
+      autoConfirmed: false,
+      advisoryShape: false,
+      partialScan: false,
+      qualityGate: { passed: true }
+    }
+  };
+
+  assert.equal(isCanonicalVisionSuccess({
+    latestAnalysis: acceptedAnalysis,
+    confirmedFaceShape: "oval",
+    confirmedFaceShapeSource: "suggested",
+    autoScanState: resultState
+  }), true);
+});
+
 test("invalid, incomplete, rejected, or manual states do not auto navigate", () => {
   const base = {
     latestAnalysis: validAnalysis,
@@ -132,6 +154,19 @@ test("invalid, incomplete, rejected, or manual states do not auto navigate", () 
   assert.equal(isCanonicalVisionSuccess({
     ...base,
     latestAnalysis: { ...validAnalysis, diagnostics: { ...validAnalysis.diagnostics, autoConfirmed: false } }
+  }), false);
+  assert.equal(isCanonicalVisionSuccess({
+    ...base,
+    confirmedFaceShapeSource: "suggested",
+    latestAnalysis: {
+      ...validAnalysis,
+      shape: "oval",
+      diagnostics: {
+        ...validAnalysis.diagnostics,
+        autoConfirmed: false,
+        qualityGate: { passed: false }
+      }
+    }
   }), false);
   assert.equal(isCanonicalVisionSuccess({
     ...base,

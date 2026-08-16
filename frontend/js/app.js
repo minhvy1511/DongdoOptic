@@ -55,7 +55,7 @@ import {
   getScanGuidanceMessage,
   getScanHudView,
   isCanonicalVisionSuccess
-} from "./vision/scan-ux-controller.js?v=20260816-mobile-v72";
+} from "./vision/scan-ux-controller.js?v=20260817-mobile-v76";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
