@@ -46,6 +46,7 @@ import {
 } from "./vision/device-profile.js?v=20260729-85";
 import { createLiveScanCoordinator } from "./vision/live-scan-coordinator.js?v=20260810-android1";
 import { MODEL_LOAD_STATES, createVisionModelLoader } from "./vision/model-loader.js?v=20260810-android1";
+import { createLiveScanDebugController } from "./vision/live-scan-debug.js?v=20260816-mobile-v74";
 import {
   createAcceptedScanCommit,
   createAutoConsultationTransition,
@@ -454,6 +455,10 @@ const FEEDBACK_STORAGE_KEY = "dongdo_optic_feedback";
 const FEEDBACK_API_URL = "/api/feedback";
 const VISION_DEBUG_ENABLED = new URLSearchParams(window.location.search).get("visionDebug") === "1";
 let visionDebugPanel = null;
+const liveScanDebugController = createLiveScanDebugController({
+  enabled: VISION_DEBUG_ENABLED,
+  mountOverlay: createLiveScanDebugOverlay
+});
 let visionDebugCameraButton = null;
 let visionDebugRenderButton = null;
 
@@ -494,6 +499,9 @@ function createAutoScanState() {
     captureList: [],
     timeoutExtensions: {},
     centerBurstActive: false,
+    lastFrameGate: null,
+    usableSampleCount: 0,
+    burstSampleCount: 0,
     lastPose: null,
     lastAnalysis: null,
     lastDistanceCheckedAt: 0,
@@ -591,6 +599,7 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
     autoScanState.prompt = "Đang lấy khung thẳng";
     autoScanState.detail = "Giữ yên, nhìn vào camera để hệ thống lấy nhiều frame ổn định.";
     autoScanState.status = "hold";
+    autoScanState.reasonCode = "BURST_COLLECTING";
     updateScanHud();
     return;
   }
@@ -655,6 +664,7 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   autoScanState.detail = condition.detail;
   autoScanState.status = condition.status;
   autoScanState.reasonCode = condition.reasonCode;
+  autoScanState.lastFrameGate = condition;
   updateVisionDebugPanel({
     faceCount,
     reasonCode: condition.reasonCode,
@@ -940,6 +950,8 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
   }
 
   const token = autoScanState.token;
+  autoScanState.usableSampleCount = 0;
+  autoScanState.burstSampleCount = 0;
   autoScanState.centerBurstActive = true;
   autoScanState.status = "hold";
   autoScanState.progress = 0.5;
@@ -1013,6 +1025,15 @@ async function captureCenterBurstSamples(targetFrames, durationMs) {
     ),
     estimatePose: (landmarks) => estimateHeadPose(landmarks),
     shouldStopEarly: (samples) => {
+      if (VISION_DEBUG_ENABLED) {
+        const burstSelection = selectBurstSamples({
+          samples,
+          minSamples: SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
+          config: SCAN_QUALITY_CONFIG
+        });
+        autoScanState.usableSampleCount = burstSelection.usableSamples.length;
+        autoScanState.burstSampleCount = samples.length;
+      }
       autoScanState.progress = Math.min(
         0.95,
         0.42 + samples.length / SCAN_CONFIG.CENTER_BURST_EARLY_STOP_SAMPLES * 0.53
@@ -1845,6 +1866,7 @@ function updateScanHud() {
   scanPromptLabel.textContent = hudView.complete ? hudView.confidence : hudView.guidance;
   scanSubLabel.textContent = hudView.complete ? hudView.guidance : "";
   maybeScheduleAutoConsultationTransition("scan-hud-result");
+  updateLiveScanDebugOverlay();
 }
 
 function ensureCurrentSessionCode() {
@@ -4319,6 +4341,11 @@ function updateVisionDebugPanel(payload = {}) {
     return;
   }
 
+  updateLiveScanDebugOverlay(payload);
+  return;
+
+  /* Legacy verbose QA panel is intentionally bypassed by the compact live blocker view. */
+
   if (!visionDebugPanel) {
     visionDebugPanel = document.createElement("pre");
     visionDebugPanel.setAttribute("aria-label", "VisionID QA debug");
@@ -5110,6 +5137,75 @@ function averageQuality(qualityList) {
     lowerFaceGeometry: averageLowerFaceGeometry(qualityList.map((quality) => quality.lowerFaceGeometry)),
     faceBox: qualityList.at(-1)?.faceBox || null
   };
+}
+
+function createLiveScanDebugOverlay() {
+  if (visionDebugPanel) return visionDebugPanel;
+  visionDebugPanel = document.createElement("pre");
+  visionDebugPanel.setAttribute("aria-label", "VisionID live scan debug");
+  visionDebugPanel.style.cssText = [
+    "position:fixed",
+    "right:8px",
+    "bottom:8px",
+    "z-index:9999",
+    "width:min(300px,calc(100vw - 16px))",
+    "max-height:46vh",
+    "overflow:auto",
+    "margin:0",
+    "padding:8px 10px",
+    "border-radius:6px",
+    "background:rgba(7,20,26,0.94)",
+    "color:#d8fff4",
+    "font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace",
+    "box-shadow:0 8px 28px rgba(0,0,0,0.3)",
+    "white-space:pre-wrap",
+    "pointer-events:none"
+  ].join(";");
+  document.body.appendChild(visionDebugPanel);
+  return visionDebugPanel;
+}
+
+function updateLiveScanDebugOverlay(payload = {}) {
+  if (!VISION_DEBUG_ENABLED) return null;
+  const analysis = payload.analysis || autoScanState.lastAnalysis || latestAnalysis;
+  const quality = analysis?.quality || {};
+  const pose = autoScanState.lastPose || analysis?.diagnostics?.headPose || {};
+  const imageQuality = quality.imageQuality || {};
+  const lowerFace = quality.lowerFaceGeometry;
+  const frameGate = autoScanState.lastFrameGate;
+  const state = autoScanState.phase === "RESULT"
+    ? "COMPLETE"
+    : autoScanState.centerBurstActive
+      ? "BURST"
+      : autoScanState.holdStartedAt && frameGate?.ready
+        ? "HOLDING"
+        : autoScanState.phase;
+  const gatePassed = state === "BURST" || state === "COMPLETE" || Boolean(frameGate?.ready);
+  const reasonCode = gatePassed
+    ? (state === "BURST" ? "BURST_COLLECTING" : "OK")
+    : (payload.reasonCode || frameGate?.reasonCode || autoScanState.reasonCode || autoScanState.distance?.reason || "-");
+
+  return liveScanDebugController.update({
+    state,
+    progress: autoScanState.progress,
+    gatePassed,
+    reasonCode,
+    centerSourceX: quality.sourceCenterOffsetX ?? quality.centerOffsetX,
+    centerSourceY: quality.sourceCenterOffsetY ?? quality.centerOffsetY,
+    centerRenderedX: quality.centerOffsetX,
+    centerRenderedY: quality.centerOffsetY,
+    coverage: quality.coverage,
+    yaw: pose.yawDeg,
+    roll: pose.rollDeg,
+    brightness: imageQuality.brightness,
+    contrast: imageQuality.contrast,
+    sharpness: imageQuality.sharpness,
+    imageQualityPass: imageQuality.passed !== false && !imageQuality.reasonCode,
+    lowerFacePassed: lowerFace?.available ? lowerFace.passed !== false : null,
+    usableSampleCount: payload.usableSamples ?? autoScanState.usableSampleCount,
+    holdElapsedMs: autoScanState.holdStartedAt ? performance.now() - autoScanState.holdStartedAt : 0,
+    burstSampleCount: payload.acceptedFrames ?? autoScanState.burstSampleCount
+  });
 }
 
 function averageLowerFaceGeometry(geometryList) {
