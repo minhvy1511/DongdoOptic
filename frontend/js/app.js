@@ -9,7 +9,7 @@ import {
   getRenderDiagnostics,
   resizeCanvasToVideo
 } from "./drawing.js?v=20260729-85";
-import { analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-85";
+import { aggregateStableLengthToWidth, analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-85";
 import {
   buildRecommendationDiagnostics,
   getColorGuidance,
@@ -24,6 +24,14 @@ import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20
 import { detectFaceLandmarksForImage, detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js?v=20260729-85";
 import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js?v=20260729-85";
 import { DISTANCE_LANDMARKS as VISION_DISTANCE_LANDMARKS } from "./vision/landmark-map.js?v=20260729-85";
+import {
+  getFaceShapeV3ShadowScans,
+  predictFaceShapeV3,
+  recordFaceShapeV3ShadowScan,
+  resetFaceShapeV3ShadowScans,
+  summarizeFaceShapeV3ShadowScans
+} from "./vision/face-classifier-v3.js";
+import { aggregateFaceShapeV3Features, extractFaceShapeV3Features } from "./vision/face-shape-v3-features.js";
 import {
   DEVICE_PROFILES,
   detectDeviceProfile,
@@ -48,6 +56,7 @@ import {
   evaluateScanFrameQuality,
   getVisionLimitations
 } from "./vision/quality-gate.js?v=20260729-85";
+import { attachFrameImageQuality, averageImageQuality } from "./vision/image-quality.js?v=20260729-85";
 import { buildConsentScopedVisionFeedback, isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js?v=20260729-85";
 import {
   clearOperationDraft,
@@ -110,6 +119,8 @@ import {
   saveCustomer,
   todayInputValue
 } from "./customer-store.js?v=20260731-qa1";
+import { runShadowFrameRanking } from "./frame-ranking-adapter.js?v=20260816-p04";
+import { buildFrameRankingDebugSummary } from "./frame-ranking-debug.js?v=20260816-p05";
 
 const video = document.getElementById("webcam");
 const uploadedFaceImage = document.getElementById("uploadedFaceImage");
@@ -274,6 +285,7 @@ let manualConsultationMode = false;
 let latestCameraDebug = {};
 let latestModelDebug = {};
 let latestRecommendationDebug = null;
+let latestFrameRankingShadow = null;
 let latestRenderDebug = {};
 let latestDebugLandmarks = null;
 let latestRenderContext = null;
@@ -964,7 +976,8 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
       fallbackUsed: stableCapture.fallbackUsed,
       rejectedFrames: samples.captureStats?.rejectedFrames ?? Math.max(0, samples.length - stableCapture.sampleCount),
       rejectionReasons: samples.captureStats?.rejectionReasons || {}
-    }
+    },
+    v3FeatureVector: stableCapture.v3FeatureVector
   });
 }
 
@@ -973,7 +986,7 @@ async function captureCenterBurstSamples(targetFrames, durationMs) {
     targetFrames,
     durationMs,
     detectFrame: () => detectFaceLandmarksForVideo(faceLandmarker, video, performance.now()),
-    analyzeLandmarks: (landmarks) => analyzeFaceShape(landmarks, getVideoFrameSize()),
+    analyzeLandmarks: (landmarks) => attachFrameImageQuality(analyzeFaceShape(landmarks, getVideoFrameSize()), video, SCAN_QUALITY_CONFIG),
     estimatePose: (landmarks) => estimateHeadPose(landmarks),
     delayFn: delay
   });
@@ -1001,7 +1014,8 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
       analysis: cloneAnalysis(initialFallbackSample.analysis),
       pose: { ...(initialFallbackSample.pose || emptyPose()) },
       sampleCount: 1,
-      fallbackUsed: true
+      fallbackUsed: true,
+      v3FeatureVector: null
     };
   }
 
@@ -1065,11 +1079,25 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
     samples
   }));
 
+  const frameSize = getVideoFrameSize();
+  const v3FeatureVectors = selectedSamples.flatMap((sample) => {
+    if (!Array.isArray(sample?.landmarks)) {
+      return [];
+    }
+    try {
+      return [extractFaceShapeV3Features(sample.landmarks, frameSize)];
+    } catch (error) {
+      console.debug("[VisionID] V3 shadow feature extraction skipped", error?.message || error);
+      return [];
+    }
+  });
+
   return {
     analysis,
     pose,
     sampleCount: selectedSamples.length,
-    fallbackUsed
+    fallbackUsed,
+    v3FeatureVector: v3FeatureVectors.length ? aggregateFaceShapeV3Features(v3FeatureVectors) : null
   };
 }
 
@@ -1146,7 +1174,8 @@ function captureScanStep(step, analysis, pose, options = {}) {
     capturedAt: Date.now(),
     pose: { ...pose },
     analysis: cloneAnalysis(analysis),
-    burst: options.burst || null
+    burst: options.burst || null,
+    v3FeatureVector: Array.isArray(options.v3FeatureVector) ? [...options.v3FeatureVector] : null
   };
 
   autoScanState.captures[step.key] = capture;
@@ -1229,6 +1258,8 @@ function finalizeMultiAngleScan() {
     return;
   }
 
+  recordCompletedV3ShadowScan(finalAnalysis, autoScanState.captureList);
+
   latestAnalysis = finalAnalysis;
   latestAiFaceShape = finalAnalysis.faceShape_ai;
   stampCurrentResultContext();
@@ -1241,6 +1272,57 @@ function finalizeMultiAngleScan() {
   autoScanState.detail = "Kiểm tra kết quả và xác nhận dạng mặt trước khi tư vấn.";
   updateScanHud();
   updateWorkflowAssistant();
+}
+
+function recordCompletedV3ShadowScan(finalAnalysis, captures) {
+  const centerCapture = captures.find((capture) => capture.key === "center");
+  if (!Array.isArray(centerCapture?.v3FeatureVector)) {
+    console.debug("[VisionID] V3 shadow unavailable: no stable feature vector");
+    return null;
+  }
+
+  try {
+    const prediction = predictFaceShapeV3(centerCapture.v3FeatureVector);
+    const qualityGate = finalAnalysis.diagnostics?.qualityGate || centerCapture.analysis?.diagnostics?.qualityGate || null;
+    const record = recordFaceShapeV3ShadowScan({
+      legacyLabel: finalAnalysis.faceShape_ai || finalAnalysis.shape || "unknown",
+      legacyConfidence: Number(finalAnalysis.quality?.confidence || 0),
+      v3Label: prediction.predictedLabel,
+      v3Probabilities: prediction.probabilities,
+      v3TopProbability: prediction.topProbability,
+      v3Margin: prediction.margin,
+      v3UnknownReason: prediction.unknownReason,
+      featureVector: centerCapture.v3FeatureVector,
+      burstSampleCount: centerCapture.burst?.sampleCount || 0,
+      qualityGateResult: qualityGate ? {
+        passed: Boolean(qualityGate.passed),
+        score: Number(qualityGate.score || 0),
+        reasonCodes: [...(qualityGate.reasonCodes || [])]
+      } : null,
+      temporalMetricStability: Number(
+        finalAnalysis.diagnostics?.shapeConsistency
+        ?? centerCapture.analysis?.diagnostics?.centerBurst?.temporalStability
+        ?? 0
+      ),
+      qualityStabilitySummary: finalAnalysis.quality?.confidenceComponents || null
+    });
+    console.debug("[VisionID] V3 shadow", record);
+    return record;
+  } catch (error) {
+    console.debug("[VisionID] V3 shadow inference skipped", error?.message || error);
+    return null;
+  }
+}
+
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "__visionIdV3Shadow", {
+    configurable: true,
+    value: Object.freeze({
+      getScans: getFaceShapeV3ShadowScans,
+      summarize: summarizeFaceShapeV3ShadowScans,
+      reset: resetFaceShapeV3ShadowScans
+    })
+  });
 }
 
 function failIncompleteScan(step, message) {
@@ -1476,7 +1558,8 @@ function cloneAnalysis(analysis) {
     metrics: { ...(analysis?.metrics || {}) },
     quality: {
       ...(analysis?.quality || {}),
-      faceBox: analysis?.quality?.faceBox ? { ...analysis.quality.faceBox } : null
+      faceBox: analysis?.quality?.faceBox ? { ...analysis.quality.faceBox } : null,
+      lowerFaceGeometry: analysis?.quality?.lowerFaceGeometry ? { ...analysis.quality.lowerFaceGeometry } : null
     },
     diagnostics: {
       ...(analysis?.diagnostics || {}),
@@ -1745,6 +1828,7 @@ function resetVolatileConsultationState({ keepPersisted = false } = {}) {
   manualConsultationMode = false;
   latestRecommendations = [];
   latestLensRecommendations = [];
+  latestFrameRankingShadow = null;
   latestResultContext = null;
   latestRecommendationContext = null;
   consultationSaveError = "";
@@ -2714,7 +2798,7 @@ function renderStaticImageResults(results) {
   const landmarks = faces[0];
   latestDebugLandmarks = landmarks;
   latestRenderContext = resizeCanvasToImage(canvas, uploadedFaceImage, "image-analysis") || latestRenderContext;
-  const analysis = analyzeFaceShape(landmarks, getImageFrameSize());
+  const analysis = attachFrameImageQuality(analyzeFaceShape(landmarks, getImageFrameSize()), uploadedFaceImage, SCAN_QUALITY_CONFIG);
   const pose = estimateHeadPose(landmarks);
   const qualityGate = evaluateScanFrameQuality({
     step: SCAN_STEPS[0],
@@ -2992,7 +3076,7 @@ function drawResults(results) {
     return;
   }
 
-  const analysis = analyzeFaceShape(faces[0], getVideoFrameSize());
+  const analysis = attachFrameImageQuality(analyzeFaceShape(faces[0], getVideoFrameSize()), video, SCAN_QUALITY_CONFIG);
   const headPose = estimateHeadPose(faces[0]);
   analysis.diagnostics = {
     ...analysis.diagnostics,
@@ -3091,7 +3175,7 @@ async function captureAnalysisSamples(targetFrames, durationMs) {
     const results = detectFaceLandmarksForVideo(faceLandmarker, video, performance.now());
     const faces = results.faces ?? [];
     if (faces.length === 1) {
-      const analysis = analyzeFaceShape(faces[0], getVideoFrameSize());
+      const analysis = attachFrameImageQuality(analyzeFaceShape(faces[0], getVideoFrameSize()), video, SCAN_QUALITY_CONFIG);
       samples.push(analysis);
     }
 
@@ -4128,6 +4212,7 @@ function updateVisionDebugPanel(payload = {}) {
   const qualityGate = diagnostics.qualityGate || {};
   const cameraDebug = payload.cameraDebug || latestCameraDebug || {};
   const recommendationDebug = payload.recommendationDebug || latestRecommendationDebug || {};
+  const frameRankingShadow = payload.frameRankingShadow || latestFrameRankingShadow || {};
   const renderDebug = payload.renderDebug || latestRenderDebug || {};
   const deviceDebug = payload.deviceContext || sanitizeDeviceContextForDebug(currentDeviceContext || {});
   const imageDebug = payload.imageDebug || latestImageDebug || {};
@@ -4269,6 +4354,12 @@ function updateVisionDebugPanel(payload = {}) {
     genericAdvice: recommendationDebug.genericAdvice?.join(" | ") || "-",
     adviceSource: recommendationDebug.adviceSource || "-",
     invalidRecommendationMetric: recommendationDebug.invalidRecommendationMetric || "-",
+    frameRankingShadowStatus: frameRankingShadow.status || "-",
+    frameRankingShadowSkus: frameRankingShadow.topSkus?.join(", ") || "-",
+    frameRankingShadowNames: frameRankingShadow.topNames?.join(" | ") || "-",
+    frameRankingLegacyCompare: frameRankingShadow.legacyRecommendations?.join(" | ") || "-",
+    frameRankingShadowError: frameRankingShadow.error || "-",
+    frameRankingShadowEvaluation: buildFrameRankingDebugSummary(frameRankingShadow, { debugEnabled: VISION_DEBUG_ENABLED }) || "-",
     detectedBrowser: renderDebug.detectedBrowser || "-",
     isSafari: renderDebug.isSafari ?? "-",
     isIOS: renderDebug.isIOS ?? "-",
@@ -4817,7 +4908,7 @@ function averageMetrics(metricsListValue) {
 
 function medianMetrics(metricsListValue) {
   return {
-    lengthToWidth: median(metricsListValue.map((metrics) => metrics.lengthToWidth)),
+    lengthToWidth: aggregateStableLengthToWidth(metricsListValue.map((metrics) => metrics.lengthToWidth)),
     foreheadToCheek: median(metricsListValue.map((metrics) => metrics.foreheadToCheek)),
     jawToCheek: median(metricsListValue.map((metrics) => metrics.jawToCheek)),
     jawToForehead: median(metricsListValue.map((metrics) => metrics.jawToForehead)),
@@ -4872,7 +4963,32 @@ function averageQuality(qualityList) {
     coverage: average(qualityList.map((quality) => quality.coverage)),
     symmetryScore: average(qualityList.map((quality) => quality.symmetryScore)),
     confidence: average(qualityList.map((quality) => quality.confidence)),
+    imageQuality: averageImageQuality(qualityList.map((quality) => quality.imageQuality)),
+    lowerFaceGeometry: averageLowerFaceGeometry(qualityList.map((quality) => quality.lowerFaceGeometry)),
     faceBox: qualityList.at(-1)?.faceBox || null
+  };
+}
+
+function averageLowerFaceGeometry(geometryList) {
+  const available = geometryList.filter((geometry) => geometry?.available);
+  if (!available.length) {
+    return null;
+  }
+
+  const jawWidthRatios = available
+    .map((geometry) => Number(geometry.jawWidthToCheek))
+    .filter(Number.isFinite);
+
+  return {
+    available: true,
+    chinOffsetRatio: average(available.map((geometry) => geometry.chinOffsetRatio)),
+    chinDepthRatio: average(available.map((geometry) => geometry.chinDepthRatio)),
+    jawChinAsymmetryRatio: average(available.map((geometry) => geometry.jawChinAsymmetryRatio)),
+    jawWidth: average(available.map((geometry) => geometry.jawWidth)),
+    jawWidthToCheek: average(jawWidthRatios),
+    jawWidthRangeRatio: jawWidthRatios.length
+      ? Math.max(...jawWidthRatios) - Math.min(...jawWidthRatios)
+      : 0
   };
 }
 
@@ -6342,9 +6458,25 @@ function updateAdvice() {
     ? getManualFrameRecommendations(preferences)
     : getFrameRecommendations(adviceFaceShape);
   latestRecommendationContext = latestResultContext || getCurrentConsultationContext();
+  runFrameRankingShadow(preferences, latestRecommendations);
   renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences), !latestAnalysis && !manualConsultationMode);
   renderConsultationSummary();
   updateWorkflowAssistant();
+}
+
+function runFrameRankingShadow(preferences, legacyRecommendations) {
+  runShadowFrameRanking({
+    customer: readCustomerSnapshot(),
+    preferences,
+    visionAnalysis: latestAnalysis,
+    confirmedFaceShape,
+    aiFaceShape: latestAiFaceShape,
+    legacyRecommendations,
+    debugEnabled: VISION_DEBUG_ENABLED
+  }).then((result) => {
+    latestFrameRankingShadow = result;
+    updateVisionDebugPanel({ frameRankingShadow: result });
+  });
 }
 
 function getDraftFaceShapeForAdvice() {

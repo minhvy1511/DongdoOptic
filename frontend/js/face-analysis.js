@@ -36,6 +36,7 @@ const FACE_SHAPE_LABELS = {
   long: "Dài",
   heart: "Trái tim",
   diamond: "Kim cương",
+  triangle: "Tam giác",
   unknown: "Chưa rõ"
 };
 
@@ -77,6 +78,13 @@ export function analyzeFaceShape(landmarks, frameSize = null) {
     return emptyAnalysis("INVALID_METRICS", frameSize);
   }
 
+  const lowerFaceGeometry = buildLowerFaceGeometry({
+    landmarks,
+    frameSize,
+    faceHeight,
+    jawWidth,
+    cheekWidth
+  });
   const lengthToWidth = faceHeight / cheekWidth;
   const jawToCheek = jawWidth / cheekWidth;
   const foreheadToCheek = foreheadWidth / cheekWidth;
@@ -96,6 +104,7 @@ export function analyzeFaceShape(landmarks, frameSize = null) {
       boxBasedHeight,
       selectedHeight: faceHeight
     },
+    lowerFaceGeometry,
     faceBox: faceBox
   };
   quality.confidence = calculateConfidence(quality);
@@ -159,6 +168,30 @@ export function classifyFaceShapeFromMetrics(metrics) {
   return classifyShape(metrics);
 }
 
+export function aggregateStableLengthToWidth(values = []) {
+  const numericValues = values
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (!numericValues.length) {
+    return 0;
+  }
+
+  if (numericValues.length < 4) {
+    return medianNumber(numericValues);
+  }
+
+  const center = medianNumber(numericValues);
+  const deviations = numericValues.map((value) => Math.abs(value - center));
+  const mad = medianNumber(deviations);
+  const clampRange = clamp(Math.max(0.018, mad * 2.2), 0.018, 0.04);
+  const lower = center - clampRange;
+  const upper = center + clampRange;
+  const clampedValues = numericValues.map((value) => clamp(value, lower, upper));
+
+  return clampedValues.reduce((sum, value) => sum + value, 0) / clampedValues.length;
+}
+
 export function getClassificationDetail(metrics) {
   const invalidMetricReason = getInvalidMetricReason(metrics);
   if (invalidMetricReason) {
@@ -183,7 +216,13 @@ export function getClassificationDetail(metrics) {
   const [secondShape, secondScore] = ordered[1] || ["unknown", 0];
   const margin = bestScore - secondScore;
   const confidenceGate = 0.52;
-  const marginGate = bestShape === "diamond" ? 0.1 : 0.04;
+  const isOvalSquareBoundary = [bestShape, secondShape].includes("oval")
+    && [bestShape, secondShape].includes("square");
+  const isRoundOvalBoundary = [bestShape, secondShape].includes("round")
+    && [bestShape, secondShape].includes("oval");
+  const marginGate = bestShape === "diamond" ? 0.1
+    : bestShape === "triangle" || isOvalSquareBoundary || isRoundOvalBoundary ? 0.08
+      : 0.04;
   const claritySpan = PUBLIC_FACE_SHAPE_CALIBRATION.scoreGates.claritySpan;
   const clarity = clamp((margin - marginGate) / claritySpan, 0, 1) * clamp(bestScore / 0.84, 0, 1);
   const shape = bestScore < confidenceGate || margin < marginGate ? "unknown" : bestShape;
@@ -351,6 +390,41 @@ function getFaceBox(landmarks) {
   };
 }
 
+function buildLowerFaceGeometry({ landmarks, frameSize, faceHeight, jawWidth, cheekWidth } = {}) {
+  const chin = landmarks?.[LANDMARKS.chin];
+  const leftJaw = landmarks?.[LANDMARKS.leftJaw];
+  const rightJaw = landmarks?.[LANDMARKS.rightJaw];
+  const jawCenter = midpoint(leftJaw, rightJaw);
+
+  if (!chin || !leftJaw || !rightJaw || !jawCenter || !faceHeight || !jawWidth || !cheekWidth) {
+    return {
+      available: false,
+      chinOffsetRatio: 0,
+      chinDepthRatio: 0,
+      jawChinAsymmetryRatio: 0,
+      jawWidth: 0,
+      jawWidthToCheek: 0
+    };
+  }
+
+  const aspect = getFrameAspect(frameSize);
+  const chinOffsetRatio = Math.abs((chin.x - jawCenter.x) * aspect) / Math.max(jawWidth, 0.0001);
+  const chinDepthRatio = (chin.y - jawCenter.y) / Math.max(faceHeight, 0.0001);
+  const leftChinDistance = metricDistance(chin, leftJaw, frameSize);
+  const rightChinDistance = metricDistance(chin, rightJaw, frameSize);
+  const jawChinDistance = Math.max((leftChinDistance + rightChinDistance) / 2, 0.0001);
+  const jawChinAsymmetryRatio = Math.abs(leftChinDistance - rightChinDistance) / jawChinDistance;
+
+  return {
+    available: true,
+    chinOffsetRatio,
+    chinDepthRatio,
+    jawChinAsymmetryRatio,
+    jawWidth,
+    jawWidthToCheek: jawWidth / Math.max(cheekWidth, 0.0001)
+  };
+}
+
 function calculateSymmetryScore(landmarks) {
   const cheekBalance = pairBalance(landmarks[LANDMARKS.leftCheek], landmarks[LANDMARKS.rightCheek]);
   const templeBalance = pairBalance(landmarks[LANDMARKS.leftTemple], landmarks[LANDMARKS.rightTemple]);
@@ -388,7 +462,8 @@ function scoreRuleBasedShapes(metrics = {}) {
       square: 0,
       long: 0,
       heart: 0,
-      diamond: 0
+      diamond: 0,
+      triangle: 0
     };
   }
 
@@ -404,6 +479,7 @@ function scoreRuleBasedShapes(metrics = {}) {
   const heartScore = scoreHeartFace(lengthToWidth, foreheadToCheek, jawToForehead, jawToCheek);
   const diamondScore = scoreDiamondFace(lengthToWidth, foreheadToCheek, jawToCheek, cheekToJaw);
   const ovalScore = scoreOvalFace(lengthToWidth, foreheadToCheek, jawToCheek);
+  const triangleScore = scoreTriangleFace(lengthToWidth, foreheadToCheek, jawToForehead, jawToCheek);
 
   return {
     oval: ovalScore,
@@ -411,8 +487,24 @@ function scoreRuleBasedShapes(metrics = {}) {
     square: squareScore,
     long: longScore,
     heart: heartScore,
-    diamond: diamondScore
+    diamond: diamondScore,
+    triangle: triangleScore
   };
+}
+
+function scoreTriangleFace(lengthToWidth, foreheadToCheek, jawToForehead, jawToCheek) {
+  const jawDominance = ramp(jawToForehead, 1.02, 1.16);
+  const jawBreadth = ramp(jawToCheek, 0.88, 0.98);
+  const narrowForehead = ramp(0.92 - foreheadToCheek, 0, 0.14);
+  const midLength = closeness(lengthToWidth, 1.34, 0.28);
+  return clamp(
+    jawDominance * 0.45 +
+    jawBreadth * 0.25 +
+    narrowForehead * 0.2 +
+    midLength * 0.1,
+    0,
+    1
+  );
 }
 
 function scoreLongFace(lengthToWidth, jawToCheek, foreheadToCheek) {
@@ -706,6 +798,14 @@ function emptyAnalysis(invalidMetricReason = "NO_ANALYSIS", frameSize = null) {
         height: 0,
         centerX: 0.5,
         centerY: 0.5
+      },
+      lowerFaceGeometry: {
+        available: false,
+        chinOffsetRatio: 0,
+        chinDepthRatio: 0,
+        jawChinAsymmetryRatio: 0,
+        jawWidth: 0,
+        jawWidthToCheek: 0
       }
     },
     diagnostics: {

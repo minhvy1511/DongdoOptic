@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.schemas import AnalyzeRequest, CustomerRecord, FeedbackRecord, LensAdviceRequest
 from app.api.security import require_admin_api_key
 from app.services.customer_store import delete_customer, list_customers, save_customer
 from app.services.face_shape_service import analyze_face_shape
 from app.services.feedback_store import list_feedback, save_feedback
+from app.services.frame_product_service import FrameProductCatalogError, load_frame_products
 from app.services.lens_advice_service import recommend_lens_index
 from app.services.recommendation_service import get_frame_recommendations
 
@@ -14,6 +15,22 @@ router = APIRouter()
 @router.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@router.get("/frame-products")
+def frame_products():
+    try:
+        products = load_frame_products()
+    except FrameProductCatalogError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Frame product catalog unavailable: {exc}",
+        ) from exc
+
+    return {
+        "items": products,
+        "count": len(products),
+    }
 
 
 @router.post("/face-shape/analyze")
