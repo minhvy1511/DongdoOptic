@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 
 import {
   computeObjectFitTransform,
+  getVisibleFaceCenterOffsets,
   getRenderContext,
   getRenderContextForImage,
   mapNormalizedPointToRenderedVideo,
   resizeCanvasToVideo
 } from "../../frontend/js/drawing.js";
+import { evaluateScanFrameQuality } from "../../frontend/js/vision/quality-gate.js";
 
 function makeContext() {
   return {
@@ -194,6 +196,79 @@ test("mirrored preview changes render mapping without changing analysis coordina
     assert.equal(rendered.x, 200 - (context.cropOffsetX + landmark.x * context.renderWidth));
     assert.deepEqual(landmark, { x: 0.2, y: 0.7, z: 0.1 });
   });
+});
+
+function makeFaceBoxLandmarks(centerX, centerY, width = 0.16, height = 0.28) {
+  return [
+    { x: centerX - width / 2, y: centerY - height / 2, z: 0 },
+    { x: centerX + width / 2, y: centerY + height / 2, z: 0 }
+  ];
+}
+
+test("mobile portrait visible guide center passes after object-fit cover crop", () => {
+  const context = {
+    ...computeObjectFitTransform({
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      destinationWidth: 390,
+      destinationHeight: 700,
+      objectFit: "cover"
+    }),
+    mirrored: false
+  };
+  const landmarks = makeFaceBoxLandmarks(0.5, 0.49);
+  const center = getVisibleFaceCenterOffsets(landmarks, context);
+
+  assert.ok(context.cropOffsetX < 0);
+  assert.ok(center.centerOffsetX < 0.001);
+  assert.ok(center.centerOffsetY < 0.001);
+});
+
+test("mirrored front preview preserves analysis landmarks and visual center alignment", () => {
+  const context = {
+    ...computeObjectFitTransform({
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      destinationWidth: 390,
+      destinationHeight: 700,
+      objectFit: "cover"
+    }),
+    mirrored: true
+  };
+  const landmarks = makeFaceBoxLandmarks(0.5, 0.49).map(Object.freeze);
+  const before = JSON.parse(JSON.stringify(landmarks));
+  const center = getVisibleFaceCenterOffsets(landmarks, context);
+
+  assert.ok(center.centerOffsetX < 0.001);
+  assert.deepEqual(landmarks, before);
+});
+
+test("clearly off-center rendered face fails center gate while centered face can start hold", () => {
+  const context = {
+    ...computeObjectFitTransform({
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      destinationWidth: 390,
+      destinationHeight: 700,
+      objectFit: "cover"
+    }),
+    mirrored: false
+  };
+  const centered = getVisibleFaceCenterOffsets(makeFaceBoxLandmarks(0.5, 0.49), context);
+  const offCenter = getVisibleFaceCenterOffsets(makeFaceBoxLandmarks(0.62, 0.49), context);
+  const makeAnalysis = (center) => ({
+    quality: {
+      confidence: 0.8,
+      coverage: 0.18,
+      centerOffsetX: center.centerOffsetX,
+      centerOffsetY: center.centerOffsetY
+    }
+  });
+  const step = { key: "center", targetYaw: 0, tolerance: 8 };
+  const pose = { yawDeg: 0, rollDeg: 0 };
+
+  assert.equal(evaluateScanFrameQuality({ step, analysis: makeAnalysis(centered), pose, faceCount: 1 }).ready, true);
+  assert.equal(evaluateScanFrameQuality({ step, analysis: makeAnalysis(offCenter), pose, faceCount: 1 }).reasonCode, "OFF_CENTER");
 });
 
 test("render mapping does not mutate raw landmarks", () => {

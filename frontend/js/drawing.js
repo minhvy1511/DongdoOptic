@@ -306,6 +306,34 @@ export function mapNormalizedPointToRenderedVideo(point, renderContext = null) {
   return { x: mappedX, y };
 }
 
+export function getVisibleFaceCenterOffsets(landmarks = [], renderContext = null) {
+  if (!renderContext || !landmarks?.length) {
+    return null;
+  }
+
+  const faceBox = getLandmarkBox(landmarks, renderContext);
+  const destinationWidth = Number(renderContext.destination?.width || 0);
+  const destinationHeight = Number(renderContext.destination?.height || 0);
+  if (!faceBox || !destinationWidth || !destinationHeight) {
+    return null;
+  }
+
+  const guideBox = getFixedGuideBox(destinationWidth, destinationHeight);
+  const signedOffsetX = (faceBox.centerX - guideBox.centerX) / destinationWidth;
+  const signedOffsetY = (faceBox.centerY - guideBox.centerY) / destinationHeight;
+  return {
+    centerOffsetX: Math.abs(signedOffsetX),
+    centerOffsetY: Math.abs(signedOffsetY),
+    signedOffsetX,
+    signedOffsetY,
+    faceCenterX: faceBox.centerX,
+    faceCenterY: faceBox.centerY,
+    guideCenterX: guideBox.centerX,
+    guideCenterY: guideBox.centerY,
+    mirrored: Boolean(renderContext.mirrored)
+  };
+}
+
 export function getRenderDiagnostics({ canvas, video, landmarks = [], renderContext = null } = {}) {
   const context = renderContext || (canvas && video ? getRenderContext(canvas, video) : null);
   if (!context) {

@@ -7,8 +7,9 @@ import {
   getRenderContext,
   getRenderContextForImage,
   getRenderDiagnostics,
+  getVisibleFaceCenterOffsets,
   resizeCanvasToVideo
-} from "./drawing.js?v=20260729-85";
+} from "./drawing.js?v=20260816-mobile-v73";
 import { aggregateStableLengthToWidth, analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-85";
 import {
   buildRecommendationDiagnostics,
@@ -1006,7 +1007,10 @@ async function captureCenterBurstSamples(targetFrames, durationMs) {
     targetFrames,
     durationMs,
     detectFrame: () => detectFaceLandmarksForVideo(faceLandmarker, video, performance.now()),
-    analyzeLandmarks: (landmarks) => attachFrameImageQuality(analyzeFaceShape(landmarks, getVideoFrameSize()), video, SCAN_QUALITY_CONFIG),
+    analyzeLandmarks: (landmarks) => applyLiveVisibleCenterQuality(
+      attachFrameImageQuality(analyzeFaceShape(landmarks, getVideoFrameSize()), video, SCAN_QUALITY_CONFIG),
+      landmarks
+    ),
     estimatePose: (landmarks) => estimateHeadPose(landmarks),
     shouldStopEarly: (samples) => {
       autoScanState.progress = Math.min(
@@ -1018,6 +1022,24 @@ async function captureCenterBurstSamples(targetFrames, durationMs) {
     },
     delayFn: delay
   });
+}
+
+function applyLiveVisibleCenterQuality(analysis, landmarks) {
+  const visibleCenter = getVisibleFaceCenterOffsets(landmarks, latestRenderContext);
+  if (!visibleCenter || !analysis?.quality) {
+    return analysis;
+  }
+
+  analysis.quality = {
+    ...analysis.quality,
+    sourceCenterOffsetX: analysis.quality.centerOffsetX,
+    sourceCenterOffsetY: analysis.quality.centerOffsetY,
+    centerOffsetX: visibleCenter.centerOffsetX,
+    centerOffsetY: visibleCenter.centerOffsetY,
+    centerMeasurementSource: "rendered-visible-guide",
+    visibleCenter
+  };
+  return analysis;
 }
 
 function isCenterBurstReadyForEarlyCompletion(samples) {
@@ -3178,7 +3200,10 @@ function drawResults(results) {
     return;
   }
 
-  const analysis = attachFrameImageQuality(analyzeFaceShape(faces[0], getVideoFrameSize()), video, SCAN_QUALITY_CONFIG);
+  const analysis = applyLiveVisibleCenterQuality(
+    attachFrameImageQuality(analyzeFaceShape(faces[0], getVideoFrameSize()), video, SCAN_QUALITY_CONFIG),
+    faces[0]
+  );
   const headPose = estimateHeadPose(faces[0]);
   analysis.diagnostics = {
     ...analysis.diagnostics,
