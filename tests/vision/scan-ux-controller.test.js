@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import {
   createAcceptedScanCommit,
   createAutoConsultationTransition,
+  getGuideDistanceBand,
   getScanGuidanceMessage,
   getScanHudView,
+  getStraightPosePercent,
   isCanonicalVisionSuccess
 } from "../../frontend/js/vision/scan-ux-controller.js";
 
@@ -20,6 +22,26 @@ test("accepted scan commits stop, save, and navigation exactly once", () => {
   }), true);
   assert.equal(completion.commit({ accepted: true, navigate: () => calls.push("duplicate") }), false);
   assert.deepEqual(calls, ["stop", "save", "navigate"]);
+});
+
+test("progress reaches 100 before one-shot navigation", () => {
+  const completion = createAcceptedScanCommit();
+  let progress = 0.95;
+  const observed = [];
+
+  progress = 1;
+  completion.commit({ accepted: true, navigate: () => observed.push(progress) });
+  completion.commit({ accepted: true, navigate: () => observed.push(progress) });
+
+  assert.deepEqual(observed, [1]);
+});
+
+test("straight pose HUD is positive and guide distance has a tolerant band", () => {
+  assert.equal(getStraightPosePercent({ yawDeg: 0, rollDeg: 0 }), 100);
+  assert.equal(getStraightPosePercent({ yawDeg: 8, rollDeg: 0 }), 0);
+  assert.equal(getGuideDistanceBand(0.5), "ideal");
+  assert.equal(getGuideDistanceBand(0.85), "advisory");
+  assert.equal(getGuideDistanceBand(0.98), "blocked");
 });
 
 test("rejected scan does not commit or navigate", () => {

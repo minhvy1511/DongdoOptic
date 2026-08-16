@@ -1,1 +1,1 @@
-import "./app.js?v=20260816-scanux3";
+import "./app.js?v=20260816-mobile-v72";

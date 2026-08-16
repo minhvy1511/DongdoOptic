@@ -48,15 +48,18 @@ import { MODEL_LOAD_STATES, createVisionModelLoader } from "./vision/model-loade
 import {
   createAcceptedScanCommit,
   createAutoConsultationTransition,
+  getGuideDistanceBand,
+  getStraightPosePercent,
+  getScanGuidanceMessage,
   getScanHudView,
   isCanonicalVisionSuccess
-} from "./vision/scan-ux-controller.js?v=20260816-scanux3";
+} from "./vision/scan-ux-controller.js?v=20260816-mobile-v72";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
   evaluateScanFrameQuality,
   getVisionLimitations
-} from "./vision/quality-gate.js?v=20260729-85";
+} from "./vision/quality-gate.js?v=20260816-mobile-v72";
 import { attachFrameImageQuality, averageImageQuality } from "./vision/image-quality.js?v=20260729-85";
 import { buildConsentScopedVisionFeedback, isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js?v=20260729-85";
 import {
@@ -373,6 +376,8 @@ const DISTANCE_CONFIG = {
   GUIDE_HEIGHT_RATIO: 0.78,
   MIN_FACE_WIDTH_RATIO: 0.2,
   MAX_FACE_WIDTH_RATIO: 0.78,
+  TOLERANT_MIN_FACE_WIDTH_RATIO: 0.15,
+  TOLERANT_MAX_FACE_WIDTH_RATIO: 0.92,
   MIN_TOP_MARGIN_RATIO: -0.08,
   MAX_TOP_MARGIN_RATIO: 0.32,
   CHIN_POSITION_RATIO_MIN: 0.5,
@@ -483,6 +488,7 @@ function createAutoScanState() {
     detail: "Hệ thống sẽ tự chụp khi khuôn mặt ổn định.",
     error: "",
     errorReason: "",
+    reasonCode: "",
     captures: {},
     captureList: [],
     timeoutExtensions: {},
@@ -589,10 +595,7 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   }
 
   if (autoScanState.phase === "CHECK_DISTANCE") {
-    const canContinueWithWarning = autoScanState.distance?.metrics
-      && autoScanState.distance.reason !== "NO_FACE"
-      && autoScanState.distance.reason !== "MULTIPLE_FACES"
-      && autoScanState.distance.reason !== "MISSING_LANDMARKS";
+    const canContinueWithWarning = autoScanState.distance?.advisory === true;
     autoScanState.prompt = "Căn khoảng cách camera";
     autoScanState.detail = canContinueWithWarning && !autoScanState.distance.ready
       ? `${autoScanState.distance.message} Vẫn cho phép quét, nhân viên kiểm tra lại kết quả sau.`
@@ -608,6 +611,8 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
           ...autoScanState.distance,
           ready: true,
           advisoryOnly: true,
+          warningReason: autoScanState.distance.reason,
+          reason: "OK",
           status: "near",
           message: "Đã nới kiểm tra khoảng cách để tiếp tục quét."
         };
@@ -648,6 +653,7 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   autoScanState.prompt = step.label;
   autoScanState.detail = condition.detail;
   autoScanState.status = condition.status;
+  autoScanState.reasonCode = condition.reasonCode;
   updateVisionDebugPanel({
     faceCount,
     reasonCode: condition.reasonCode,
@@ -674,7 +680,9 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
   } else {
     autoScanState.holdStartedAt = 0;
     autoScanState.holdStepKey = "";
-    autoScanState.progress = condition.near ? 0.32 : 0;
+    autoScanState.progress = ["TOO_CLOSE", "TOO_FAR"].includes(condition.reasonCode)
+      ? 0
+      : (condition.near ? 0.32 : 0);
   }
 
   const stepElapsedMs = now - autoScanState.stepStartedAt;
@@ -803,6 +811,12 @@ function evaluateDistanceGuide(landmarks, faceCount) {
     videoHeight: video?.videoHeight || 0,
     guide
   };
+  const guideDistanceBand = getGuideDistanceBand(faceWidthRatio, {
+    idealMin: DISTANCE_CONFIG.MIN_FACE_WIDTH_RATIO,
+    idealMax: DISTANCE_CONFIG.MAX_FACE_WIDTH_RATIO,
+    tolerantMin: DISTANCE_CONFIG.TOLERANT_MIN_FACE_WIDTH_RATIO,
+    tolerantMax: DISTANCE_CONFIG.TOLERANT_MAX_FACE_WIDTH_RATIO
+  });
 
   if (foreheadCut || topMarginRatio < DISTANCE_CONFIG.MIN_TOP_MARGIN_RATIO) {
     debugDistanceGuide("FOREHEAD_CUT", metrics);
@@ -822,6 +836,7 @@ function evaluateDistanceGuide(landmarks, faceCount) {
       status: "near",
       reason: "TOO_FAR",
       message: "Tiến lại gần hơn.",
+      advisory: guideDistanceBand === "advisory",
       metrics
     };
   }
@@ -833,6 +848,7 @@ function evaluateDistanceGuide(landmarks, faceCount) {
       status: "near",
       reason: "TOO_CLOSE",
       message: "Lùi ra xa hơn.",
+      advisory: guideDistanceBand === "advisory",
       metrics
     };
   }
@@ -992,7 +1008,14 @@ async function captureCenterBurstSamples(targetFrames, durationMs) {
     detectFrame: () => detectFaceLandmarksForVideo(faceLandmarker, video, performance.now()),
     analyzeLandmarks: (landmarks) => attachFrameImageQuality(analyzeFaceShape(landmarks, getVideoFrameSize()), video, SCAN_QUALITY_CONFIG),
     estimatePose: (landmarks) => estimateHeadPose(landmarks),
-    shouldStopEarly: (samples) => isCenterBurstReadyForEarlyCompletion(samples),
+    shouldStopEarly: (samples) => {
+      autoScanState.progress = Math.min(
+        0.95,
+        0.42 + samples.length / SCAN_CONFIG.CENTER_BURST_EARLY_STOP_SAMPLES * 0.53
+      );
+      updateScanHud();
+      return isCenterBurstReadyForEarlyCompletion(samples);
+    },
     delayFn: delay
   });
 }
@@ -1073,6 +1096,8 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
   );
   if (!qualityGate.passed) {
     quality.confidence = Math.min(quality.confidence, 0.62);
+  } else if (qualityGate.distanceBand === "advisory") {
+    quality.confidence *= 0.97;
   }
   const frameClassifications = selectedSamples
     .map((sample) => sample?.analysis?.metrics ? getClassificationDetail(sample.analysis.metrics) : null)
@@ -1098,6 +1123,11 @@ function buildCenterBurstCapture(samples, step, initialAnalysis, initialPose) {
   if (!qualityGate.passed) {
     analysis.diagnostics.warnings = [
       `Ảnh tư vấn cần rà lại: ${qualityGate.failedLabels.join(", ")}.`,
+      ...analysis.diagnostics.warnings
+    ].slice(0, 4);
+  } else if (qualityGate.distanceBand === "advisory") {
+    analysis.diagnostics.warnings = [
+      "Khoảng cách hơi lệch chuẩn nhưng toàn bộ khuôn mặt vẫn đủ rõ để phân tích.",
       ...analysis.diagnostics.warnings
     ].slice(0, 4);
   }
@@ -1739,7 +1769,10 @@ function getScanGuideState() {
       ? "Cần quét lại"
       : autoScanState.phase === "CHECK_DISTANCE"
         ? "Canh khoảng cách"
-        : `${step.shortLabel || ""} ${Math.round(autoScanState.progress * 100)}%`;
+        : `${step.shortLabel || ""} ${getStraightPosePercent(autoScanState.lastPose, {
+          yawToleranceDeg: SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG,
+          rollToleranceDeg: SCAN_CONFIG.ROLL_TOLERANCE_DEG
+        })}%`;
   return {
     mode: autoScanState.phase !== "IDLE" ? "scan" : "",
     phase: autoScanState.phase,
@@ -3449,6 +3482,9 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
   const shape = confirmedFaceShape || (confidenceState.level === "low" && !canShowDraftShape ? "" : latestAiFaceShape);
   const shapeLabel = shape ? getFaceShapeLabel(shape) : "Chưa đủ dữ liệu";
   const percentLabel = confidenceState.percent ? `${confidenceState.percent}%` : "--";
+  const readinessLabel = autoScanState.active
+    ? `${Math.round(clamp01(autoScanState.progress) * 100)}%`
+    : percentLabel;
   const sampleLabel = diagnostics.sampleCount ? `${diagnostics.sampleCount}/${diagnostics.totalSamples || diagnostics.sampleCount} khung` : "";
   const consistencyLabel = Number.isFinite(diagnostics.sideAgreement ?? diagnostics.shapeConsistency)
     ? `${Math.round((diagnostics.sideAgreement ?? diagnostics.shapeConsistency) * 100)}% tín hiệu bổ trợ`
@@ -3478,8 +3514,16 @@ function renderCameraConfidenceOverlay(analysis, confidenceState = { level: "low
       : "\u0110\u1ed9 tin c\u1eady";
   cameraConfidenceOverlay.innerHTML = `
     <span>${escapeHtml(hudStatus)}</span>
-    <strong>${percentLabel}</strong>
-    <em>${autoScanState.phase === "RESULT" ? "\u0110ang m\u1edf t\u01b0 v\u1ea5n..." : ""}</em>
+    <strong>${readinessLabel}</strong>
+    <em>${autoScanState.phase === "RESULT"
+      ? "\u0110ang m\u1edf t\u01b0 v\u1ea5n..."
+      : (autoScanState.active ? escapeHtml(getScanGuidanceMessage({
+        phase: autoScanState.phase,
+        status: autoScanState.status,
+        reasonCode: autoScanState.reasonCode,
+        distanceReason: autoScanState.distance?.reason,
+        detail: autoScanState.detail
+      })) : "")}</em>
   `;
 }
 

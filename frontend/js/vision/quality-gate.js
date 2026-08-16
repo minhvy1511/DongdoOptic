@@ -24,6 +24,8 @@ export const DEFAULT_SCAN_QUALITY_CONFIG = Object.freeze({
   rollToleranceDeg: 12,
   minFrameConfidence: 0.34,
   centerOffsetMax: 0.16,
+  idealMinCoverage: 0.08,
+  idealMaxCoverage: 0.42,
   minCoverage: 0.035,
   maxCoverage: 0.62,
   burstMinSamples: 8,
@@ -89,7 +91,8 @@ export function evaluateScanFrameQuality({
   const imageQualityReason = getImageQualityRejectionReason(quality.imageQuality, config);
   const lowerFaceReason = getLowerFaceGeometryRejectionReason(quality, config);
   const centerOk = centerOffsetX <= config.centerOffsetMax && centerOffsetY <= config.centerOffsetMax;
-  const distanceOk = coverage >= config.minCoverage && coverage <= config.maxCoverage;
+  const distanceBand = getDistanceBand(coverage, config);
+  const distanceOk = distanceBand !== "blocked";
   const imageOk = !imageQualityReason;
   const lowerFaceOk = !lowerFaceReason;
   const rollOk = Math.abs(Number(pose.rollDeg || 0)) <= config.rollToleranceDeg;
@@ -107,7 +110,10 @@ export function evaluateScanFrameQuality({
       near: true,
       status: "hold",
       reason: QUALITY_REASON_CODES.OK,
-      detail: "Giữ nguyên một chút để máy tự chụp."
+      detail: distanceBand === "advisory"
+        ? "Khoảng cách hơi lệch nhưng khuôn mặt vẫn đủ rõ; giữ nguyên để máy tự chụp."
+        : "Giữ nguyên một chút để máy tự chụp.",
+      distanceBand
     });
   }
 
@@ -173,6 +179,17 @@ export function evaluateScanFrameQuality({
     detail: "Quay mặt về giữa thêm một chút.",
     timeoutDetail: "Chưa đạt đúng hướng mặt cần quét."
   });
+}
+
+export function getDistanceBand(coverage, config = DEFAULT_SCAN_QUALITY_CONFIG) {
+  const value = Number(coverage || 0);
+  if (value < config.minCoverage || value > config.maxCoverage) {
+    return "blocked";
+  }
+  if (value < config.idealMinCoverage || value > config.idealMaxCoverage) {
+    return "advisory";
+  }
+  return "ideal";
 }
 
 export function isUsableBurstSample(sample, config = DEFAULT_SCAN_QUALITY_CONFIG) {
@@ -253,6 +270,7 @@ export function buildCaptureQualityGate({
   const totalSamples = allSamples.length;
   const imageQualityReason = getImageQualityRejectionReason(quality.imageQuality, config);
   const lowerFaceReason = getCaptureLowerFaceGeometryRejectionReason(selectedSamples, quality, config);
+  const distanceBand = getDistanceBand(Number(quality.coverage || 0), config);
   const checks = [
     {
       key: "samples",
@@ -286,7 +304,7 @@ export function buildCaptureQualityGate({
       key: "distance",
       label: "Khoảng cách",
       reasonCode: QUALITY_REASON_CODES.BAD_DISTANCE,
-      passed: Number(quality.coverage || 0) >= 0.08 && Number(quality.coverage || 0) <= 0.42,
+      passed: distanceBand !== "blocked",
       value: getDistanceLabel(Number(quality.coverage || 0))
     },
     {
@@ -298,7 +316,7 @@ export function buildCaptureQualityGate({
     }
   ];
   const passedCount = checks.filter((item) => item.passed).length;
-  const score = clamp01(passedCount / checks.length);
+  const score = clamp01(passedCount / checks.length - (distanceBand === "advisory" ? 0.04 : 0));
   const failed = checks.filter((item) => !item.passed);
 
   return {
@@ -310,7 +328,9 @@ export function buildCaptureQualityGate({
     score,
     checks,
     failedLabels: failed.map((item) => item.label.toLowerCase()),
-    reasonCodes: failed.map((item) => item.reasonCode)
+    reasonCodes: failed.map((item) => item.reasonCode),
+    distanceBand,
+    warnings: distanceBand === "advisory" ? [QUALITY_REASON_CODES.BAD_DISTANCE] : []
   };
 }
 
@@ -557,7 +577,8 @@ function buildFrameQualityResult({
   status = "prompt",
   reason,
   detail,
-  timeoutDetail
+  timeoutDetail,
+  distanceBand = ""
 }) {
   return {
     ready,
@@ -565,7 +586,8 @@ function buildFrameQualityResult({
     status,
     reasonCode: reason,
     detail,
-    timeoutDetail
+    timeoutDetail,
+    distanceBand
   };
 }
 

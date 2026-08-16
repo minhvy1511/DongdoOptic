@@ -8,6 +8,7 @@ import {
   buildCaptureQualityGate,
   evaluateImageQualityFromImageData,
   evaluateScanFrameQuality,
+  getDistanceBand,
   getBurstSampleRejectionReason,
   getVisionLimitations,
   isFallbackEligibleBurstSample,
@@ -86,6 +87,28 @@ test("passes centered and stable scan frame", () => {
   assert.equal(result.reasonCode, QUALITY_REASON_CODES.OK);
 });
 
+test("mobile distance band allows slight deviations and blocks severe framing", () => {
+  const cases = [
+    ["ideal", 0.18, "ideal", true],
+    ["slightly far", 0.05, "advisory", true],
+    ["severely far", 0.02, "blocked", false],
+    ["slightly close", 0.5, "advisory", true],
+    ["severely close", 0.7, "blocked", false]
+  ];
+
+  cases.forEach(([label, coverage, band, ready]) => {
+    const result = evaluateScanFrameQuality({
+      step,
+      analysis: analysis({ coverage }),
+      pose: pose(),
+      faceCount: 1
+    });
+    assert.equal(getDistanceBand(coverage), band, label);
+    assert.equal(result.ready, ready, label);
+    assert.equal(result.distanceBand, ready ? band : "", label);
+  });
+});
+
 test("returns specific reason code for low confidence", () => {
   const result = evaluateScanFrameQuality({
     step,
@@ -148,6 +171,18 @@ test("capture quality gate requires valid distance for high confidence pass", ()
     quality: analysis({ confidence: 0.9, coverage: 0.18 }).quality,
     pose: pose()
   });
+  const slightlyFarGate = buildCaptureQualityGate({
+    selectedSamples: samples,
+    allSamples: samples,
+    quality: analysis({ confidence: 0.9, coverage: 0.05 }).quality,
+    pose: pose()
+  });
+  const slightlyCloseGate = buildCaptureQualityGate({
+    selectedSamples: samples,
+    allSamples: samples,
+    quality: analysis({ confidence: 0.9, coverage: 0.5 }).quality,
+    pose: pose()
+  });
   const tooFarGate = buildCaptureQualityGate({
     selectedSamples: samples,
     allSamples: samples,
@@ -157,7 +192,7 @@ test("capture quality gate requires valid distance for high confidence pass", ()
   const tooCloseGate = buildCaptureQualityGate({
     selectedSamples: samples,
     allSamples: samples,
-    quality: analysis({ confidence: 0.9, coverage: 0.58 }).quality,
+    quality: analysis({ confidence: 0.9, coverage: 0.7 }).quality,
     pose: pose()
   });
   const yawGate = buildCaptureQualityGate({
@@ -174,6 +209,11 @@ test("capture quality gate requires valid distance for high confidence pass", ()
   });
 
   assert.equal(goodGate.passed, true);
+  assert.equal(slightlyFarGate.passed, true);
+  assert.equal(slightlyFarGate.distanceBand, "advisory");
+  assert.ok(slightlyFarGate.warnings.includes(QUALITY_REASON_CODES.BAD_DISTANCE));
+  assert.equal(slightlyCloseGate.passed, true);
+  assert.equal(slightlyCloseGate.distanceBand, "advisory");
   assert.equal(tooFarGate.passed, false);
   assert.ok(tooFarGate.reasonCodes.includes(QUALITY_REASON_CODES.BAD_DISTANCE));
   assert.equal(tooCloseGate.passed, false);

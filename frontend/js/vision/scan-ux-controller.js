@@ -23,6 +23,24 @@ export function createAcceptedScanCommit() {
   };
 }
 
+export function getStraightPosePercent(pose = {}, { yawToleranceDeg = 8, rollToleranceDeg = 12 } = {}) {
+  const yawRatio = Math.abs(Number(pose.yawDeg || 0)) / Math.max(1, yawToleranceDeg);
+  const rollRatio = Math.abs(Number(pose.rollDeg || 0)) / Math.max(1, rollToleranceDeg);
+  return Math.round(Math.max(0, 1 - Math.max(yawRatio, rollRatio)) * 100);
+}
+
+export function getGuideDistanceBand(faceWidthRatio, {
+  idealMin = 0.2,
+  idealMax = 0.78,
+  tolerantMin = 0.15,
+  tolerantMax = 0.92
+} = {}) {
+  const value = Number(faceWidthRatio || 0);
+  if (value < tolerantMin || value > tolerantMax) return "blocked";
+  if (value < idealMin || value > idealMax) return "advisory";
+  return "ideal";
+}
+
 export function createAutoConsultationTransition() {
   let scheduled = false;
   let completed = false;
