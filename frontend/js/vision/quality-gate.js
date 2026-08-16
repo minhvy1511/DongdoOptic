@@ -529,34 +529,35 @@ function calculateEdgeSharpness(imageData) {
     luminance[pixelIndex] = data[dataIndex] * 0.2126 + data[dataIndex + 1] * 0.7152 + data[dataIndex + 2] * 0.0722;
   }
 
-  let edgeSum = 0;
-  let edgeCount = 0;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const current = luminance[y * width + x];
-      if (current === null) {
-        continue;
-      }
+  const measureAtSpan = (span) => {
+    let edgeSum = 0;
+    let edgeCount = 0;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const current = luminance[y * width + x];
+        if (current === null) continue;
 
-      if (x + 1 < width) {
-        const right = luminance[y * width + x + 1];
-        if (right !== null) {
-          edgeSum += Math.abs(current - right);
-          edgeCount += 1;
+        if (x + span < width) {
+          const right = luminance[y * width + x + span];
+          if (right !== null) {
+            edgeSum += Math.abs(current - right);
+            edgeCount += 1;
+          }
         }
-      }
 
-      if (y + 1 < height) {
-        const down = luminance[(y + 1) * width + x];
-        if (down !== null) {
-          edgeSum += Math.abs(current - down);
-          edgeCount += 1;
+        if (y + span < height) {
+          const down = luminance[(y + span) * width + x];
+          if (down !== null) {
+            edgeSum += Math.abs(current - down);
+            edgeCount += 1;
+          }
         }
       }
     }
-  }
+    return edgeCount ? edgeSum / edgeCount : 0;
+  };
 
-  return edgeCount ? edgeSum / edgeCount : 255;
+  return Math.max(measureAtSpan(1), measureAtSpan(2));
 }
 
 export function getVisionLimitations({ hasPhysicalCalibration = false } = {}) {

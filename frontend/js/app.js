@@ -61,8 +61,8 @@ import {
   buildCaptureQualityGate,
   evaluateScanFrameQuality,
   getVisionLimitations
-} from "./vision/quality-gate.js?v=20260816-mobile-v72";
-import { attachFrameImageQuality, averageImageQuality } from "./vision/image-quality.js?v=20260729-85";
+} from "./vision/quality-gate.js?v=20260817-mobile-v75";
+import { attachFrameImageQuality, averageImageQuality } from "./vision/image-quality.js?v=20260817-mobile-v75";
 import { buildConsentScopedVisionFeedback, isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js?v=20260729-85";
 import {
   clearOperationDraft,

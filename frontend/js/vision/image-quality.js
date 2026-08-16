@@ -1,7 +1,7 @@
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   evaluateImageQualityFromImageData
-} from "./quality-gate.js?v=20260729-85";
+} from "./quality-gate.js?v=20260817-mobile-v75";
 
 export function attachFrameImageQuality(analysis, sourceElement, config = DEFAULT_SCAN_QUALITY_CONFIG) {
   const imageQuality = measureFrameImageQuality(sourceElement, analysis?.quality?.faceBox, config);

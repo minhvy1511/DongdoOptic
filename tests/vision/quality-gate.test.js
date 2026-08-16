@@ -351,6 +351,21 @@ test("image quality gate rejects heavy blur with low edge sharpness", () => {
   }).reasonCode, QUALITY_REASON_CODES.IMAGE_BLURRY);
 });
 
+test("mobile resize-softened edges remain usable without accepting heavy blur", () => {
+  const resizeSoftened = evaluateImageQualityFromImageData(
+    imageDataFromGrid(12, 12, (x, y) => 50 + 7 * (x + y))
+  );
+  const heavyBlur = evaluateImageQualityFromImageData(
+    imageDataFromGrid(12, 12, (x) => (x < 6 ? 100 : 150))
+  );
+
+  assert.ok(resizeSoftened.sharpness >= 12);
+  assert.equal(resizeSoftened.passed, true);
+  assert.equal(resizeSoftened.reasonCode, "");
+  assert.ok(heavyBlur.sharpness < 12);
+  assert.equal(heavyBlur.reasonCode, QUALITY_REASON_CODES.IMAGE_BLURRY);
+});
+
 test("classifies hard and soft burst rejection reasons", () => {
   const soft = { analysis: analysis({ confidence: 0.1 }), pose: pose() };
   const hard = { analysis: analysis({ confidence: 0.95 }), pose: pose({ yawDeg: 28 }) };
