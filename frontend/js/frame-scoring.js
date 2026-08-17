@@ -10,6 +10,7 @@ export const FRAME_SCORE_WEIGHTS = Object.freeze({
 
 const TOTAL_WEIGHT = Object.values(FRAME_SCORE_WEIGHTS).reduce((sum, weight) => sum + weight, 0);
 const NEUTRAL_SCORE = 0.62;
+const MAX_GEOMETRY_COMPATIBILITY_ADJUSTMENT = 0.1;
 
 const FACE_SHAPE_COMPATIBILITY = Object.freeze({
   oval: { browline: 0.95, rectangle: 0.87, "rounded-square": 0.9, oval: 0.86, round: 0.75, wellington: 0.78, rimless: 0.78 },
@@ -146,7 +147,9 @@ function scoreFaceCompatibility(frame, visionProfile, warnings, reasons) {
   }
 
   const compatibility = FACE_SHAPE_COMPATIBILITY[faceShape]?.[frameShape] ?? 0.65;
-  const effectiveCompatibility = NEUTRAL_SCORE * (1 - confidence) + compatibility * confidence;
+  const legacyCompatibility = NEUTRAL_SCORE * (1 - confidence) + compatibility * confidence;
+  const geometryAdjustment = scoreFaceGeometryAdjustment(frame, visionProfile) * confidence;
+  const effectiveCompatibility = clamp01(legacyCompatibility + geometryAdjustment);
   if (confidence < 0.55) {
     warnings.push("VisionID confidence thấp, điểm dáng mặt đã được giảm ảnh hưởng.");
   }
@@ -158,6 +161,70 @@ function scoreFaceCompatibility(frame, visionProfile, warnings, reasons) {
     points: FRAME_SCORE_WEIGHTS.faceCompatibility * effectiveCompatibility,
     confidence: Math.max(0.2, confidence)
   };
+}
+
+function scoreFaceGeometryAdjustment(frame, visionProfile) {
+  const signals = [];
+  const lengthToWidth = positiveNumber(visionProfile.lengthToWidth);
+  const jawToCheek = positiveNumber(visionProfile.jawToCheek);
+  const foreheadToCheek = positiveNumber(visionProfile.foreheadToCheek);
+  const jawToForehead = positiveNumber(visionProfile.jawToForehead);
+  const lensWidth = positiveNumber(frame.lens_width_mm ?? frame.lensWidthMm);
+  const lensHeight = positiveNumber(frame.lens_height_mm ?? frame.lensHeightMm);
+  const frameWidth = positiveNumber(frame.frame_width_mm ?? frame.frameWidthMm);
+
+  if (lengthToWidth && lensWidth && lensHeight) {
+    const faceLength = signedRange(lengthToWidth, 1.38, 0.24);
+    const lensTallness = signedRange(lensHeight / lensWidth, 0.76, 0.14);
+    signals.push({ value: faceLength * lensTallness, weight: 0.45 });
+  }
+
+  if (jawToCheek || jawToForehead) {
+    const jawSignals = [];
+    if (jawToCheek) jawSignals.push(signedRange(jawToCheek, 0.86, 0.1));
+    if (jawToForehead) jawSignals.push(signedRange(jawToForehead, 1, 0.14));
+    const jawDominance = average(jawSignals);
+    const softness = frameSoftness(frame.shape);
+    const jawFrameGeometry = frameWidth
+      ? softness * 0.75 + signedRange(frameWidth, 134, 12) * 0.25
+      : softness;
+    signals.push({ value: jawDominance * jawFrameGeometry, weight: 0.35 });
+  }
+
+  if (foreheadToCheek && frameWidth) {
+    const cheekProminence = signedRange(0.93 - foreheadToCheek, 0, 0.12);
+    const frameBreadth = signedRange(frameWidth, 134, 12);
+    signals.push({ value: cheekProminence * frameBreadth, weight: 0.2 });
+  }
+
+  if (!signals.length) return 0;
+  const weightTotal = signals.reduce((sum, signal) => sum + signal.weight, 0);
+  const combined = signals.reduce((sum, signal) => sum + signal.value * signal.weight, 0) / weightTotal;
+  return clamp(combined, -1, 1) * MAX_GEOMETRY_COMPATIBILITY_ADJUSTMENT;
+}
+
+function frameSoftness(value) {
+  const softness = {
+    round: 1,
+    oval: 0.9,
+    aviator: 0.75,
+    rimless: 0.55,
+    "cat-eye": 0.35,
+    "rounded-square": 0.2,
+    geometric: -0.35,
+    browline: -0.45,
+    rectangle: -0.85
+  };
+  return softness[normalizeFrameShape(value)] ?? 0;
+}
+
+function signedRange(value, center, radius) {
+  return clamp((Number(value) - center) / radius, -1, 1);
+}
+
+function average(values) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function scoreFit(frame, customerProfile, warnings, reasons) {

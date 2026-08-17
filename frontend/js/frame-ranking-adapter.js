@@ -1,4 +1,4 @@
-import { fetchFrameProducts, rankFrameProducts } from "./frame-ranking.js";
+import { fetchFrameProducts, rankFrameProducts } from "./frame-ranking.js?v=20260817-frame-geometry1";
 
 
 let frameProductsPromise = null;
@@ -39,13 +39,31 @@ export function buildFrameScoringProfiles({
       || visionAnalysis?.faceShape_ai
       || visionAnalysis?.shape,
     faceShapeConfidence: readVisionConfidence(visionAnalysis),
-    confidence: readVisionConfidence(visionAnalysis)
+    confidence: readVisionConfidence(visionAnalysis),
+    ...readVisionGeometry(visionAnalysis)
   });
 
   return {
     customerProfile,
     visionProfile
   };
+}
+
+
+function readVisionGeometry(analysis) {
+  const metrics = analysis?.metrics || {};
+  return compactObject({
+    lengthToWidth: positiveMetric(metrics.lengthToWidth),
+    jawToCheek: positiveMetric(metrics.jawToCheek),
+    foreheadToCheek: positiveMetric(metrics.foreheadToCheek),
+    jawToForehead: positiveMetric(metrics.jawToForehead)
+  });
+}
+
+
+function positiveMetric(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : undefined;
 }
 
 

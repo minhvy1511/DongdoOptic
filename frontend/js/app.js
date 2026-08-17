@@ -136,7 +136,7 @@ import {
   buildCustomerFrameRecommendations,
   createFrameRankingRequestGuard,
   runShadowFrameRanking
-} from "./frame-ranking-adapter.js?v=20260817-frame-top3";
+} from "./frame-ranking-adapter.js?v=20260817-frame-geometry1";
 import { buildFrameRankingDebugSummary } from "./frame-ranking-debug.js?v=20260816-p05";
 import {
   buildConsultationContext as buildScanConsultationContext,

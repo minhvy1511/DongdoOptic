@@ -1,4 +1,4 @@
-import { scoreFrame } from "./frame-scoring.js";
+import { scoreFrame } from "./frame-scoring.js?v=20260817-frame-geometry1";
 
 
 const DEFAULT_FRAME_PRODUCTS_URL = "/api/frame-products";

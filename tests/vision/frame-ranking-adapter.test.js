@@ -38,7 +38,13 @@ test("maps representative app state to scoring profiles", () => {
     },
     visionAnalysis: {
       faceShape_ai: "oval",
-      quality: { confidence: 0.82 }
+      quality: { confidence: 0.82 },
+      metrics: {
+        lengthToWidth: 1.41,
+        jawToCheek: 0.86,
+        foreheadToCheek: 0.94,
+        jawToForehead: 0.91
+      }
     },
     confirmedFaceShape: "oval"
   });
@@ -49,6 +55,10 @@ test("maps representative app state to scoring profiles", () => {
   assert.equal(profiles.customerProfile.frame_preference, "light");
   assert.equal(profiles.visionProfile.faceShape, "oval");
   assert.equal(profiles.visionProfile.faceShapeConfidence, 0.82);
+  assert.equal(profiles.visionProfile.lengthToWidth, 1.41);
+  assert.equal(profiles.visionProfile.jawToCheek, 0.86);
+  assert.equal(profiles.visionProfile.foreheadToCheek, 0.94);
+  assert.equal(profiles.visionProfile.jawToForehead, 0.91);
 });
 
 

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { scoreFrame } from "../../frontend/js/frame-scoring.js";
+import { rankFrames, scoreFrame } from "../../frontend/js/frame-scoring.js";
 
 const affordableFrame = Object.freeze({
   sku: "DEMO-AFFORDABLE",
@@ -90,6 +90,64 @@ test("low VisionID confidence reduces face compatibility influence", () => {
 
   assert.ok(highGap > lowGap);
   assert.ok(lowLessCompatible.warnings.some((warning) => warning.includes("VisionID confidence thấp")));
+});
+
+test("same oval prior ranks tall and shallow frames differently from face length geometry", () => {
+  const tallFrame = { ...affordableFrame, sku: "DEMO-TALL", lens_height_mm: 45 };
+  const shallowFrame = { ...affordableFrame, sku: "DEMO-SHALLOW", lens_height_mm: 32 };
+  const compact = { faceShape: "oval", faceShapeConfidence: 0.9, lengthToWidth: 1.18 };
+  const long = { faceShape: "oval", faceShapeConfidence: 0.9, lengthToWidth: 1.62 };
+
+  assert.ok(scoreFrame(shallowFrame, {}, compact).components.faceCompatibility
+    > scoreFrame(tallFrame, {}, compact).components.faceCompatibility);
+  assert.ok(scoreFrame(tallFrame, {}, long).components.faceCompatibility
+    > scoreFrame(shallowFrame, {}, long).components.faceCompatibility);
+});
+
+test("same square prior uses broad jaw geometry to prefer softer frame forms", () => {
+  const soft = { ...affordableFrame, sku: "DEMO-SOFT", shape: "round" };
+  const angular = { ...affordableFrame, sku: "DEMO-ANGULAR", shape: "rectangle" };
+  const balanced = { faceShape: "square", faceShapeConfidence: 0.9, jawToCheek: 0.86 };
+  const broad = { faceShape: "square", faceShapeConfidence: 0.9, jawToCheek: 0.97 };
+  const balancedGap = scoreFrame(soft, {}, balanced).components.faceCompatibility
+    - scoreFrame(angular, {}, balanced).components.faceCompatibility;
+  const broadGap = scoreFrame(soft, {}, broad).components.faceCompatibility
+    - scoreFrame(angular, {}, broad).components.faceCompatibility;
+
+  assert.ok(broadGap > balancedGap);
+
+  const narrow = { ...soft, sku: "A-NARROW", frame_width_mm: 126 };
+  const wide = { ...soft, sku: "Z-WIDE", frame_width_mm: 142 };
+  assert.deepEqual(rankFrames([narrow, wide], {}, balanced).map((item) => item.frame.sku), ["A-NARROW", "Z-WIDE"]);
+  assert.deepEqual(rankFrames([narrow, wide], {}, broad).map((item) => item.frame.sku), ["Z-WIDE", "A-NARROW"]);
+});
+
+test("geometry scoring is deterministic and missing metrics preserve legacy-only behavior", () => {
+  const vision = {
+    faceShape: "oval",
+    faceShapeConfidence: 0.85,
+    lengthToWidth: 1.52,
+    jawToCheek: 0.83,
+    foreheadToCheek: 0.95
+  };
+  assert.deepEqual(scoreFrame(affordableFrame, {}, vision), scoreFrame(affordableFrame, {}, vision));
+  assert.equal(
+    scoreFrame(affordableFrame, {}, { faceShape: "oval", faceShapeConfidence: 0.85 }).components.faceCompatibility,
+    17.2
+  );
+});
+
+test("low confidence proportionally reduces geometry adjustment", () => {
+  const tall = { ...affordableFrame, sku: "DEMO-TALL-CONFIDENCE", lens_height_mm: 45 };
+  const shallow = { ...affordableFrame, sku: "DEMO-SHALLOW-CONFIDENCE", lens_height_mm: 32 };
+  const high = { faceShape: "oval", faceShapeConfidence: 0.9, lengthToWidth: 1.62 };
+  const low = { faceShape: "oval", faceShapeConfidence: 0.2, lengthToWidth: 1.62 };
+  const highGap = scoreFrame(tall, {}, high).components.faceCompatibility
+    - scoreFrame(shallow, {}, high).components.faceCompatibility;
+  const lowGap = scoreFrame(tall, {}, low).components.faceCompatibility
+    - scoreFrame(shallow, {}, low).components.faceCompatibility;
+
+  assert.ok(highGap > lowGap);
 });
 
 test("fit scoring treats narrow and wide PD mismatch symmetrically", () => {
