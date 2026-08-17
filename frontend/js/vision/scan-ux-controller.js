@@ -107,6 +107,21 @@ export function getScanGuidanceMessage({ phase = "", status = "", reasonCode = "
   if (code === "BAD_YAW" || /nhin thang|yaw/.test(normalizedDetail)) {
     return "Nh\u00ecn th\u1eb3ng v\u00e0o camera";
   }
+  if (code === "OFF_CENTER") {
+    return "\u0110\u01b0a khu\u00f4n m\u1eb7t v\u00e0o gi\u1eefa khung";
+  }
+  if (code === "IMAGE_BLURRY") {
+    return "Gi\u1eef camera \u1ed5n \u0111\u1ecbnh \u0111\u1ec3 khu\u00f4n m\u1eb7t r\u00f5 n\u00e9t";
+  }
+  if (["IMAGE_TOO_DARK", "IMAGE_TOO_BRIGHT", "IMAGE_LOW_CONTRAST"].includes(code)) {
+    return "\u0110i\u1ec1u ch\u1ec9nh \u00e1nh s\u00e1ng tr\u00ean khu\u00f4n m\u1eb7t";
+  }
+  if (code === "LOWER_FACE_UNSTABLE") {
+    return "Gi\u1eef r\u00f5 to\u00e0n b\u1ed9 c\u1eb1m v\u00e0 vi\u1ec1n h\u00e0m";
+  }
+  if (code === "LOW_CONFIDENCE") {
+    return "Gi\u1eef khu\u00f4n m\u1eb7t r\u00f5 v\u00e0 \u1ed5n \u0111\u1ecbnh";
+  }
   if (phase === "CHECK_DISTANCE" || status === "prompt" || /khoang cach|khung/.test(normalizedPrompt)) {
     return "\u0110\u01b0a khu\u00f4n m\u1eb7t v\u00e0o gi\u1eefa khung";
   }

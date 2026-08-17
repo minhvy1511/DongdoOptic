@@ -48,7 +48,7 @@ export function drawCalibrationGuide(canvas, landmarks = null, scanState = null,
   const activeRenderContext = renderContext || getFallbackRenderContext(canvas);
   const faceBox = landmarks?.length ? getLandmarkBox(landmarks, activeRenderContext) : null;
   const contourPoints = getFaceContourPoints(landmarks, faceOvalConnections, activeRenderContext);
-  const guideBox = getFixedGuideBox(width, height);
+  const guideBox = getVisibleGuideBox(width, height);
   const centerX = guideBox.centerX;
   const centerY = guideBox.centerY;
   const guideWidth = guideBox.width;
@@ -318,9 +318,11 @@ export function getVisibleFaceCenterOffsets(landmarks = [], renderContext = null
     return null;
   }
 
-  const guideBox = getFixedGuideBox(destinationWidth, destinationHeight);
+  const guideBox = getVisibleGuideBox(destinationWidth, destinationHeight);
   const signedOffsetX = (faceBox.centerX - guideBox.centerX) / destinationWidth;
   const signedOffsetY = (faceBox.centerY - guideBox.centerY) / destinationHeight;
+  const guideOffsetX = Math.abs(faceBox.centerX - guideBox.centerX) / guideBox.width;
+  const guideOffsetY = Math.abs(faceBox.centerY - guideBox.centerY) / guideBox.height;
   return {
     centerOffsetX: Math.abs(signedOffsetX),
     centerOffsetY: Math.abs(signedOffsetY),
@@ -330,6 +332,10 @@ export function getVisibleFaceCenterOffsets(landmarks = [], renderContext = null
     faceCenterY: faceBox.centerY,
     guideCenterX: guideBox.centerX,
     guideCenterY: guideBox.centerY,
+    guideWidth: guideBox.width,
+    guideHeight: guideBox.height,
+    guideOffsetX,
+    guideOffsetY,
     mirrored: Boolean(renderContext.mirrored)
   };
 }
@@ -512,7 +518,7 @@ function drawContourProgress(context, points, progress) {
   }
 }
 
-function getFixedGuideBox(canvasWidth, canvasHeight) {
+export function getVisibleGuideBox(canvasWidth, canvasHeight) {
   const guideWidth = canvasWidth * 0.62;
   const guideHeight = canvasHeight * 0.78;
   const centerX = canvasWidth / 2;

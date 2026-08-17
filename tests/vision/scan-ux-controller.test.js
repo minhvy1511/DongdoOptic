@@ -84,6 +84,9 @@ test("guidance maps quality reasons to one concise message", () => {
   assert.equal(getScanGuidanceMessage({ reasonCode: "TOO_FAR" }), "Đưa khuôn mặt gần hơn");
   assert.equal(getScanGuidanceMessage({ reasonCode: "BAD_ROLL" }), "Giữ đầu thẳng");
   assert.equal(getScanGuidanceMessage({ reasonCode: "BAD_YAW" }), "Nhìn thẳng vào camera");
+  assert.equal(getScanGuidanceMessage({ status: "prompt", reasonCode: "OFF_CENTER" }), "Đưa khuôn mặt vào giữa khung");
+  assert.equal(getScanGuidanceMessage({ status: "prompt", reasonCode: "IMAGE_BLURRY" }), "Giữ camera ổn định để khuôn mặt rõ nét");
+  assert.equal(getScanGuidanceMessage({ status: "prompt", reasonCode: "LOWER_FACE_UNSTABLE" }), "Giữ rõ toàn bộ cằm và viền hàm");
   assert.equal(getScanGuidanceMessage({ status: "hold" }), "Giữ nguyên trong giây lát");
 });
 

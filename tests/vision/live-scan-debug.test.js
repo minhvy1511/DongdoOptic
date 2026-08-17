@@ -11,10 +11,21 @@ const blockerSnapshot = {
   progress: 0,
   gatePassed: false,
   reasonCode: "OFF_CENTER",
-  centerSourceX: 0.021,
-  centerSourceY: -0.014,
-  centerRenderedX: 0.083,
-  centerRenderedY: -0.025,
+  sourceFaceCenterX: 0.51,
+  sourceFaceCenterY: 0.49,
+  faceCenterRenderedX: 186,
+  faceCenterRenderedY: 347,
+  guideCenterRenderedX: 195,
+  guideCenterRenderedY: 343,
+  guideWidth: 241.8,
+  guideHeight: 546,
+  centerDx: 0.037,
+  centerDy: 0.007,
+  centerLimitX: 0.258,
+  centerLimitY: 0.205,
+  centerPassed: false,
+  distanceStatus: "PASS",
+  posePassed: true,
   coverage: 0.31,
   yaw: 2.1,
   roll: 0.7,
@@ -25,7 +36,17 @@ const blockerSnapshot = {
   lowerFacePassed: true,
   usableSampleCount: 0,
   holdElapsedMs: 0,
-  burstSampleCount: 0
+  burstSampleCount: 0,
+  burstRequired: 8,
+  videoWidth: 1280,
+  videoHeight: 720,
+  renderedWidth: 390,
+  renderedHeight: 700,
+  canvasWidth: 390,
+  canvasHeight: 700,
+  cropOffsetX: -427.2,
+  cropOffsetY: 0,
+  mirror: true
 };
 
 test("debug overlay receives the exact current blocker and requested metrics", () => {
@@ -39,11 +60,13 @@ test("debug overlay receives the exact current blocker and requested metrics", (
   controller.update(blockerSnapshot);
 
   assert.match(overlay.textContent, /STATE: CENTERING/);
-  assert.match(overlay.textContent, /GATE: FAIL/);
+  assert.match(overlay.textContent, /CENTER: FAIL/);
   assert.match(overlay.textContent, /BLOCKER: OFF_CENTER/);
-  assert.match(overlay.textContent, /centerRendered: x=0\.083 y=-0\.025/);
+  assert.match(overlay.textContent, /dx: 0\.037 limitX: 0\.258/);
+  assert.match(overlay.textContent, /faceRendered: x=186\.000 y=347\.000/);
+  assert.match(overlay.textContent, /guideRendered: x=195\.000 y=343\.000/);
   assert.match(overlay.textContent, /coverage: 0\.310/);
-  assert.match(overlay.textContent, /lowerFace: PASS/);
+  assert.match(overlay.textContent, /LOWER_FACE: PASS/);
 });
 
 test("disabled debug mode mounts nothing and does not mutate scan input", () => {
@@ -94,20 +117,31 @@ test("formatter exposes only the compact approved field set", () => {
   assert.deepEqual(lines.map((line) => line.split(":", 1)[0]), [
     "STATE",
     "progress",
-    "GATE",
+    "CENTER",
+    "dx",
+    "dy",
+    "DISTANCE",
+    "POSE",
+    "QUALITY",
+    "LOWER_FACE",
+    "BURST",
     "BLOCKER",
-    "centerSource",
-    "centerRendered",
+    "faceSource",
+    "faceRendered",
+    "guideRendered",
+    "guideSize",
+    "video",
+    "rendered",
+    "canvas",
+    "crop",
+    "mirror",
     "coverage",
     "yaw",
     "roll",
     "brightness",
     "contrast",
     "sharpness",
-    "imageQuality",
-    "lowerFace",
     "usableSamples",
-    "holdElapsedMs",
-    "burstSamples"
+    "holdElapsedMs"
   ]);
 });

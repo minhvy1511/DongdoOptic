@@ -9,7 +9,10 @@ import {
   mapNormalizedPointToRenderedVideo,
   resizeCanvasToVideo
 } from "../../frontend/js/drawing.js";
-import { evaluateScanFrameQuality } from "../../frontend/js/vision/quality-gate.js";
+import {
+  evaluateScanFrameQuality,
+  getBurstSampleRejectionReason
+} from "../../frontend/js/vision/quality-gate.js";
 
 function makeContext() {
   return {
@@ -222,6 +225,8 @@ test("mobile portrait visible guide center passes after object-fit cover crop", 
   assert.ok(context.cropOffsetX < 0);
   assert.ok(center.centerOffsetX < 0.001);
   assert.ok(center.centerOffsetY < 0.001);
+  assert.ok(center.guideOffsetX < 0.001);
+  assert.ok(center.guideOffsetY < 0.001);
 });
 
 test("mirrored front preview preserves analysis landmarks and visual center alignment", () => {
@@ -240,6 +245,7 @@ test("mirrored front preview preserves analysis landmarks and visual center alig
   const center = getVisibleFaceCenterOffsets(landmarks, context);
 
   assert.ok(center.centerOffsetX < 0.001);
+  assert.ok(center.guideOffsetX < 0.001);
   assert.deepEqual(landmarks, before);
 });
 
@@ -261,7 +267,9 @@ test("clearly off-center rendered face fails center gate while centered face can
       confidence: 0.8,
       coverage: 0.18,
       centerOffsetX: center.centerOffsetX,
-      centerOffsetY: center.centerOffsetY
+      centerOffsetY: center.centerOffsetY,
+      centerGuideOffsetX: center.guideOffsetX,
+      centerGuideOffsetY: center.guideOffsetY
     }
   });
   const step = { key: "center", targetYaw: 0, tolerance: 8 };
@@ -269,6 +277,62 @@ test("clearly off-center rendered face fails center gate while centered face can
 
   assert.equal(evaluateScanFrameQuality({ step, analysis: makeAnalysis(centered), pose, faceCount: 1 }).ready, true);
   assert.equal(evaluateScanFrameQuality({ step, analysis: makeAnalysis(offCenter), pose, faceCount: 1 }).reasonCode, "OFF_CENTER");
+});
+
+test("portrait center gate recovers immediately after horizontal or vertical failure", () => {
+  const context = {
+    ...computeObjectFitTransform({
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      destinationWidth: 390,
+      destinationHeight: 700,
+      objectFit: "cover"
+    }),
+    mirrored: true
+  };
+  const step = { key: "center", targetYaw: 0, tolerance: 8 };
+  const pose = { yawDeg: 0, rollDeg: 0 };
+  const evaluate = (x, y) => {
+    const center = getVisibleFaceCenterOffsets(makeFaceBoxLandmarks(x, y), context);
+    return evaluateScanFrameQuality({
+      step,
+      pose,
+      faceCount: 1,
+      analysis: {
+        quality: {
+          confidence: 0.8,
+          coverage: 0.18,
+          centerOffsetX: center.centerOffsetX,
+          centerOffsetY: center.centerOffsetY,
+          centerGuideOffsetX: center.guideOffsetX,
+          centerGuideOffsetY: center.guideOffsetY
+        }
+      }
+    });
+  };
+
+  assert.equal(evaluate(0.62, 0.49).reasonCode, "OFF_CENTER");
+  assert.equal(evaluate(0.5, 0.32).reasonCode, "OFF_CENTER");
+  assert.equal(evaluate(0.5, 0.49).ready, true);
+});
+
+test("burst acceptance uses visible guide offsets and ignores stale viewport offset", () => {
+  const sample = {
+    analysis: {
+      metrics: { lengthToWidth: 1.4 },
+      quality: {
+        confidence: 0.8,
+        coverage: 0.18,
+        centerOffsetX: 0.4,
+        centerOffsetY: 0.4,
+        centerGuideOffsetX: 0.01,
+        centerGuideOffsetY: 0.01
+      }
+    },
+    pose: { yawDeg: 0, rollDeg: 0 }
+  };
+
+  assert.equal(getBurstSampleRejectionReason(sample), "OK");
 });
 
 test("render mapping does not mutate raw landmarks", () => {

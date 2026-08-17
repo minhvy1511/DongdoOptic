@@ -33,21 +33,32 @@ export function formatLiveScanDebug(snapshot = {}) {
   return [
     `STATE: ${snapshot.state || "IDLE"}`,
     `progress: ${formatPercent(snapshot.progress)}`,
-    `GATE: ${snapshot.gatePassed ? "PASS" : "FAIL"}`,
+    `CENTER: ${formatPass(snapshot.centerPassed)}`,
+    `dx: ${formatNumber(snapshot.centerDx)} limitX: ${formatNumber(snapshot.centerLimitX)}`,
+    `dy: ${formatNumber(snapshot.centerDy)} limitY: ${formatNumber(snapshot.centerLimitY)}`,
+    `DISTANCE: ${snapshot.distanceStatus || "-"}`,
+    `POSE: ${formatPass(snapshot.posePassed)}`,
+    `QUALITY: ${formatPass(imageQualityPass)}`,
+    `LOWER_FACE: ${formatPass(snapshot.lowerFacePassed)}`,
+    `BURST: ${Number(snapshot.burstSampleCount || 0)}/${Number(snapshot.burstRequired || 0)}`,
     `BLOCKER: ${snapshot.reasonCode || "-"}`,
-    `centerSource: ${formatPair(snapshot.centerSourceX, snapshot.centerSourceY)}`,
-    `centerRendered: ${formatPair(snapshot.centerRenderedX, snapshot.centerRenderedY)}`,
+    `faceSource: ${formatPair(snapshot.sourceFaceCenterX, snapshot.sourceFaceCenterY)}`,
+    `faceRendered: ${formatPair(snapshot.faceCenterRenderedX, snapshot.faceCenterRenderedY)}`,
+    `guideRendered: ${formatPair(snapshot.guideCenterRenderedX, snapshot.guideCenterRenderedY)}`,
+    `guideSize: ${formatDimension(snapshot.guideWidth, snapshot.guideHeight)}`,
+    `video: ${formatDimension(snapshot.videoWidth, snapshot.videoHeight)}`,
+    `rendered: ${formatDimension(snapshot.renderedWidth, snapshot.renderedHeight)}`,
+    `canvas: ${formatDimension(snapshot.canvasWidth, snapshot.canvasHeight)}`,
+    `crop: ${formatPair(snapshot.cropOffsetX, snapshot.cropOffsetY)}`,
+    `mirror: ${Boolean(snapshot.mirror)}`,
     `coverage: ${formatNumber(snapshot.coverage)}`,
     `yaw: ${formatNumber(snapshot.yaw, 1)}`,
     `roll: ${formatNumber(snapshot.roll, 1)}`,
     `brightness: ${formatNumber(snapshot.brightness, 1)}`,
     `contrast: ${formatNumber(snapshot.contrast, 1)}`,
     `sharpness: ${formatNumber(snapshot.sharpness, 1)}`,
-    `imageQuality: ${formatPass(imageQualityPass)}`,
-    `lowerFace: ${formatPass(snapshot.lowerFacePassed)}`,
     `usableSamples: ${Number(snapshot.usableSampleCount || 0)}`,
     `holdElapsedMs: ${Math.max(0, Math.round(Number(snapshot.holdElapsedMs || 0)))}`,
-    `burstSamples: ${Number(snapshot.burstSampleCount || 0)}`
   ].join("\n");
 }
 
@@ -57,6 +68,10 @@ function formatNumber(value, digits = 3) {
 
 function formatPair(x, y) {
   return `x=${formatNumber(x)} y=${formatNumber(y)}`;
+}
+
+function formatDimension(width, height) {
+  return `${Math.round(Number(width || 0))}x${Math.round(Number(height || 0))}`;
 }
 
 function formatPercent(value) {

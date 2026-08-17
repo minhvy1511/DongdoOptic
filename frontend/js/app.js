@@ -9,7 +9,7 @@ import {
   getRenderDiagnostics,
   getVisibleFaceCenterOffsets,
   resizeCanvasToVideo
-} from "./drawing.js?v=20260816-mobile-v73";
+} from "./drawing.js?v=20260817-mobile-v77";
 import { aggregateStableLengthToWidth, analyzeFaceShape, classifyFaceShapeFromMetrics, estimateHeadPose, getAnalysisDebugSummary, getClassificationDetail, getFaceShapeLabel } from "./face-analysis.js?v=20260729-85";
 import {
   buildRecommendationDiagnostics,
@@ -46,7 +46,7 @@ import {
 } from "./vision/device-profile.js?v=20260729-85";
 import { createLiveScanCoordinator } from "./vision/live-scan-coordinator.js?v=20260810-android1";
 import { MODEL_LOAD_STATES, createVisionModelLoader } from "./vision/model-loader.js?v=20260810-android1";
-import { createLiveScanDebugController } from "./vision/live-scan-debug.js?v=20260816-mobile-v74";
+import { createLiveScanDebugController } from "./vision/live-scan-debug.js?v=20260817-mobile-v77";
 import {
   buildScanDiagnosticsExport,
   downloadScanDiagnostics,
@@ -60,13 +60,13 @@ import {
   getScanGuidanceMessage,
   getScanHudView,
   isCanonicalVisionSuccess
-} from "./vision/scan-ux-controller.js?v=20260817-mobile-v76";
+} from "./vision/scan-ux-controller.js?v=20260817-mobile-v77";
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   buildCaptureQualityGate,
   evaluateScanFrameQuality,
   getVisionLimitations
-} from "./vision/quality-gate.js?v=20260817-mobile-v75";
+} from "./vision/quality-gate.js?v=20260817-mobile-v77";
 import { attachFrameImageQuality, averageImageQuality } from "./vision/image-quality.js?v=20260817-mobile-v75";
 import { buildConsentScopedVisionFeedback, isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js?v=20260729-85";
 import {
@@ -1073,6 +1073,8 @@ function applyLiveVisibleCenterQuality(analysis, landmarks) {
     sourceCenterOffsetY: analysis.quality.centerOffsetY,
     centerOffsetX: visibleCenter.centerOffsetX,
     centerOffsetY: visibleCenter.centerOffsetY,
+    centerGuideOffsetX: visibleCenter.guideOffsetX,
+    centerGuideOffsetY: visibleCenter.guideOffsetY,
     centerMeasurementSource: "rendered-visible-guide",
     visibleCenter
   };
@@ -5220,6 +5222,7 @@ function updateLiveScanDebugOverlay(payload = {}) {
   const imageQuality = quality.imageQuality || {};
   const lowerFace = quality.lowerFaceGeometry;
   const frameGate = autoScanState.lastFrameGate;
+  const visibleCenter = quality.visibleCenter || {};
   const state = autoScanState.phase === "RESULT"
     ? "COMPLETE"
     : autoScanState.centerBurstActive
@@ -5237,10 +5240,24 @@ function updateLiveScanDebugOverlay(payload = {}) {
     progress: autoScanState.progress,
     gatePassed,
     reasonCode,
-    centerSourceX: quality.sourceCenterOffsetX ?? quality.centerOffsetX,
-    centerSourceY: quality.sourceCenterOffsetY ?? quality.centerOffsetY,
+    sourceFaceCenterX: quality.faceBox?.centerX,
+    sourceFaceCenterY: quality.faceBox?.centerY,
     centerRenderedX: quality.centerOffsetX,
     centerRenderedY: quality.centerOffsetY,
+    faceCenterRenderedX: visibleCenter.faceCenterX,
+    faceCenterRenderedY: visibleCenter.faceCenterY,
+    guideCenterRenderedX: visibleCenter.guideCenterX,
+    guideCenterRenderedY: visibleCenter.guideCenterY,
+    guideWidth: visibleCenter.guideWidth,
+    guideHeight: visibleCenter.guideHeight,
+    centerDx: quality.centerGuideOffsetX,
+    centerDy: quality.centerGuideOffsetY,
+    centerLimitX: SCAN_QUALITY_CONFIG.centerGuideOffsetMaxX,
+    centerLimitY: SCAN_QUALITY_CONFIG.centerGuideOffsetMaxY,
+    centerPassed: quality.centerGuideOffsetX != null
+      && quality.centerGuideOffsetY != null
+      && Number(quality.centerGuideOffsetX) <= SCAN_QUALITY_CONFIG.centerGuideOffsetMaxX
+      && Number(quality.centerGuideOffsetY) <= SCAN_QUALITY_CONFIG.centerGuideOffsetMaxY,
     coverage: quality.coverage,
     yaw: pose.yawDeg,
     roll: pose.rollDeg,
@@ -5249,6 +5266,21 @@ function updateLiveScanDebugOverlay(payload = {}) {
     sharpness: imageQuality.sharpness,
     imageQualityPass: imageQuality.passed !== false && !imageQuality.reasonCode,
     lowerFacePassed: lowerFace?.available ? lowerFace.passed !== false : null,
+    distanceStatus: autoScanState.distance?.ready
+      ? "PASS"
+      : autoScanState.distance?.advisory ? "WARN" : "FAIL",
+    posePassed: Math.abs(Number(pose.yawDeg || 0)) <= SCAN_CONFIG.CENTER_YAW_TOLERANCE_DEG
+      && Math.abs(Number(pose.rollDeg || 0)) <= SCAN_CONFIG.ROLL_TOLERANCE_DEG,
+    videoWidth: video?.videoWidth,
+    videoHeight: video?.videoHeight,
+    renderedWidth: latestRenderContext?.destination?.width,
+    renderedHeight: latestRenderContext?.destination?.height,
+    canvasWidth: canvas?.clientWidth,
+    canvasHeight: canvas?.clientHeight,
+    cropOffsetX: latestRenderContext?.cropOffsetX,
+    cropOffsetY: latestRenderContext?.cropOffsetY,
+    mirror: latestRenderContext?.mirrored,
+    burstRequired: SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
     usableSampleCount: payload.usableSamples ?? autoScanState.usableSampleCount,
     holdElapsedMs: autoScanState.holdStartedAt ? performance.now() - autoScanState.holdStartedAt : 0,
     burstSampleCount: payload.acceptedFrames ?? autoScanState.burstSampleCount

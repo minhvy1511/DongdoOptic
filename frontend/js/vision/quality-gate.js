@@ -24,6 +24,8 @@ export const DEFAULT_SCAN_QUALITY_CONFIG = Object.freeze({
   rollToleranceDeg: 12,
   minFrameConfidence: 0.34,
   centerOffsetMax: 0.16,
+  centerGuideOffsetMaxX: 0.16 / 0.62,
+  centerGuideOffsetMaxY: 0.16 / 0.78,
   idealMinCoverage: 0.08,
   idealMaxCoverage: 0.42,
   minCoverage: 0.035,
@@ -31,6 +33,8 @@ export const DEFAULT_SCAN_QUALITY_CONFIG = Object.freeze({
   burstMinSamples: 8,
   burstMinConfidence: 0.25,
   burstCenterOffsetMax: 0.22,
+  burstCenterGuideOffsetMaxX: 0.22 / 0.62,
+  burstCenterGuideOffsetMaxY: 0.22 / 0.78,
   burstMinCoverage: 0.03,
   burstMaxCoverage: 0.66,
   minBrightness: 38,
@@ -86,11 +90,21 @@ export function evaluateScanFrameQuality({
   const quality = analysis.quality || {};
   const confidence = Number(quality.confidence || 0);
   const coverage = Number(quality.coverage || 0);
-  const centerOffsetX = Math.abs(Number(quality.centerOffsetX || 0));
-  const centerOffsetY = Math.abs(Number(quality.centerOffsetY || 0));
+  const hasRenderedGuideCenter = quality.centerGuideOffsetX != null
+    && quality.centerGuideOffsetY != null
+    && Number.isFinite(Number(quality.centerGuideOffsetX))
+    && Number.isFinite(Number(quality.centerGuideOffsetY));
+  const centerOffsetX = Math.abs(Number(
+    hasRenderedGuideCenter ? quality.centerGuideOffsetX : quality.centerOffsetX || 0
+  ));
+  const centerOffsetY = Math.abs(Number(
+    hasRenderedGuideCenter ? quality.centerGuideOffsetY : quality.centerOffsetY || 0
+  ));
   const imageQualityReason = getImageQualityRejectionReason(quality.imageQuality, config);
   const lowerFaceReason = getLowerFaceGeometryRejectionReason(quality, config);
-  const centerOk = centerOffsetX <= config.centerOffsetMax && centerOffsetY <= config.centerOffsetMax;
+  const centerLimitX = hasRenderedGuideCenter ? config.centerGuideOffsetMaxX : config.centerOffsetMax;
+  const centerLimitY = hasRenderedGuideCenter ? config.centerGuideOffsetMaxY : config.centerOffsetMax;
+  const centerOk = centerOffsetX <= centerLimitX && centerOffsetY <= centerLimitY;
   const distanceBand = getDistanceBand(coverage, config);
   const distanceOk = distanceBand !== "blocked";
   const imageOk = !imageQualityReason;
@@ -249,7 +263,23 @@ export function getBurstSampleRejectionReason(sample, config = DEFAULT_SCAN_QUAL
     return QUALITY_REASON_CODES.LOW_CONFIDENCE;
   }
 
-  if (centerOffsetX > config.burstCenterOffsetMax || centerOffsetY > config.burstCenterOffsetMax) {
+  const hasRenderedGuideCenter = quality.centerGuideOffsetX != null
+    && quality.centerGuideOffsetY != null
+    && Number.isFinite(Number(quality.centerGuideOffsetX))
+    && Number.isFinite(Number(quality.centerGuideOffsetY));
+  const burstOffsetX = Math.abs(Number(
+    hasRenderedGuideCenter ? quality.centerGuideOffsetX : centerOffsetX
+  ));
+  const burstOffsetY = Math.abs(Number(
+    hasRenderedGuideCenter ? quality.centerGuideOffsetY : centerOffsetY
+  ));
+  const burstLimitX = hasRenderedGuideCenter
+    ? config.burstCenterGuideOffsetMaxX
+    : config.burstCenterOffsetMax;
+  const burstLimitY = hasRenderedGuideCenter
+    ? config.burstCenterGuideOffsetMaxY
+    : config.burstCenterOffsetMax;
+  if (burstOffsetX > burstLimitX || burstOffsetY > burstLimitY) {
     return QUALITY_REASON_CODES.OFF_CENTER;
   }
 
