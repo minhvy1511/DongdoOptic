@@ -127,6 +127,21 @@ test("ranked products become customer cards and failure preserves legacy fallbac
   assert.equal(buildCustomerFrameRecommendations({ status: "error" }, legacy), legacy);
 });
 
+test("customer cards preserve ranking order and expose an actual scoring reason", () => {
+  const topProducts = [
+    { ...rankedProduct("A", "Model A", "oval", 90), reasons: ["Gọng đang khả dụng để tư vấn."], components: { availability: 15, faceCompatibility: 18, fit: 12.4 } },
+    { ...rankedProduct("B", "Model B", "round", 89), reasons: ["Gọng đang khả dụng để tư vấn.", "Chất liệu/phong cách phù hợp nhu cầu sử dụng."], components: { availability: 15, purpose: 13 } },
+    { ...rankedProduct("C", "Model C", "square", 88), reasons: [], components: { availability: 15, fit: 17 } }
+  ];
+  const cards = buildCustomerFrameRecommendations({ status: "ready", topProducts });
+
+  assert.deepEqual(cards.map((card) => card.sku), ["A", "B", "C"]);
+  assert.match(cards[0].reason, /tương thích khuôn mặt/);
+  assert.equal(cards[1].reason, "Chất liệu/phong cách phù hợp nhu cầu sử dụng.");
+  assert.match(cards[2].reason, /fitting/);
+  assert.deepEqual(cards[0].ranking.components, topProducts[0].components);
+});
+
 test("new ranking request prevents stale customer Top 3 from applying", () => {
   const guard = createFrameRankingRequestGuard();
   const first = guard.begin();

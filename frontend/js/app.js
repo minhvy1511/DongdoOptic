@@ -137,6 +137,10 @@ import {
   runShadowFrameRanking
 } from "./frame-ranking-adapter.js?v=20260817-frame-top3";
 import { buildFrameRankingDebugSummary } from "./frame-ranking-debug.js?v=20260816-p05";
+import {
+  buildConsultationContext as buildScanConsultationContext,
+  updateConsultationContextRanking
+} from "./scan-consultation-context.js?v=20260817-consult-v76";
 
 const video = document.getElementById("webcam");
 const uploadedFaceImage = document.getElementById("uploadedFaceImage");
@@ -303,6 +307,8 @@ let latestCameraDebug = {};
 let latestModelDebug = {};
 let latestRecommendationDebug = null;
 let latestFrameRankingShadow = null;
+let latestScanConsultationContext = null;
+let latestV3ShadowScan = null;
 const frameRankingRequestGuard = createFrameRankingRequestGuard();
 let latestRenderDebug = {};
 let latestDebugLandmarks = null;
@@ -544,6 +550,8 @@ function startAutoScanFlow(reason = "auto") {
   acceptedScanCommit.reset();
   frameRankingRequestGuard.invalidate();
   latestFrameRankingShadow = null;
+  latestScanConsultationContext = null;
+  latestV3ShadowScan = null;
   latestRecommendations = [];
   const token = autoScanState.token + 1;
   autoScanState = createAutoScanState();
@@ -1388,7 +1396,7 @@ function finalizeMultiAngleScan() {
     return;
   }
 
-  recordCompletedV3ShadowScan(finalAnalysis, autoScanState.captureList);
+  latestV3ShadowScan = recordCompletedV3ShadowScan(finalAnalysis, autoScanState.captureList);
 
   latestAnalysis = finalAnalysis;
   latestAiFaceShape = finalAnalysis.faceShape_ai;
@@ -1405,6 +1413,13 @@ function finalizeMultiAngleScan() {
     confirmedFaceShapeSource,
     autoScanState
   });
+  if (accepted) {
+    latestScanConsultationContext = buildCurrentScanConsultationContext({
+      scanId: `${ensureCurrentSessionCode()}:${autoScanState.token}:${Date.now()}`,
+      v3Shadow: latestV3ShadowScan
+    });
+    renderCustomerResult();
+  }
   const committed = acceptedScanCommit.commit({
     accepted,
     stopScan: stopCameraAfterAcceptedScan,
@@ -1916,6 +1931,28 @@ function stampCurrentResultContext() {
   }
 }
 
+function buildCurrentScanConsultationContext({ scanId = "", v3Shadow = latestV3ShadowScan } = {}) {
+  const preferences = readPreferences();
+  const profiles = buildFrameScoringProfiles({
+    customer: readCustomerSnapshot(),
+    preferences,
+    visionAnalysis: latestAnalysis,
+    confirmedFaceShape,
+    aiFaceShape: latestAiFaceShape
+  });
+  return buildScanConsultationContext({
+    scanId,
+    sessionId: ensureCurrentSessionCode(),
+    legacyFaceShape: confirmedFaceShape || latestAiFaceShape,
+    legacyConfidence: latestAnalysis?.quality?.confidence,
+    v3Shadow,
+    faceMetrics: latestAnalysis?.metrics || {},
+    rankingProfile: profiles,
+    rankedTopProducts: latestRecommendations,
+    productSource: "legacy"
+  });
+}
+
 function getAutoConsultationContextKey() {
   const context = getCurrentConsultationContext();
   const shape = confirmedFaceShape || "";
@@ -1990,6 +2027,8 @@ function resetVolatileConsultationState({ keepPersisted = false } = {}) {
   latestRecommendations = [];
   latestLensRecommendations = [];
   latestFrameRankingShadow = null;
+  latestScanConsultationContext = null;
+  latestV3ShadowScan = null;
   latestResultContext = null;
   latestRecommendationContext = null;
   consultationSaveError = "";
@@ -3060,6 +3099,13 @@ function renderStaticImageResults(results) {
   drawStaticLandmarkOverlay(landmarks);
   renderMetricsV2(finalAnalysis.metrics, finalAnalysis.quality, finalAnalysis.diagnostics);
   applyAnalysisConfidence(finalAnalysis, true);
+  if (confirmedFaceShape) {
+    latestScanConsultationContext = buildCurrentScanConsultationContext({
+      scanId: `${ensureCurrentSessionCode()}:image:${Date.now()}`,
+      v3Shadow: null
+    });
+    renderCustomerResult();
+  }
   renderConfidenceNotice(finalAnalysis, getConfidenceState(finalAnalysis), false, "Kết quả lấy từ ảnh tĩnh. Hãy xác nhận trước khi tư vấn.");
   updateCameraStatus(1, finalAnalysis);
   syncCurrentCustomer("customerUpdated");
@@ -3652,6 +3698,9 @@ function renderCustomerResult() {
   const directAdvice = manualConsultationMode && !shape
     ? getManualDirectFrameAdvice(preferences)
     : getDirectFrameAdvice(latestAnalysis?.metrics || {}, confirmedFaceShape || latestAiFaceShape);
+  const scanAdviceContext = latestScanConsultationContext?.sessionId === currentSessionCode
+    ? latestScanConsultationContext
+    : null;
   const confidenceState = latestAnalysis ? getConfidenceState(latestAnalysis) : { level: "low" };
   const canShowAiShape = Boolean(latestAiFaceShape && latestAiFaceShape !== "unknown");
   const sampleText = diagnostics.sampleCount ? `${diagnostics.sampleCount}/${diagnostics.totalSamples || diagnostics.sampleCount} khung` : "";
@@ -3661,7 +3710,7 @@ function renderCustomerResult() {
   const resultLabel = manualConsultationMode && !shape
     ? directAdvice.headline
     : shape
-    ? directAdvice.headline
+    ? scanAdviceContext?.headline || directAdvice.headline
     : confidenceState.level === "low"
       ? "Chưa đủ dữ liệu"
       : directAdvice.headline;
@@ -3672,7 +3721,7 @@ function renderCustomerResult() {
   customerResultSummary.textContent = manualConsultationMode && !shape
     ? directAdvice.summary
     : shape
-    ? directAdvice.summary
+    ? scanAdviceContext?.adviceBullets?.join(" ") || directAdvice.summary
     : canShowAiShape
       ? `${directAdvice.summary} ${[sampleText, consistencyText].filter(Boolean).join(" · ")}.`
       : `AI chưa đủ dữ liệu để tư vấn gọng. Hãy chụp lại rõ hơn.`;
@@ -6778,6 +6827,20 @@ function updateAdvice() {
   latestRecommendations = manualConsultationMode && !adviceFaceShape
     ? getManualFrameRecommendations(preferences)
     : getFrameRecommendations(adviceFaceShape);
+  if (latestScanConsultationContext) {
+    latestScanConsultationContext = updateConsultationContextRanking(latestScanConsultationContext, {
+      scanId: latestScanConsultationContext.scanId,
+      rankingProfile: buildFrameScoringProfiles({
+        customer: readCustomerSnapshot(),
+        preferences,
+        visionAnalysis: latestAnalysis,
+        confirmedFaceShape,
+        aiFaceShape: latestAiFaceShape
+      }),
+      rankedTopProducts: latestRecommendations,
+      productSource: "legacy"
+    });
+  }
   latestRecommendationContext = latestResultContext || getCurrentConsultationContext();
   runFrameRankingShadow(preferences, latestRecommendations);
   renderRecommendations(enrichFrameRecommendations(latestRecommendations, preferences), !latestAnalysis && !manualConsultationMode);
@@ -6787,6 +6850,7 @@ function updateAdvice() {
 
 function runFrameRankingShadow(preferences, legacyRecommendations) {
   const requestId = frameRankingRequestGuard.begin();
+  const scanContextId = latestScanConsultationContext?.scanId || "";
   latestFrameRankingRequestId = requestId;
   runShadowFrameRanking({
     customer: readCustomerSnapshot(),
@@ -6798,9 +6862,18 @@ function runFrameRankingShadow(preferences, legacyRecommendations) {
     debugEnabled: VISION_DEBUG_ENABLED
   }).then((result) => {
     if (!frameRankingRequestGuard.isCurrent(requestId)) return;
+    if (scanContextId && latestScanConsultationContext?.scanId !== scanContextId) return;
     latestFrameRankingShadow = result;
     if (result.status === "ready" && result.topProducts.length) {
       latestRecommendations = buildCustomerFrameRecommendations(result, legacyRecommendations);
+      if (scanContextId) {
+        latestScanConsultationContext = updateConsultationContextRanking(latestScanConsultationContext, {
+          scanId: scanContextId,
+          rankingProfile: result.profiles,
+          rankedTopProducts: result.topProducts,
+          productSource: "ranked"
+        });
+      }
       renderRecommendations(
         enrichFrameRecommendations(latestRecommendations, preferences),
         !latestAnalysis && !manualConsultationMode
@@ -6975,6 +7048,9 @@ function renderConsultationSummary() {
   const directAdvice = isManualConsultation
     ? getManualDirectFrameAdvice(preferences)
     : getDirectFrameAdvice(latestAnalysis?.metrics || {}, summaryFaceShape);
+  const scanAdviceContext = latestScanConsultationContext?.sessionId === currentSessionCode
+    ? latestScanConsultationContext
+    : null;
   const publicEvidence = isManualConsultation
     ? [getPublicAdviceSourceLabel()]
     : getPublicAdviceEvidence(latestAnalysis?.metrics || {});
@@ -6991,20 +7067,28 @@ function renderConsultationSummary() {
     ? [presentation.primary, ...presentation.alternatives].filter(Boolean)
     : (isManualConsultation ? getManualFrameRecommendations(preferences) : getFrameRecommendations(summaryFaceShape)))
     .slice(0, 3);
-  const trialPlan = buildFrameTrialPlan(directAdvice, topFrames, publicEvidence);
+  const consultationHeadline = scanAdviceContext?.headline || directAdvice.headline;
+  const consultationPrinciple = scanAdviceContext?.adviceBullets?.[0] || directAdvice.summary;
+  const trialPlan = buildFrameTrialPlan(
+    { ...directAdvice, headline: consultationHeadline },
+    topFrames,
+    publicEvidence
+  );
   const materialRecommendations = getMaterialRecommendations({
     faceShape: summaryFaceShape,
     preferences,
     prescription: customer.prescription || {},
     ageGroup: customer.age_group
   });
-  const summaryHighlights = uniqueList([
-    directAdvice.principle,
-    ...directAdvice.fit,
-    ...(isManualConsultation
-      ? [`Bắt đầu bằng ${topFrames.map((frame) => getFramePresentationLabel(frame.name)).join(", ")} để so nhanh cảm giác đeo.`]
-      : getSummaryHighlights(shapeAdvice, topFrames, preferences))
-  ]).slice(0, 5);
+  const summaryHighlights = scanAdviceContext?.adviceBullets?.length
+    ? scanAdviceContext.adviceBullets.slice(0, 5)
+    : uniqueList([
+        directAdvice.principle,
+        ...directAdvice.fit,
+        ...(isManualConsultation
+          ? [`Bắt đầu bằng ${topFrames.map((frame) => getFramePresentationLabel(frame.name)).join(", ")} để so nhanh cảm giác đeo.`]
+          : getSummaryHighlights(shapeAdvice, topFrames, preferences))
+      ]).slice(0, 5);
   const lensLine = latestLensRecommendations[0]
     ? formatLensDisplayName(latestLensRecommendations[0])
     : "Chưa cần chốt tròng, bổ sung đơn kính nếu có.";
@@ -7030,7 +7114,7 @@ function renderConsultationSummary() {
         <div class="summary-face-visual">
           <div class="face-icon large clean">${getFrameSketchSvg(topFrames[0]?.name || directAdvice.choose[0] || "", 0)}</div>
           <div>
-            <strong>${directAdvice.headline}</strong>
+            <strong>${consultationHeadline}</strong>
             <em>${isManualConsultation ? "Tư vấn thủ công, kiểm tra fit tại quầy" : (isDraft ? "Gợi ý từ VisionID, nhân viên kiểm tra fit khi thử gọng" : "Dùng trực tiếp để chọn gọng thử")}</em>
           </div>
         </div>
@@ -7048,6 +7132,7 @@ function renderConsultationSummary() {
               ${renderFrameReferenceVisual(frame.name, index)}
               <strong>${getFramePresentationLabel(frame.name)}</strong>
               <span>${frame.name}</span>
+              <small>${frame.reason || "Xếp hạng theo hồ sơ tư vấn hiện tại."}</small>
             </article>
           `).join("")}
         </div>
@@ -7081,7 +7166,7 @@ function renderConsultationSummary() {
     <div class="aesthetic-advice visual-advice">
       <div>
         <span>Nguyên tắc</span>
-        <strong>${directAdvice.summary}</strong>
+        <strong>${consultationPrinciple}</strong>
       </div>
       <div>
         <span>Nên chọn</span>

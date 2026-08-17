@@ -138,16 +138,40 @@ export function buildCustomerFrameRecommendations(result = {}, legacyFallback = 
   if (result.status !== "ready" || !result.topProducts?.length) {
     return legacyFallback;
   }
-  return result.topProducts.map(({ frame = {}, reasons = [], warnings = [] }) => ({
+  return result.topProducts.map(({ frame = {}, totalScore = 0, components = {}, reasons = [], warnings = [] }) => ({
     id: frame.sku || frame.model || frame.name,
     sku: frame.sku || "",
     model: frame.model || "",
     name: frame.name || frame.model || frame.sku || "Gọng kính",
     style: [frame.brand, frame.material, frame.shape].filter(Boolean).join(" · "),
-    reason: reasons[0] || "Sản phẩm có tổng điểm phù hợp cao với hồ sơ tư vấn hiện tại.",
+    reason: selectCustomerRankingReason(reasons, components),
     fitNote: warnings[0] || "Cần thử gọng thực tế để xác nhận độ vừa và vị trí đồng tử.",
+    ranking: {
+      totalScore,
+      components: { ...components },
+      reasons: [...reasons],
+      warnings: [...warnings]
+    },
     rankedProduct: frame
   }));
+}
+
+
+function selectCustomerRankingReason(reasons = [], components = {}) {
+  const specificReason = reasons.find((reason) => !/khả dụng|tồn kho/i.test(String(reason)));
+  if (specificReason) return specificReason;
+  const labels = {
+    faceCompatibility: "Form gọng có điểm tương thích khuôn mặt tốt trong hồ sơ hiện tại.",
+    fit: "Kích thước gọng có điểm fitting tốt trong hồ sơ hiện tại.",
+    prescription: "Thông số gọng phù hợp với nhu cầu đơn kính hiện tại.",
+    purpose: "Gọng phù hợp với mục đích sử dụng đã chọn.",
+    budget: "Gọng phù hợp với vùng ngân sách đã chọn.",
+    style: "Gọng phù hợp với sở thích kiểu dáng đã chọn."
+  };
+  const strongest = Object.entries(components)
+    .filter(([key, value]) => key !== "availability" && Number.isFinite(Number(value)))
+    .sort((left, right) => Number(right[1]) - Number(left[1]))[0]?.[0];
+  return labels[strongest] || reasons[0] || "Sản phẩm có tổng điểm phù hợp cao với hồ sơ tư vấn hiện tại.";
 }
 
 
