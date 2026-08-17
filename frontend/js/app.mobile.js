@@ -1,1 +1,1 @@
-import "./app.js?v=20260817-mobile-v76";
+import "./app.js?v=20260817-scan-export";

@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildCustomerFrameRecommendations,
   buildFrameScoringProfiles,
+  createFrameRankingRequestGuard,
+  deduplicateRankedProducts,
+  getFrameProductDedupKey,
   resetFrameProductsCache,
   runShadowFrameRanking
 } from "../../frontend/js/frame-ranking-adapter.js";
@@ -88,6 +92,51 @@ test("shadow ranking returns top 3 eligible products", async () => {
   assert.deepEqual(result.legacyRecommendations, ["Legacy oval"]);
 });
 
+test("duplicate model variants collapse before deterministic Top 3", () => {
+  const ranked = [
+    rankedProduct("A-RED", "Model A", "rectangle", 91),
+    rankedProduct("A-BLUE", "Model A", "rectangle", 90),
+    rankedProduct("B", "Model B", "oval", 89),
+    rankedProduct("C", "Model C", "round", 88)
+  ];
+
+  assert.deepEqual(
+    deduplicateRankedProducts(ranked, 3).map((item) => item.frame.sku),
+    ["A-RED", "B", "C"]
+  );
+  assert.equal(getFrameProductDedupKey(ranked[0].frame), "model:model a");
+});
+
+test("geometry key is used when model is absent", () => {
+  assert.equal(getFrameProductDedupKey({
+    sku: "A",
+    shape: "oval",
+    lens_width_mm: 51,
+    bridge_width_mm: 18,
+    frame_width_mm: 136
+  }), "geometry:oval|51|18|136");
+});
+
+test("ranked products become customer cards and failure preserves legacy fallback", () => {
+  const legacy = [{ name: "Legacy" }];
+  const ready = {
+    status: "ready",
+    topProducts: [rankedProduct("A", "Model A", "oval", 90)]
+  };
+  assert.equal(buildCustomerFrameRecommendations(ready, legacy)[0].sku, "A");
+  assert.equal(buildCustomerFrameRecommendations({ status: "error" }, legacy), legacy);
+});
+
+test("new ranking request prevents stale customer Top 3 from applying", () => {
+  const guard = createFrameRankingRequestGuard();
+  const first = guard.begin();
+  const second = guard.begin();
+  assert.equal(guard.isCurrent(first), false);
+  assert.equal(guard.isCurrent(second), true);
+  guard.invalidate();
+  assert.equal(guard.isCurrent(second), false);
+});
+
 
 test("catalog fetch failure fails safely without throwing", async () => {
   resetFrameProductsCache();
@@ -132,5 +181,23 @@ function availableFrame(sku, name, shape, price, styleTags) {
     image: "/frontend/assets/demo-frame.svg",
     available: true,
     style_tags: styleTags
+  };
+}
+
+function rankedProduct(sku, model, shape, totalScore) {
+  return {
+    frame: {
+      sku,
+      model,
+      name: `${model} ${sku}`,
+      shape,
+      available: true
+    },
+    eligible: true,
+    totalScore,
+    confidence: "medium",
+    components: {},
+    reasons: ["Ranked reason"],
+    warnings: []
   };
 }

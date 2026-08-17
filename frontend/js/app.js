@@ -48,6 +48,11 @@ import { createLiveScanCoordinator } from "./vision/live-scan-coordinator.js?v=2
 import { MODEL_LOAD_STATES, createVisionModelLoader } from "./vision/model-loader.js?v=20260810-android1";
 import { createLiveScanDebugController } from "./vision/live-scan-debug.js?v=20260816-mobile-v74";
 import {
+  buildScanDiagnosticsExport,
+  downloadScanDiagnostics,
+  isScanDiagnosticsExportEnabled
+} from "./vision/scan-diagnostics-export.js?v=20260817-scan-export";
+import {
   createAcceptedScanCommit,
   createAutoConsultationTransition,
   getGuideDistanceBand,
@@ -125,7 +130,12 @@ import {
   saveCustomer,
   todayInputValue
 } from "./customer-store.js?v=20260731-qa1";
-import { runShadowFrameRanking } from "./frame-ranking-adapter.js?v=20260816-p04";
+import {
+  buildFrameScoringProfiles,
+  buildCustomerFrameRecommendations,
+  createFrameRankingRequestGuard,
+  runShadowFrameRanking
+} from "./frame-ranking-adapter.js?v=20260817-frame-top3";
 import { buildFrameRankingDebugSummary } from "./frame-ranking-debug.js?v=20260816-p05";
 
 const video = document.getElementById("webcam");
@@ -293,6 +303,7 @@ let latestCameraDebug = {};
 let latestModelDebug = {};
 let latestRecommendationDebug = null;
 let latestFrameRankingShadow = null;
+const frameRankingRequestGuard = createFrameRankingRequestGuard();
 let latestRenderDebug = {};
 let latestDebugLandmarks = null;
 let latestRenderContext = null;
@@ -461,6 +472,8 @@ const liveScanDebugController = createLiveScanDebugController({
 });
 let visionDebugCameraButton = null;
 let visionDebugRenderButton = null;
+let visionDiagnosticsExportButton = null;
+let latestFrameRankingRequestId = null;
 
 function createImageDebugState() {
   return {
@@ -529,6 +542,9 @@ function startAutoScanFlow(reason = "auto") {
 
   resetAutoConsultationTransition("start-scan");
   acceptedScanCommit.reset();
+  frameRankingRequestGuard.invalidate();
+  latestFrameRankingShadow = null;
+  latestRecommendations = [];
   const token = autoScanState.token + 1;
   autoScanState = createAutoScanState();
   autoScanState.active = true;
@@ -1963,6 +1979,7 @@ function consultationSaveStateIsSaved() {
 }
 
 function resetVolatileConsultationState({ keepPersisted = false } = {}) {
+  frameRankingRequestGuard.invalidate();
   latestAnalysis = null;
   latestAiFaceShape = "";
   confirmedFaceShape = "";
@@ -5162,7 +5179,37 @@ function createLiveScanDebugOverlay() {
     "pointer-events:none"
   ].join(";");
   document.body.appendChild(visionDebugPanel);
+  ensureVisionDiagnosticsExportButton();
   return visionDebugPanel;
+}
+
+function ensureVisionDiagnosticsExportButton() {
+  if (!isScanDiagnosticsExportEnabled(window.location.search) || visionDiagnosticsExportButton) return;
+  visionDiagnosticsExportButton = createVisionDebugButton("Export scan diagnostics", "calc(46vh + 18px)");
+  visionDiagnosticsExportButton.addEventListener("click", exportCurrentScanDiagnostics);
+  document.body.appendChild(visionDiagnosticsExportButton);
+}
+
+function exportCurrentScanDiagnostics() {
+  const recentScans = getFaceShapeV3ShadowScans();
+  const latestV3Shadow = recentScans.at(-1) || null;
+  const profiles = latestFrameRankingShadow?.profiles || buildFrameScoringProfiles({
+    visionAnalysis: latestAnalysis,
+    confirmedFaceShape,
+    aiFaceShape: latestAiFaceShape
+  });
+  const payload = buildScanDiagnosticsExport({
+    timestamp: new Date().toISOString(),
+    visionProfile: profiles.visionProfile,
+    faceConfidence: latestAnalysis?.quality?.confidence,
+    faceMetrics: latestAnalysis?.metrics,
+    v3Shadow: latestV3Shadow,
+    rankingResult: latestFrameRankingShadow,
+    legacyRecommendations: latestFrameRankingShadow?.legacyRecommendations || [],
+    rankingRequestId: latestFrameRankingRequestId,
+    recentScans
+  });
+  downloadScanDiagnostics(payload);
 }
 
 function updateLiveScanDebugOverlay(payload = {}) {
@@ -6707,6 +6754,8 @@ function updateAdvice() {
 }
 
 function runFrameRankingShadow(preferences, legacyRecommendations) {
+  const requestId = frameRankingRequestGuard.begin();
+  latestFrameRankingRequestId = requestId;
   runShadowFrameRanking({
     customer: readCustomerSnapshot(),
     preferences,
@@ -6716,7 +6765,17 @@ function runFrameRankingShadow(preferences, legacyRecommendations) {
     legacyRecommendations,
     debugEnabled: VISION_DEBUG_ENABLED
   }).then((result) => {
+    if (!frameRankingRequestGuard.isCurrent(requestId)) return;
     latestFrameRankingShadow = result;
+    if (result.status === "ready" && result.topProducts.length) {
+      latestRecommendations = buildCustomerFrameRecommendations(result, legacyRecommendations);
+      renderRecommendations(
+        enrichFrameRecommendations(latestRecommendations, preferences),
+        !latestAnalysis && !manualConsultationMode
+      );
+      renderConsultationSummary();
+      updateWorkflowAssistant();
+    }
     updateVisionDebugPanel({ frameRankingShadow: result });
   });
 }

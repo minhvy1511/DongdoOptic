@@ -71,7 +71,10 @@ export async function runShadowFrameRanking({
       aiFaceShape
     });
     const frames = await getFrameProducts(fetchCatalog);
-    const topProducts = rankProducts(frames, customerProfile, visionProfile, { limit });
+    const rankedProducts = rankProducts(frames, customerProfile, visionProfile, {
+      limit: Math.max(frames.length, limit)
+    });
+    const topProducts = deduplicateRankedProducts(rankedProducts, limit);
 
     return {
       status: "ready",
@@ -101,6 +104,70 @@ export async function runShadowFrameRanking({
 }
 
 
+export function deduplicateRankedProducts(rankedProducts = [], limit = 3) {
+  const seen = new Set();
+  const unique = [];
+  for (const item of rankedProducts) {
+    const key = getFrameProductDedupKey(item?.frame || {});
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push({ ...item, rank: unique.length + 1 });
+    if (unique.length >= limit) break;
+  }
+  return unique;
+}
+
+
+export function getFrameProductDedupKey(frame = {}) {
+  const model = normalizeKeyPart(frame.model);
+  if (model) return `model:${model}`;
+
+  const geometry = [
+    normalizeKeyPart(frame.shape),
+    normalizeDimension(frame.lens_width_mm),
+    normalizeDimension(frame.bridge_width_mm),
+    normalizeDimension(frame.frame_width_mm)
+  ];
+  if (geometry.every(Boolean)) return `geometry:${geometry.join("|")}`;
+
+  return `sku:${normalizeKeyPart(frame.sku) || "unknown"}`;
+}
+
+
+export function buildCustomerFrameRecommendations(result = {}, legacyFallback = []) {
+  if (result.status !== "ready" || !result.topProducts?.length) {
+    return legacyFallback;
+  }
+  return result.topProducts.map(({ frame = {}, reasons = [], warnings = [] }) => ({
+    id: frame.sku || frame.model || frame.name,
+    sku: frame.sku || "",
+    model: frame.model || "",
+    name: frame.name || frame.model || frame.sku || "Gọng kính",
+    style: [frame.brand, frame.material, frame.shape].filter(Boolean).join(" · "),
+    reason: reasons[0] || "Sản phẩm có tổng điểm phù hợp cao với hồ sơ tư vấn hiện tại.",
+    fitNote: warnings[0] || "Cần thử gọng thực tế để xác nhận độ vừa và vị trí đồng tử.",
+    rankedProduct: frame
+  }));
+}
+
+
+export function createFrameRankingRequestGuard() {
+  let generation = 0;
+  return {
+    begin() {
+      generation += 1;
+      return generation;
+    },
+    isCurrent(requestId) {
+      return requestId === generation;
+    },
+    invalidate() {
+      generation += 1;
+    }
+  };
+}
+
+
 export function resetFrameProductsCache() {
   frameProductsPromise = null;
 }
@@ -121,6 +188,17 @@ function readVisionConfidence(analysis) {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return undefined;
   return numberValue > 1 ? numberValue / 100 : numberValue;
+}
+
+
+function normalizeKeyPart(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+
+function normalizeDimension(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? String(number) : "";
 }
 
 
