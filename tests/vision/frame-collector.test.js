@@ -105,6 +105,19 @@ test("selects usable burst samples and removes pose outliers", () => {
   assert.equal(result.fallbackUsed, false);
 });
 
+test("burst diagnostics expose the latest quality rejection reason", () => {
+  const result = selectBurstSamples({
+    samples: [
+      sample(0.8),
+      sample(0.8, { quality: { imageQuality: { available: true, passed: false, reasonCode: "IMAGE_BLURRY", brightness: 120, contrast: 40, sharpness: 8 } } })
+    ],
+    minSamples: 2
+  });
+
+  assert.equal(result.latestQualityRejectionReason, "IMAGE_BLURRY");
+  assert.equal(result.qualityRejectionReasons.IMAGE_BLURRY, 1);
+});
+
 test("falls back to highest-confidence frames when usable sample count is low", () => {
   const samples = [
     sample(0.2),

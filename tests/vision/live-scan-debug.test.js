@@ -37,7 +37,10 @@ const blockerSnapshot = {
   usableSampleCount: 0,
   holdElapsedMs: 0,
   burstSampleCount: 0,
+  acceptedSampleCount: 0,
   burstRequired: 8,
+  videoCurrentTime: 12.345,
+  frameTimestamp: 4567.8,
   videoWidth: 1280,
   videoHeight: 720,
   renderedWidth: 390,
@@ -67,6 +70,8 @@ test("debug overlay receives the exact current blocker and requested metrics", (
   assert.match(overlay.textContent, /guideRendered: x=195\.000 y=343\.000/);
   assert.match(overlay.textContent, /coverage: 0\.310/);
   assert.match(overlay.textContent, /LOWER_FACE: PASS/);
+  assert.match(overlay.textContent, /video\.currentTime: 12\.345/);
+  assert.match(overlay.textContent, /frame timestamp: 4567\.8/);
 });
 
 test("disabled debug mode mounts nothing and does not mutate scan input", () => {
@@ -122,9 +127,13 @@ test("formatter exposes only the compact approved field set", () => {
     "dy",
     "DISTANCE",
     "POSE",
-    "QUALITY",
+    "IMAGE",
     "LOWER_FACE",
+    "HOLD ms",
+    "ACCEPTED",
     "BURST",
+    "video.currentTime",
+    "frame timestamp",
     "BLOCKER",
     "faceSource",
     "faceRendered",
@@ -138,10 +147,5 @@ test("formatter exposes only the compact approved field set", () => {
     "coverage",
     "yaw",
     "roll",
-    "brightness",
-    "contrast",
-    "sharpness",
-    "usableSamples",
-    "holdElapsedMs"
   ]);
 });

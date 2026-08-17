@@ -23,7 +23,7 @@ import {
 } from "./recommendations.js?v=20260729-85";
 import { analyzeLensNeeds, getLensRecommendations } from "./lens-catalog.js?v=20260729-85";
 import { detectFaceLandmarksForImage, detectFaceLandmarksForVideo } from "./vision/face-tracking-adapter.js?v=20260729-85";
-import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js?v=20260816-scanux3";
+import { collectFrameBurst, createInitialFallbackSample, selectBurstSamples } from "./vision/frame-collector.js?v=20260817-mobile-v77-complete";
 import { DISTANCE_LANDMARKS as VISION_DISTANCE_LANDMARKS } from "./vision/landmark-map.js?v=20260729-85";
 import {
   getFaceShapeV3ShadowScans,
@@ -46,7 +46,7 @@ import {
 } from "./vision/device-profile.js?v=20260729-85";
 import { createLiveScanCoordinator } from "./vision/live-scan-coordinator.js?v=20260810-android1";
 import { MODEL_LOAD_STATES, createVisionModelLoader } from "./vision/model-loader.js?v=20260810-android1";
-import { createLiveScanDebugController } from "./vision/live-scan-debug.js?v=20260817-mobile-v77";
+import { createLiveScanDebugController } from "./vision/live-scan-debug.js?v=20260817-mobile-v77-complete";
 import {
   buildScanDiagnosticsExport,
   downloadScanDiagnostics,
@@ -68,6 +68,7 @@ import {
   getVisionLimitations
 } from "./vision/quality-gate.js?v=20260817-mobile-v77";
 import { attachFrameImageQuality, averageImageQuality } from "./vision/image-quality.js?v=20260817-mobile-v75";
+import { advanceScanHold, hasVideoFrameAdvanced, isMobileScanViewport } from "./vision/scan-hold-controller.js?v=20260817-mobile-v77-complete";
 import { buildConsentScopedVisionFeedback, isExplicitConsentGranted, purgeStoredVisionAnalysis } from "./vision/privacy-policy.js?v=20260729-85";
 import {
   clearOperationDraft,
@@ -505,6 +506,9 @@ function createAutoScanState() {
     stepStartedAt: 0,
     stepTimeoutMs: 0,
     holdStartedAt: 0,
+    holdLastReadyAt: 0,
+    holdPauseStartedAt: 0,
+    holdGraceActive: false,
     holdStepKey: "",
     transitionUntil: 0,
     progress: 0,
@@ -521,6 +525,8 @@ function createAutoScanState() {
     lastFrameGate: null,
     usableSampleCount: 0,
     burstSampleCount: 0,
+    burstAcceptedSampleCount: 0,
+    burstBlocker: "",
     lastPose: null,
     lastAnalysis: null,
     lastDistanceCheckedAt: 0,
@@ -637,6 +643,9 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
     autoScanState.status = canContinueWithWarning && !autoScanState.distance.ready ? "near" : autoScanState.distance.status;
     autoScanState.progress = autoScanState.distance.ready ? 1 : (canContinueWithWarning ? 0.68 : 0);
     autoScanState.holdStartedAt = 0;
+    autoScanState.holdLastReadyAt = 0;
+    autoScanState.holdPauseStartedAt = 0;
+    autoScanState.holdGraceActive = false;
     autoScanState.holdStepKey = "";
 
     if (autoScanState.distance.ready || canContinueWithWarning) {
@@ -698,22 +707,36 @@ function updateAutoScanFlow(analysis, landmarks, faceCount) {
       : ""
   });
 
-  if (condition.ready) {
-    if (autoScanState.holdStepKey !== captureStep.key) {
-      autoScanState.holdStartedAt = 0;
-      autoScanState.holdStepKey = captureStep.key;
-    }
+  if (autoScanState.holdStepKey !== captureStep.key) {
+    autoScanState.holdStartedAt = 0;
+    autoScanState.holdLastReadyAt = 0;
+    autoScanState.holdPauseStartedAt = 0;
+    autoScanState.holdGraceActive = false;
+    autoScanState.holdStepKey = captureStep.key;
+  }
+  const holdState = advanceScanHold({
+    holdStartedAt: autoScanState.holdStartedAt,
+    lastReadyAt: autoScanState.holdLastReadyAt,
+    pauseStartedAt: autoScanState.holdPauseStartedAt,
+    progress: autoScanState.progress
+  }, {
+    now,
+    ready: condition.ready,
+    reasonCode: condition.reasonCode,
+    mobile: isMobileScanViewport(),
+    holdDurationMs: SCAN_CONFIG.HOLD_DURATION_MS
+  });
+  autoScanState.holdStartedAt = holdState.holdStartedAt;
+  autoScanState.holdLastReadyAt = holdState.lastReadyAt;
+  autoScanState.holdPauseStartedAt = holdState.pauseStartedAt;
+  autoScanState.holdGraceActive = holdState.bridged;
 
-    if (!autoScanState.holdStartedAt) {
-      autoScanState.holdStartedAt = now;
-    }
-    autoScanState.progress = clamp01((now - autoScanState.holdStartedAt) / SCAN_CONFIG.HOLD_DURATION_MS);
-
-    if (autoScanState.progress >= 1) {
+  if (condition.ready || holdState.bridged) {
+    autoScanState.progress = holdState.progress;
+    if (condition.ready && holdState.complete) {
       captureScanStep(captureStep, analysis, pose, { promptedStep: step });
     }
   } else {
-    autoScanState.holdStartedAt = 0;
     autoScanState.holdStepKey = "";
     autoScanState.progress = ["TOO_CLOSE", "TOO_FAR"].includes(condition.reasonCode)
       ? 0
@@ -976,6 +999,8 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
   const token = autoScanState.token;
   autoScanState.usableSampleCount = 0;
   autoScanState.burstSampleCount = 0;
+  autoScanState.burstAcceptedSampleCount = 0;
+  autoScanState.burstBlocker = "";
   autoScanState.centerBurstActive = true;
   autoScanState.status = "hold";
   autoScanState.progress = 0.5;
@@ -996,8 +1021,21 @@ async function captureCenterBurst(step, initialAnalysis, initialPose, options = 
   autoScanState.centerBurstActive = false;
   const stableCapture = buildCenterBurstCapture(samples, step, initialAnalysis, initialPose);
   if (!stableCapture) {
+    const burstSelection = selectBurstSamples({
+      samples,
+      minSamples: SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
+      config: SCAN_QUALITY_CONFIG
+    });
+    const reasonCode = burstSelection.latestQualityRejectionReason
+      || samples.captureStats?.lastRejectionReason
+      || Object.keys(burstSelection.qualityRejectionReasons || {})[0]
+      || Object.keys(samples.captureStats?.rejectionReasons || {})[0]
+      || "INSUFFICIENT_SAMPLES";
     autoScanState.status = "near";
     autoScanState.progress = 0.25;
+    autoScanState.reasonCode = reasonCode;
+    autoScanState.lastFrameGate = { ready: false, near: false, reasonCode };
+    autoScanState.burstBlocker = reasonCode;
     autoScanState.detail = "Chưa lấy được khung thẳng rõ, giữ mặt giữa camera thêm chút nữa.";
     updateScanHud();
     return;
@@ -1048,16 +1086,18 @@ async function captureCenterBurstSamples(targetFrames, durationMs) {
       landmarks
     ),
     estimatePose: (landmarks) => estimateHeadPose(landmarks),
-    shouldStopEarly: (samples) => {
-      if (VISION_DEBUG_ENABLED) {
-        const burstSelection = selectBurstSamples({
-          samples,
-          minSamples: SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
-          config: SCAN_QUALITY_CONFIG
-        });
-        autoScanState.usableSampleCount = burstSelection.usableSamples.length;
-        autoScanState.burstSampleCount = samples.length;
-      }
+    shouldStopEarly: (samples, captureStats) => {
+      const burstSelection = selectBurstSamples({
+        samples,
+        minSamples: SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
+        config: SCAN_QUALITY_CONFIG
+      });
+      autoScanState.usableSampleCount = burstSelection.usableSamples.length;
+      autoScanState.burstAcceptedSampleCount = captureStats.acceptedFrames;
+      autoScanState.burstSampleCount = captureStats.attemptedFrames;
+      autoScanState.burstBlocker = burstSelection.latestQualityRejectionReason
+        || captureStats.lastRejectionReason
+        || "";
       autoScanState.progress = Math.min(
         0.95,
         0.42 + samples.length / SCAN_CONFIG.CENTER_BURST_EARLY_STOP_SAMPLES * 0.53
@@ -3176,7 +3216,7 @@ function detectFrameStable(sessionToken) {
   try {
     latestRenderContext = resizeCanvasToVideo(canvas, video, "animation-frame") || latestRenderContext || getRenderContext(canvas, video);
 
-    if (video.currentTime !== lastVideoTime) {
+    if (hasVideoFrameAdvanced(lastVideoTime, video.currentTime)) {
       lastVideoTime = video.currentTime;
       const startedAt = performance.now();
       updateCameraDebug({
@@ -3237,7 +3277,7 @@ function detectFrame(sessionToken) {
 
   latestRenderContext = resizeCanvasToVideo(canvas, video, "animation-frame") || latestRenderContext || getRenderContext(canvas, video);
 
-  if (video.currentTime !== lastVideoTime) {
+  if (hasVideoFrameAdvanced(lastVideoTime, video.currentTime)) {
     lastVideoTime = video.currentTime;
     const results = detectFaceLandmarksForVideo(faceLandmarker, video, performance.now());
     drawResults(results);
@@ -5276,12 +5316,12 @@ function updateLiveScanDebugOverlay(payload = {}) {
     ? "COMPLETE"
     : autoScanState.centerBurstActive
       ? "BURST"
-      : autoScanState.holdStartedAt && frameGate?.ready
+      : autoScanState.holdStartedAt && (frameGate?.ready || autoScanState.holdGraceActive)
         ? "HOLDING"
         : autoScanState.phase;
   const gatePassed = state === "BURST" || state === "COMPLETE" || Boolean(frameGate?.ready);
   const reasonCode = gatePassed
-    ? (state === "BURST" ? "BURST_COLLECTING" : "OK")
+    ? (state === "BURST" ? autoScanState.burstBlocker || "BURST_COLLECTING" : "OK")
     : (payload.reasonCode || frameGate?.reasonCode || autoScanState.reasonCode || autoScanState.distance?.reason || "-");
 
   return liveScanDebugController.update({
@@ -5331,8 +5371,11 @@ function updateLiveScanDebugOverlay(payload = {}) {
     mirror: latestRenderContext?.mirrored,
     burstRequired: SCAN_CONFIG.CENTER_BURST_MIN_SAMPLES,
     usableSampleCount: payload.usableSamples ?? autoScanState.usableSampleCount,
-    holdElapsedMs: autoScanState.holdStartedAt ? performance.now() - autoScanState.holdStartedAt : 0,
-    burstSampleCount: payload.acceptedFrames ?? autoScanState.burstSampleCount
+    holdElapsedMs: autoScanState.progress * SCAN_CONFIG.HOLD_DURATION_MS,
+    acceptedSampleCount: payload.acceptedFrames ?? autoScanState.burstAcceptedSampleCount,
+    burstSampleCount: autoScanState.burstSampleCount,
+    videoCurrentTime: video?.currentTime,
+    frameTimestamp: latestCameraDebug.lastDetectTimestamp
   });
 }
 

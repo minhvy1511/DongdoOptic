@@ -1,6 +1,7 @@
 import {
   DEFAULT_SCAN_QUALITY_CONFIG,
   QUALITY_REASON_CODES,
+  getBurstSampleRejectionReason,
   isFallbackEligibleBurstSample,
   isUsableBurstSample
 } from "./quality-gate.js";
@@ -21,7 +22,9 @@ export async function collectFrameBurst({
     attemptedFrames: 0,
     acceptedFrames: 0,
     rejectedFrames: 0,
-    rejectionReasons: {}
+    rejectionReasons: {},
+    lastRejectionReason: "",
+    lastFrameAccepted: false
   };
 
   for (let index = 0; index < frameCount; index += 1) {
@@ -40,10 +43,14 @@ export async function collectFrameBurst({
         timestamp: frame.timestamp ?? performanceNow()
       });
       captureStats.acceptedFrames += 1;
+      captureStats.lastFrameAccepted = true;
+      captureStats.lastRejectionReason = "";
     } else {
       const reason = getFrameDetectionRejectionReason(frame, faces);
       captureStats.rejectedFrames += 1;
       captureStats.rejectionReasons[reason] = (captureStats.rejectionReasons[reason] || 0) + 1;
+      captureStats.lastFrameAccepted = false;
+      captureStats.lastRejectionReason = reason;
     }
 
     if (shouldStopEarly?.(samples, captureStats) === true) {
@@ -70,6 +77,13 @@ export function selectBurstSamples({
   config = DEFAULT_SCAN_QUALITY_CONFIG
 } = {}) {
   const usableSamples = samples.filter((sample) => isUsableBurstSample(sample, config));
+  const qualityRejectionReasons = {};
+  samples.forEach((sample) => {
+    const reason = getBurstSampleRejectionReason(sample, config);
+    if (reason !== QUALITY_REASON_CODES.OK) {
+      qualityRejectionReasons[reason] = (qualityRejectionReasons[reason] || 0) + 1;
+    }
+  });
   const fallbackSamples = samples
     .filter((sample) => sample?.analysis?.metrics && isFallbackEligibleBurstSample(sample, config))
     .sort((a, b) => Number(b.analysis?.quality?.confidence || 0) - Number(a.analysis?.quality?.confidence || 0));
@@ -81,7 +95,13 @@ export function selectBurstSamples({
     usableSamples,
     fallbackSamples,
     selectedSamples,
-    fallbackUsed: usableSamples.length < minSamples
+    fallbackUsed: usableSamples.length < minSamples,
+    qualityRejectionReasons,
+    latestQualityRejectionReason: samples.length
+      ? getBurstSampleRejectionReason(samples.at(-1), config) === QUALITY_REASON_CODES.OK
+        ? ""
+        : getBurstSampleRejectionReason(samples.at(-1), config)
+      : ""
   };
 }
 

@@ -38,9 +38,13 @@ export function formatLiveScanDebug(snapshot = {}) {
     `dy: ${formatNumber(snapshot.centerDy)} limitY: ${formatNumber(snapshot.centerLimitY)}`,
     `DISTANCE: ${snapshot.distanceStatus || "-"}`,
     `POSE: ${formatPass(snapshot.posePassed)}`,
-    `QUALITY: ${formatPass(imageQualityPass)}`,
+    `IMAGE: ${formatPass(imageQualityPass)} b=${formatNumber(snapshot.brightness, 1)} c=${formatNumber(snapshot.contrast, 1)} s=${formatNumber(snapshot.sharpness, 1)}`,
     `LOWER_FACE: ${formatPass(snapshot.lowerFacePassed)}`,
+    `HOLD ms: ${Math.max(0, Math.round(Number(snapshot.holdElapsedMs || 0)))}`,
+    `ACCEPTED: ${Number(snapshot.acceptedSampleCount || 0)} usable=${Number(snapshot.usableSampleCount || 0)}`,
     `BURST: ${Number(snapshot.burstSampleCount || 0)}/${Number(snapshot.burstRequired || 0)}`,
+    `video.currentTime: ${formatNumber(snapshot.videoCurrentTime, 3)}`,
+    `frame timestamp: ${formatNumber(snapshot.frameTimestamp, 1)}`,
     `BLOCKER: ${snapshot.reasonCode || "-"}`,
     `faceSource: ${formatPair(snapshot.sourceFaceCenterX, snapshot.sourceFaceCenterY)}`,
     `faceRendered: ${formatPair(snapshot.faceCenterRenderedX, snapshot.faceCenterRenderedY)}`,
@@ -54,11 +58,6 @@ export function formatLiveScanDebug(snapshot = {}) {
     `coverage: ${formatNumber(snapshot.coverage)}`,
     `yaw: ${formatNumber(snapshot.yaw, 1)}`,
     `roll: ${formatNumber(snapshot.roll, 1)}`,
-    `brightness: ${formatNumber(snapshot.brightness, 1)}`,
-    `contrast: ${formatNumber(snapshot.contrast, 1)}`,
-    `sharpness: ${formatNumber(snapshot.sharpness, 1)}`,
-    `usableSamples: ${Number(snapshot.usableSampleCount || 0)}`,
-    `holdElapsedMs: ${Math.max(0, Math.round(Number(snapshot.holdElapsedMs || 0)))}`,
   ].join("\n");
 }
 

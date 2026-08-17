@@ -1,1 +1,1 @@
-import "./app.js?v=20260817-consult-v76";
+import "./app.js?v=20260817-mobile-v77-complete";
