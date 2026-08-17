@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://getvisionid.pythonanywhere.com/schemas/visual-reference-v1.json",
+  "title": "VisionID visual reference metadata record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "id", "source", "sourceUrl", "imageUrl", "license",
+    "licenseUrl", "attribution", "retrievedAt", "eligibility", "eligibilityReasons"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^wikimedia-commons:(?:[1-9][0-9]*|file:[a-z0-9][a-z0-9._-]+)$"
+    },
+    "source": { "const": "Wikimedia Commons" },
+    "sourceUrl": { "type": ["string", "null"], "format": "uri" },
+    "imageUrl": { "type": ["string", "null"], "format": "uri" },
+    "license": { "type": ["string", "null"] },
+    "licenseUrl": { "type": ["string", "null"], "format": "uri" },
+    "attribution": { "type": ["string", "null"] },
+    "retrievedAt": { "type": "string", "format": "date-time" },
+    "eligibility": { "enum": ["eligible", "ineligible"] },
+    "eligibilityReasons": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "shape": { "type": ["string", "null"] },
+    "rimType": { "type": ["string", "null"] },
+    "material": { "type": ["string", "null"] },
+    "styleTags": {
+      "type": ["array", "null"],
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "colorFamily": { "type": ["string", "null"] },
+    "notes": { "type": ["string", "null"] },
+    "author": { "type": ["string", "null"] },
+    "creditLine": { "type": ["string", "null"] },
+    "sourceRevisionId": { "type": ["string", "null"] },
+    "sourceFileHash": { "type": ["string", "null"] },
+    "modifications": { "type": ["string", "null"] },
+    "containsIdentifiablePerson": { "type": ["boolean", "null"] },
+    "trademarkRisk": { "enum": ["low", "medium", "high", "unknown", null] }
+  }
+}

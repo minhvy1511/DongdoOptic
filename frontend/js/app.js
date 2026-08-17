@@ -51,7 +51,7 @@ import {
   buildScanDiagnosticsExport,
   downloadScanDiagnostics,
   isScanDiagnosticsExportEnabled
-} from "./vision/scan-diagnostics-export.js?v=20260817-scan-export";
+} from "./vision/scan-diagnostics-export.js?v=20260817-functional-rc1";
 import {
   createAcceptedScanCommit,
   createAutoConsultationTransition,
@@ -136,8 +136,8 @@ import {
   buildCustomerFrameRecommendations,
   createFrameRankingRequestGuard,
   runShadowFrameRanking
-} from "./frame-ranking-adapter.js?v=20260817-frame-geometry1";
-import { buildFrameRankingDebugSummary } from "./frame-ranking-debug.js?v=20260816-p05";
+} from "./frame-ranking-adapter.js?v=20260817-functional-rc1";
+import { buildFrameRankingDebugSummary } from "./frame-ranking-debug.js?v=20260817-functional-rc1";
 import {
   buildConsultationContext as buildScanConsultationContext,
   updateConsultationContextRanking
@@ -6902,19 +6902,21 @@ function runFrameRankingShadow(preferences, legacyRecommendations) {
     confirmedFaceShape,
     aiFaceShape: latestAiFaceShape,
     legacyRecommendations,
+    scanId: scanContextId,
+    requestId,
     debugEnabled: VISION_DEBUG_ENABLED
   }).then((result) => {
     if (!frameRankingRequestGuard.isCurrent(requestId)) return;
     if (scanContextId && latestScanConsultationContext?.scanId !== scanContextId) return;
     latestFrameRankingShadow = result;
-    if (result.status === "ready" && result.topProducts.length) {
+    if (result.status === "ready" && result.finalTopProducts.length) {
       latestRecommendations = buildCustomerFrameRecommendations(result, legacyRecommendations);
       if (scanContextId) {
         latestScanConsultationContext = updateConsultationContextRanking(latestScanConsultationContext, {
           scanId: scanContextId,
           rankingProfile: result.profiles,
-          rankedTopProducts: result.topProducts,
-          productSource: "ranked"
+          rankedTopProducts: result.finalTopProducts,
+          productSource: result.finalSource === "diversity" ? "diversity-ranked" : "ranked"
         });
       }
       renderRecommendations(

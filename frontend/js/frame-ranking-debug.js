@@ -29,9 +29,34 @@ export function buildFrameRankingDebugSummary(shadowResult = null, { debugEnable
     renderCustomerSnapshot(profiles.customerProfile || {}),
     renderVisionSnapshot(profiles.visionProfile || {}),
     renderLegacyComparison(shadowResult),
+    renderDiversityComparison(shadowResult),
     "Top 3:",
     ...(topProducts.length ? topProducts.slice(0, 3).map(renderRankedProduct) : ["- No eligible products"])
   ].join("\n");
+}
+
+
+function renderDiversityComparison(shadowResult) {
+  const diversity = shadowResult.diversityShadow;
+  if (!diversity) return "";
+  return [
+    `scanId/request: ${formatValue(shadowResult.scanId)} / ${formatValue(shadowResult.requestId)}`,
+    "FROZEN TOP 3:",
+    ...renderCompactProducts(diversity.frozenTop3),
+    "DIVERSITY TOP 3:",
+    ...renderCompactProducts(diversity.diversityTop3),
+    "FINAL CUSTOMER TOP 3:",
+    ...renderCompactProducts(shadowResult.finalTopProducts)
+  ].join("\n");
+}
+
+
+function renderCompactProducts(products) {
+  if (!Array.isArray(products) || !products.length) return ["- -"];
+  return products.slice(0, 3).map((item, index) => {
+    const frame = item.frame || {};
+    return `${index + 1}. ${formatValue(frame.sku)} / ${formatValue(frame.model || frame.name)} / ${formatScore(item.totalScore)}`;
+  });
 }
 
 

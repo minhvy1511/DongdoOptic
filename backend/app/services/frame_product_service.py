@@ -3,6 +3,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from app.services.frame_catalog_schema import (
+    migrate_legacy_frame_record,
+    normalize_canonical_frame_records,
+)
+
 
 DATA_PATH = Path(__file__).resolve().parents[1] / "data" / "frame_products.json"
 
@@ -94,6 +99,26 @@ def load_frame_products(path: str | Path = DATA_PATH) -> list[dict[str, Any]]:
     products = _extract_products(raw_catalog)
     validate_frame_products(products)
     return deepcopy(products)
+
+
+def load_canonical_frame_products(path: str | Path = DATA_PATH) -> list[dict[str, Any]]:
+    catalog_path = Path(path)
+    if not catalog_path.exists():
+        raise FrameProductCatalogError(f"Frame product catalog not found: {catalog_path}")
+    try:
+        raw_catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise FrameProductCatalogError(f"Malformed frame product catalog JSON: {exc}") from exc
+
+    products = _extract_products(raw_catalog)
+    try:
+        if products and all(product.get("schemaVersion") == 1 for product in products if isinstance(product, dict)):
+            return normalize_canonical_frame_records(products)
+        validate_frame_products(products)
+        migrated = [migrate_legacy_frame_record(product) for product in products]
+        return normalize_canonical_frame_records(migrated, allow_unknown_retrieved_at=True)
+    except ValueError as exc:
+        raise FrameProductCatalogError(str(exc)) from exc
 
 
 def get_frame_product_by_sku(sku: str, path: str | Path = DATA_PATH) -> dict[str, Any] | None:

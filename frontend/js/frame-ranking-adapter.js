@@ -1,4 +1,5 @@
 import { fetchFrameProducts, rankFrameProducts } from "./frame-ranking.js?v=20260817-frame-geometry1";
+import { buildDiversityShadowTop3 } from "./frame-diversity-shadow.js?v=20260817-functional-rc1";
 
 
 let frameProductsPromise = null;
@@ -74,9 +75,12 @@ export async function runShadowFrameRanking({
   confirmedFaceShape = "",
   aiFaceShape = "",
   legacyRecommendations = [],
+  scanId = "",
+  requestId = null,
   limit = 3,
   fetchCatalog = fetchFrameProducts,
   rankProducts = rankFrameProducts,
+  selectDiversity = buildDiversityShadowTop3,
   debugEnabled = false,
   logger = console.debug
 } = {}) {
@@ -93,12 +97,33 @@ export async function runShadowFrameRanking({
       limit: Math.max(frames.length, limit)
     });
     const topProducts = deduplicateRankedProducts(rankedProducts, limit);
+    let diversityShadow;
+    let finalTopProducts = topProducts;
+    let finalSource = "frozen";
+    try {
+      diversityShadow = selectDiversity(rankedProducts, { scanId });
+      if (isValidDiversitySelection(diversityShadow?.diversityTop3, rankedProducts, topProducts, limit)) {
+        finalTopProducts = diversityShadow.diversityTop3;
+        finalSource = "diversity";
+        diversityShadow = { ...diversityShadow, status: "ready" };
+      } else {
+        diversityShadow = buildDiversityFallback(diversityShadow, topProducts, "INVALID_OR_INCOMPLETE_SELECTION");
+      }
+    } catch (error) {
+      diversityShadow = buildDiversityFallback(null, topProducts, error?.message || "DIVERSITY_SELECTION_FAILED");
+    }
 
     return {
       status: "ready",
+      scanId: String(scanId || ""),
+      requestId: requestId == null ? null : String(requestId),
       topProducts,
       topSkus: topProducts.map((item) => item.frame?.sku).filter(Boolean),
       topNames: topProducts.map((item) => item.frame?.name).filter(Boolean),
+      diversityShadow,
+      finalTopProducts,
+      finalTopSkus: finalTopProducts.map((item) => item.frame?.sku).filter(Boolean),
+      finalSource,
       legacyRecommendations: legacyRecommendations.map((item) => (
         typeof item === "string" ? item : item?.title || item?.name || item?.label || ""
       )).filter(Boolean),
@@ -153,10 +178,13 @@ export function getFrameProductDedupKey(frame = {}) {
 
 
 export function buildCustomerFrameRecommendations(result = {}, legacyFallback = []) {
-  if (result.status !== "ready" || !result.topProducts?.length) {
+  const finalProducts = Array.isArray(result.finalTopProducts)
+    ? result.finalTopProducts
+    : result.topProducts;
+  if (result.status !== "ready" || !finalProducts?.length) {
     return legacyFallback;
   }
-  return result.topProducts.map(({ frame = {}, totalScore = 0, components = {}, reasons = [], warnings = [] }) => ({
+  return finalProducts.map(({ frame = {}, totalScore = 0, components = {}, reasons = [], warnings = [] }) => ({
     id: frame.sku || frame.model || frame.name,
     sku: frame.sku || "",
     model: frame.model || "",
@@ -172,6 +200,46 @@ export function buildCustomerFrameRecommendations(result = {}, legacyFallback = 
     },
     rankedProduct: frame
   }));
+}
+
+
+function isValidDiversitySelection(items, rankedProducts, frozenTopProducts, limit) {
+  if (!Array.isArray(items)) return false;
+  const expectedCount = Math.min(normalizePositiveLimit(limit), frozenTopProducts.length);
+  if (items.length < expectedCount) return false;
+
+  const rankedByKey = new Map();
+  for (const item of rankedProducts) {
+    const key = getFrameProductDedupKey(item?.frame || {});
+    if (!rankedByKey.has(key)) rankedByKey.set(key, item);
+  }
+  const selectedKeys = new Set();
+  for (const item of items.slice(0, expectedCount)) {
+    const key = getFrameProductDedupKey(item?.frame || {});
+    const original = rankedByKey.get(key);
+    if (!original || selectedKeys.has(key) || item?.eligible === false) return false;
+    if (!Number.isFinite(Number(item.totalScore))) return false;
+    if (Math.abs(Number(item.totalScore) - Number(original.totalScore)) > 1e-9) return false;
+    selectedKeys.add(key);
+  }
+  return true;
+}
+
+
+function buildDiversityFallback(shadow, frozenTopProducts, reason) {
+  return {
+    ...(shadow || {}),
+    status: "fallback",
+    error: String(reason || "DIVERSITY_SELECTION_FAILED"),
+    frozenTop3: frozenTopProducts,
+    diversityTop3: Array.isArray(shadow?.diversityTop3) ? shadow.diversityTop3 : []
+  };
+}
+
+
+function normalizePositiveLimit(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 3;
 }
 
 

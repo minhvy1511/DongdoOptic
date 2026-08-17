@@ -36,6 +36,26 @@ test("renders warnings when present", () => {
   assert.match(output, /! Thiếu PD hoặc lens\/bridge nên fit score đang ở mức trung tính\./);
 });
 
+test("renders frozen and diversity shadow comparison", () => {
+  const source = createShadowResult();
+  const output = buildFrameRankingDebugSummary({
+    ...source,
+    scanId: "scan-debug",
+    requestId: "request-7",
+    finalTopProducts: [...source.topProducts].reverse(),
+    diversityShadow: {
+      frozenTop3: source.topProducts,
+      diversityTop3: [...source.topProducts].reverse()
+    }
+  }, { debugEnabled: true });
+
+  assert.match(output, /FROZEN TOP 3:/);
+  assert.match(output, /DIVERSITY TOP 3:/);
+  assert.match(output, /FINAL CUSTOMER TOP 3:/);
+  assert.match(output, /scanId\/request: scan-debug \/ request-7/);
+  assert.match(output, /DEMO-003 \/ Demo Ultem \/ 84/);
+});
+
 
 test("does not render unrelated customer PII", () => {
   const output = buildFrameRankingDebugSummary({

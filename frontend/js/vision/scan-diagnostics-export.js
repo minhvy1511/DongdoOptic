@@ -22,7 +22,9 @@ export function buildScanDiagnosticsExport({
       faceConfidence: finiteOrNull(faceConfidence),
       faceMetrics: cleanNumberMap(faceMetrics),
       v3Shadow: sanitizeV3Shadow(v3Shadow),
-      topRankedProducts: (rankingResult.topProducts || []).slice(0, 3).map(sanitizeRankedProduct),
+      topRankedProducts: (rankingResult.finalTopProducts || rankingResult.topProducts || [])
+        .slice(0, 3)
+        .map(sanitizeRankedProduct),
       legacyRecommendation: legacyRecommendations.map(sanitizeLegacyRecommendation),
       rankingRequestId: rankingRequestId == null ? null : cleanText(rankingRequestId)
     },

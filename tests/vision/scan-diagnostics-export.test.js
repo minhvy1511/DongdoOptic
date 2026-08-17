@@ -23,6 +23,10 @@ test("export contains current ranking data using a strict non-PII allowlist", ()
     v3Shadow: { v3Label: "oval", v3Probabilities: { oval: 0.6, round: 0.3 }, cameraImage: "PRIVATE" },
     rankingResult: {
       topProducts: [{
+        frame: { sku: "FROZEN", model: "Frozen model" },
+        totalScore: 79
+      }],
+      finalTopProducts: [{
         frame: { sku: "SKU-1", model: "Model 1", image: "PRIVATE_IMAGE" },
         totalScore: 78.4,
         components: { availability: 15, faceCompatibility: 18 },

@@ -92,6 +92,7 @@ test("shadow ranking returns top 3 eligible products", async () => {
     preferences: { budget: "medium", purpose: "daily" },
     visionAnalysis: { faceShape_ai: "oval", quality: { confidence: 0.8 } },
     legacyRecommendations: [{ title: "Legacy oval" }],
+    scanId: "scan-shadow-1",
     fetchCatalog: async () => catalog
   });
 
@@ -100,6 +101,70 @@ test("shadow ranking returns top 3 eligible products", async () => {
   assert.equal(result.topProducts.every((item) => item.eligible), true);
   assert.equal(result.topSkus.includes("DEMO-005"), false);
   assert.deepEqual(result.legacyRecommendations, ["Legacy oval"]);
+  assert.equal(result.diversityShadow.frozenTop3.length, 3);
+  assert.equal(result.diversityShadow.diversityTop3.length, 3);
+  assert.equal(result.finalTopProducts.length, 3);
+  assert.equal(result.finalSource, "diversity");
+});
+
+test("scan-seeded diversity never replaces customer-facing frozen Top 3", async () => {
+  resetFrameProductsCache();
+  const first = await runShadowFrameRanking({
+    scanId: "scan-a",
+    fetchCatalog: async () => catalog
+  });
+  const second = await runShadowFrameRanking({
+    scanId: "scan-b",
+    fetchCatalog: async () => catalog
+  });
+
+  assert.deepEqual(first.topSkus, second.topSkus);
+  assert.deepEqual(
+    first.topProducts.map((item) => item.frame.sku),
+    first.diversityShadow.frozenTop3.map((item) => item.frame.sku)
+  );
+});
+
+test("customer cards consume the validated final recommendation set", async () => {
+  resetFrameProductsCache();
+  const result = await runShadowFrameRanking({
+    scanId: "scan-final-source",
+    fetchCatalog: async () => catalog
+  });
+  const cards = buildCustomerFrameRecommendations(result, [{ name: "Legacy" }]);
+  assert.deepEqual(cards.map((card) => card.sku), result.finalTopSkus);
+});
+
+test("diversity exception falls back to frozen Top 3 without emptying ranking", async () => {
+  resetFrameProductsCache();
+  const result = await runShadowFrameRanking({
+    scanId: "scan-selector-error",
+    fetchCatalog: async () => catalog,
+    selectDiversity: () => { throw new Error("selector failed"); }
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.finalSource, "frozen");
+  assert.equal(result.diversityShadow.status, "fallback");
+  assert.deepEqual(result.finalTopSkus, result.topSkus);
+});
+
+test("incomplete or score-mutating diversity result falls back safely", async () => {
+  for (const selectDiversity of [
+    () => ({ diversityTop3: [] }),
+    (ranked) => ({ diversityTop3: ranked.slice(0, 3).map((item, index) => ({
+      ...item,
+      totalScore: index === 0 ? item.totalScore + 1 : item.totalScore
+    })) })
+  ]) {
+    resetFrameProductsCache();
+    const result = await runShadowFrameRanking({
+      scanId: "scan-invalid-selector",
+      fetchCatalog: async () => catalog,
+      selectDiversity
+    });
+    assert.equal(result.finalSource, "frozen");
+    assert.deepEqual(result.finalTopSkus, result.topSkus);
+  }
 });
 
 test("duplicate model variants collapse before deterministic Top 3", () => {
