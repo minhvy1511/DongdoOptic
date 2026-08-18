@@ -120,7 +120,7 @@ import {
   getCustomerOperationalStatus,
   getCustomerPrimaryAction,
   isConsultationResultCurrent
-} from "./consultation-state.js?v=20260731-qa1";
+} from "./consultation-state.js?v=20260817-p12b";
 import {
   createCustomerCode,
   createSessionCode,
@@ -142,6 +142,44 @@ import {
   buildConsultationContext as buildScanConsultationContext,
   updateConsultationContextRanking
 } from "./scan-consultation-context.js?v=20260817-consult-v76";
+
+const DISPLAY_TEXT_OVERRIDES = new Map([
+  ["VisionID - Anh tinh", "VisionID - Ảnh tĩnh"],
+  ["Tu van thu cong", "Tư vấn thủ công"],
+  ["Chua co nguon tu van", "Chưa có nguồn tư vấn"],
+  ["Phan tich ty le tuong doi tu hinh anh camera, khong phai phep do kich thuoc vat ly.", "Phân tích tỷ lệ tương đối từ hình ảnh camera, không phải phép đo kích thước vật lý."],
+  ["Phan tich tu anh tinh, khong phai phep do kich thuoc khuon mat.", "Phân tích từ ảnh tĩnh, không phải phép đo kích thước khuôn mặt."],
+  ["Goi y nay dua tren nhu cau va thong tin don kinh, khong su dung phan tich khuon mat tu dong.", "Gợi ý này dựa trên nhu cầu và thông tin đơn kính, không sử dụng phân tích khuôn mặt tự động."],
+  ["Can hoan tat VisionID hoac chon tu van thu cong truoc khi luu ket qua.", "Cần hoàn tất VisionID hoặc chọn tư vấn thủ công trước khi lưu kết quả."],
+  ["Dang luu...", "Đang lưu..."],
+  ["Luu that bai", "Lưu thất bại"],
+  ["Thu luu lai", "Thử lưu lại"],
+  ["Da do", "Đã đo"],
+  ["Cap nhat ket qua tu van", "Cập nhật kết quả tư vấn"],
+  ["Chua co ket qua", "Chưa có kết quả"],
+  ["Luu ket qua tu van", "Lưu kết quả tư vấn"],
+  ["Da luu ket qua tu van", "Đã lưu kết quả tư vấn"],
+  ["Can cap nhat ket qua", "Cần cập nhật kết quả"],
+  ["Ket qua chua luu", "Kết quả chưa lưu"],
+  ["Da co ket qua", "Đã có kết quả"],
+  ["Xem ket qua", "Xem kết quả"],
+  ["Ban nhap", "Bản nháp"],
+  ["Tiep tuc phien", "Tiếp tục phiên"],
+  ["Ho so da luu", "Hồ sơ đã lưu"],
+  ["Dang tu van", "Đang tư vấn"],
+  ["Tiep tuc tu van", "Tiếp tục tư vấn"],
+  ["Mo ho so", "Mở hồ sơ"],
+  ["Chua co ket qua tu van hop le", "Chưa có kết quả tư vấn hợp lệ"],
+  ["Chua co goi y gong phu hop de hien thi.", "Chưa có gợi ý gọng phù hợp để hiển thị."]
+]);
+
+function formatDisplayText(value) {
+  if (value === null || typeof value === "undefined") {
+    return "";
+  }
+  const text = String(value);
+  return DISPLAY_TEXT_OVERRIDES.get(text) || text;
+}
 
 const video = document.getElementById("webcam");
 const uploadedFaceImage = document.getElementById("uploadedFaceImage");
@@ -2096,12 +2134,12 @@ function getCurrentDetailedConsultationSource() {
     return {
       source,
       valid: source !== "none",
-      label: consultationSourceLabel(source),
-      limitation: consultationSourceLimitation(source)
+      label: formatDisplayText(consultationSourceLabel(source)),
+      limitation: formatDisplayText(consultationSourceLimitation(source))
     };
   }
 
-  return getDetailedConsultationSource({
+  const detailedSource = getDetailedConsultationSource({
     manualConsultationMode,
     manualConfirmed: manualConsultationMode,
     confirmedFaceShape,
@@ -2110,6 +2148,11 @@ function getCurrentDetailedConsultationSource() {
     currentContext,
     imageAnalysisState: latestImageDebug.imageDecodeStatus === "analyzed" ? "analysis_complete" : ""
   });
+  return {
+    ...detailedSource,
+    label: formatDisplayText(detailedSource.label),
+    limitation: formatDisplayText(detailedSource.limitation)
+  };
 }
 
 function getCurrentConsultationPayload(savedAt = new Date().toISOString()) {
@@ -2143,11 +2186,11 @@ function getConsultationStatusText() {
   const source = getCurrentDetailedConsultationSource();
   const saveState = getCurrentConsultationSaveState();
   return {
-    sourceLabel: source.label,
-    resultLabel: source.valid ? "Co ket qua tu van" : "Chua co ket qua",
-    saveLabel: saveState.label,
-    measuredLabel: customerStatusInput?.value === "measured" ? "Da do" : "Chua danh dau da do",
-    limitation: source.limitation
+    sourceLabel: formatDisplayText(source.label),
+    resultLabel: source.valid ? "Có kết quả tư vấn" : "Chưa có kết quả",
+    saveLabel: formatDisplayText(saveState.label),
+    measuredLabel: customerStatusInput?.value === "measured" ? "Đã đo" : "Chưa đánh dấu đã đo",
+    limitation: formatDisplayText(source.limitation)
   };
 }
 
@@ -5534,7 +5577,7 @@ async function saveConsultationResult() {
     if (!operationCustomerId) {
       const savedCustomer = saveCurrentCustomerWithLock();
       if (!savedCustomer) {
-        consultationSaveError = "Can luu ho so khach truoc khi luu ket qua tu van.";
+        consultationSaveError = "Cần lưu hồ sơ khách trước khi lưu kết quả tư vấn.";
         renderConsultationActions();
         return null;
       }
@@ -5557,8 +5600,8 @@ async function saveConsultationResult() {
 
     if (!completionGate.allowed) {
       consultationSaveError = completionGate.reason === "CONTEXT_MISMATCH"
-        ? "Ket qua hien tai khong thuoc dung khach/phien dang mo."
-        : "Can co nguon tu van hop le truoc khi luu ket qua.";
+        ? "Kết quả hiện tại không thuộc đúng khách/phiên đang mở."
+        : "Cần có nguồn tư vấn hợp lệ trước khi lưu kết quả.";
       renderConsultationActions();
       return null;
     }
@@ -5567,7 +5610,7 @@ async function saveConsultationResult() {
     const savedAt = new Date().toISOString();
     const payload = getCurrentConsultationPayload(savedAt);
     if (!payload) {
-      consultationSaveError = "Chua co goi y gong hop le de luu.";
+      consultationSaveError = "Chưa có gợi ý gọng hợp lệ để lưu.";
       renderConsultationActions();
       return null;
     }
@@ -5593,7 +5636,7 @@ async function saveConsultationResult() {
     setOperationSaveState("customer-saved", { customerSavedAt: lastCustomerSavedAt });
     const completed = completeCurrentOperationDraft(savedAt);
     if (!completed.ok) {
-      consultationSaveError = "Da luu ket qua, nhung chua the dong ban nhap thao tac.";
+      consultationSaveError = "Đã lưu kết quả, nhưng chưa thể đóng bản nháp thao tác.";
     } else {
       operationSaveState = "customer-saved";
       lastOperationBusinessBaseline = getCurrentOperationBusinessState();
@@ -5602,13 +5645,13 @@ async function saveConsultationResult() {
     renderConsultationActions();
     renderCustomerSessionHeader();
     if (consultationSaveStatus) {
-      consultationSaveStatus.textContent = `Da luu ket qua tu van cho ${record.customer_name || "khach hang"}.`;
+      consultationSaveStatus.textContent = `Đã lưu kết quả tư vấn cho ${record.customer_name || "khách hàng"}.`;
       consultationSaveStatus.focus?.();
     }
     return record;
   } catch (error) {
     console.error(error);
-    consultationSaveError = "Luu ket qua that bai. Du lieu tren man hinh van duoc giu lai.";
+    consultationSaveError = "Lưu kết quả thất bại. Dữ liệu trên màn hình vẫn được giữ lại.";
     renderConsultationActions();
     return null;
   } finally {
@@ -5653,14 +5696,14 @@ function renderCustomers() {
       return `
         <article class="customer-card">
           <div>
-            <strong>${escapeHtml(record.customer_name || "Chưa nhập")} - ${escapeHtml(record.customer_code)} <span class="status-chip">${escapeHtml(operationalStatus.label)}</span></strong>
+            <strong>${escapeHtml(record.customer_name || "Chưa nhập")} - ${escapeHtml(record.customer_code)} <span class="status-chip">${escapeHtml(formatDisplayText(operationalStatus.label))}</span></strong>
             <span>${escapeHtml(record.customer_phone || "Chưa có SĐT")} | ${escapeHtml(consultDate)} | ${escapeHtml(ageGroup)} | ${escapeHtml(label)} | ${escapeHtml(purpose)} | ${escapeHtml(rxTag)}</span>
             <span class="customer-note">${escapeHtml(record.customer_notes || "Chưa có ghi chú")}</span>
-            <span>Bước tiếp: ${escapeHtml(operationalStatus.nextStep)}</span>
+            <span>Bước tiếp: ${escapeHtml(formatDisplayText(operationalStatus.nextStep))}</span>
             <span>Cập nhật: ${escapeHtml(updatedAt)}</span>
           </div>
           <div class="customer-actions">
-            <button type="button" data-load-customer="${escapeHtml(record.customer_code)}" data-open-intent="${escapeHtml(primaryAction.status)}">${escapeHtml(primaryAction.label)}</button>
+            <button type="button" data-load-customer="${escapeHtml(record.customer_code)}" data-open-intent="${escapeHtml(primaryAction.status)}">${escapeHtml(formatDisplayText(primaryAction.label))}</button>
             <button type="button" class="danger-action" data-delete-customer="${escapeHtml(record.customer_code)}">Xóa</button>
           </div>
         </article>
@@ -6383,14 +6426,14 @@ function renderCustomerSessionHeader() {
     return;
   }
 
-  const name = customerNameInput.value.trim() || "Khach moi chua dat ten";
-  const phone = customerPhoneInput.value.trim() || "Chua co so dien thoai";
+  const name = customerNameInput.value.trim() || "Khách mới chưa đặt tên";
+  const phone = customerPhoneInput.value.trim() || "Chưa có số điện thoại";
   const stepLabel = {
-    profile: "Ho so",
-    needs: "Nhu cau",
+    profile: "Hồ sơ",
+    needs: "Nhu cầu",
     visionid: "VisionID",
-    consultation: "Tu van"
-  }[tabIdToOperationStep(getActiveTabId())] || "Ho so";
+    consultation: "Tư vấn"
+  }[tabIdToOperationStep(getActiveTabId())] || "Hồ sơ";
 
   if (currentCustomerNameLabel) currentCustomerNameLabel.textContent = name;
   if (currentCustomerPhoneLabel) currentCustomerPhoneLabel.textContent = phone;
@@ -6398,32 +6441,32 @@ function renderCustomerSessionHeader() {
   if (currentCustomerSourceLabel) {
     currentCustomerSourceLabel.textContent = getCurrentDetailedConsultationSource().valid
       ? getCurrentDetailedConsultationSource().label
-      : (operationCustomerId ? "Ho so da luu" : "Phien moi");
+      : (operationCustomerId ? "Hồ sơ đã lưu" : "Phiên mới");
   }
   if (currentCustomerSaveStateLabel) {
     const label = getActiveTabId() === "tab-4" ? getCurrentConsultationSaveState() : getOperationSaveStateLabel();
-    currentCustomerSaveStateLabel.textContent = label.text || label.label;
+    currentCustomerSaveStateLabel.textContent = formatDisplayText(label.text || label.label);
     currentCustomerSaveStateLabel.dataset.state = label.state;
   }
 }
 
 function getOperationSaveStateLabel() {
   if (operationSaveState === "dirty") {
-    return { state: "dirty", text: "Co thay doi chua luu" };
+    return { state: "dirty", text: "Có thay đổi chưa lưu" };
   }
   if (operationSaveState === "saving") {
-    return { state: "saving", text: "Dang luu ban nhap..." };
+    return { state: "saving", text: "Đang lưu bản nháp..." };
   }
   if (operationSaveState === "draft-saved" && lastDraftSavedAt) {
-    return { state: "draft-saved", text: `Da luu ban nhap luc ${formatTime(lastDraftSavedAt)}` };
+    return { state: "draft-saved", text: `Đã lưu bản nháp lúc ${formatTime(lastDraftSavedAt)}` };
   }
   if (operationSaveState === "customer-saved" && lastCustomerSavedAt) {
-    return { state: "customer-saved", text: `Ho so da luu luc ${formatTime(lastCustomerSavedAt)}` };
+    return { state: "customer-saved", text: `Hồ sơ đã lưu lúc ${formatTime(lastCustomerSavedAt)}` };
   }
   if (operationSaveState === "error") {
-    return { state: "error", text: "Khong the luu ban nhap" };
+    return { state: "error", text: "Không thể lưu bản nháp" };
   }
-  return { state: "idle", text: "Chua co thay doi" };
+  return { state: "idle", text: "Chưa có thay đổi" };
 }
 
 function formatTime(value) {
@@ -6481,7 +6524,7 @@ function hydrateOperationDraft(draft) {
   latestRecommendations = [];
   latestLensRecommendations = [];
   resetAdviceState();
-  renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Da khoi phuc ban nhap. Hay quet lai VisionID neu can.");
+  renderConfidenceNotice(null, { level: "low", percent: 0 }, false, "Đã khôi phục bản nháp. Hãy quét lại VisionID nếu cần.");
   renderCustomerResult();
   updateAdvice();
   showTab(operationStepToTabId(normalized.currentStep));
@@ -6535,7 +6578,7 @@ function showContextChangeDialog() {
 
   modalReturnFocusElement = document.activeElement;
   if (contextChangeDialogSummary) {
-    contextChangeDialogSummary.textContent = "Ban co thay doi chua luu trong phien hien tai. Luu ban nhap de tiep tuc sau, hoac bo thay doi neu khong can giu.";
+    contextChangeDialogSummary.textContent = "Bạn có thay đổi chưa lưu trong phiên hiện tại. Lưu bản nháp để tiếp tục sau, hoặc bỏ thay đổi nếu không cần giữ.";
   }
   contextChangeDialog.hidden = false;
   trapDialogFocus(contextChangeDialog, contextChangeDialogPanel);
@@ -6649,7 +6692,7 @@ function maybeShowResumeDraftDialog() {
   modalReturnFocusElement = document.activeElement;
   if (operationDraftDialogSummary) {
     const updatedAt = formatTime(summary.updatedAt);
-    operationDraftDialogSummary.textContent = `${summary.name}${summary.phone ? ` - ${summary.phone}` : ""}. Buoc gan nhat: ${summary.step}. Cap nhat luc ${updatedAt}.`;
+    operationDraftDialogSummary.textContent = `${summary.name}${summary.phone ? ` - ${summary.phone}` : ""}. Bước gần nhất: ${summary.step}. Cập nhật lúc ${updatedAt}.`;
   }
   operationDraftDialog.hidden = false;
   trapDialogFocus(operationDraftDialog, operationDraftDialogPanel);
@@ -7032,7 +7075,7 @@ function renderConsultationActions() {
   }
   if (saveConsultationButton) {
     saveConsultationButton.disabled = !canSave;
-    saveConsultationButton.textContent = saveState.actionLabel;
+    saveConsultationButton.textContent = formatDisplayText(saveState.actionLabel);
     saveConsultationButton.setAttribute("aria-busy", consultationSaveInFlight ? "true" : "false");
   }
   if (startNextCustomerButton) {
@@ -7049,7 +7092,7 @@ function updateMobileConsultationCta(saveState, canSave) {
   if (!mobileConsultButton || getActiveTabId() !== "tab-4") {
     return;
   }
-  mobileConsultButton.textContent = canSave ? saveState.actionLabel : "Tư vấn";
+  mobileConsultButton.textContent = canSave ? formatDisplayText(saveState.actionLabel) : "Tư vấn";
   mobileConsultButton.disabled = !canSave && !getCurrentDetailedConsultationSource().valid;
 }
 
@@ -7441,13 +7484,13 @@ function markCustomerAsMeasured() {
 function markCustomerAsMeasuredSafely() {
   const record = findCurrentCustomerRecord();
   if (!record) {
-    statusText.textContent = "Can luu ho so khach truoc khi danh dau da do";
+    statusText.textContent = "Cần lưu hồ sơ khách trước khi đánh dấu đã đo";
     return;
   }
 
   const source = getCurrentDetailedConsultationSource();
   if (!source.valid && !record.consultation_result) {
-    statusText.textContent = "Can co ket qua tu van hoac tu van thu cong truoc khi danh dau da do";
+    statusText.textContent = "Cần có kết quả tư vấn hoặc tư vấn thủ công trước khi đánh dấu đã đo";
     return;
   }
 
